@@ -302,6 +302,14 @@ class NativeProxyTests(unittest.TestCase):
         self.assertNotIn('"event":', text)
         return text.splitlines()
 
+    def wait_for_debug_lines(self, state, count, timeout=2):
+        deadline = time.monotonic() + timeout
+        while True:
+            lines = self.debug_lines(state)
+            if len(lines) >= count or time.monotonic() >= deadline:
+                return lines
+            time.sleep(0.01)
+
     def test_debug_https_proves_detection_redaction_write_and_response(self):
         with self.proxy("--debug") as (port, state):
             status, _, data = self.request(port, secure=True)
@@ -373,7 +381,9 @@ class NativeProxyTests(unittest.TestCase):
                         ws.send(b'{"input":"ordinary content"}')
                         self.assertEqual(ws.receive(), b'{"input":"ordinary content"}')
                 sock.close()
-                lines = self.debug_lines(state)
+                # The response relay can echo before the sender logs its
+                # completed upstream write.
+                lines = self.wait_for_debug_lines(state, 1)
                 self.assertEqual(len(lines), 1, lines)
                 self.assertIn("/WS", lines[0])
                 self.assertIn('"sk_…"', lines[0])
