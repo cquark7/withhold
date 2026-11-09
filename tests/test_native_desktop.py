@@ -135,6 +135,25 @@ class NativeDesktopTests(unittest.TestCase):
             self.run_guard("off", "--port", self.port, expected=1)
             self.assertEqual(listener.getsockname()[1], self.port)
 
+    def test_repeated_startup_publishes_authenticated_ownership(self):
+        before = {"http.proxy": "http://old", "keep": True}
+        self.settings.write_text(json.dumps(before))
+        record_path = self.root / "state" / "session.json"
+        identities = set()
+        for attempt in range(10):
+            with self.subTest(attempt=attempt):
+                self.on()
+                status = json.loads(self.run_guard("status", "--json").stdout)
+                record = json.loads(record_path.read_text())
+                self.assertTrue(status["proxy"]["authenticated"])
+                self.assertGreater(record["pid"], 0)
+                self.assertEqual(record["pid"], status["proxy"]["pid"])
+                self.assertNotIn(record["identity"]["instance"], identities)
+                identities.add(record["identity"]["instance"])
+                self.run_guard("off")
+                self.assertFalse(record_path.exists())
+                self.assertEqual(json.loads(self.settings.read_text()), before)
+
     def test_debug_status_reports_live_traffic_and_log_write_failures(self):
         upstream = subprocess.Popen(
             [FIXTURE, "--root", str(self.root / "upstream.pem")],

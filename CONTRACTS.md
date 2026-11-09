@@ -139,8 +139,10 @@ user's full-control entry, independent of descriptor bookkeeping metadata.
 Leaf certificates expire within 24 hours or at CA expiry.
 
 `on` backs up and applies application settings, records effective configuration,
-and starts an authenticated session. Startup failure attempts rollback. Reuse
-requires the same binary, configuration, resource, and private-key fingerprint.
+and starts an authenticated session. The child reads its private ownership record
+only after the parent finishes publishing its PID, and rejects a different PID.
+Startup failure attempts rollback. Reuse requires the same binary, configuration,
+resource, and private-key fingerprint.
 There is no hot reload or login/reboot service.
 
 `off` attempts settings restoration even if shutdown/authentication fails. Only

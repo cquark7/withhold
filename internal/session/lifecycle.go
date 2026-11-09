@@ -304,20 +304,12 @@ func on(o Options, e integration.Target, r Record, recordErr error) int {
 		return fail(1, err)
 	}
 	cmd := exec.Command(binary, "_session-serve", "--state", statePath)
-	cmd.Stdin = nil
 	cmd.Stdout = log
 	cmd.Stderr = log
 	detach(cmd)
-	err = cmd.Start()
+	err = startSession(cmd, statePath, &r)
 	_ = log.Close()
 	if err != nil {
-		rollback()
-		return fail(1, err)
-	}
-	r.PID = cmd.Process.Pid
-	if err = saveRecord(statePath, r); err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
 		rollback()
 		return fail(1, err)
 	}

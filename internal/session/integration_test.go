@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -23,9 +24,26 @@ import (
 // runner or a real proxy. Process acceptance separately runs the native binary.
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == "_session-serve" {
+		if _, err := LoadStartupRecord(os.Args[3], os.Stdin); err == nil {
+			fmt.Println("session record committed before child read")
+		}
 		os.Exit(1)
 	}
 	os.Exit(m.Run())
+}
+
+func TestSessionStartupCommitsOwnershipBeforeChildReads(t *testing.T) {
+	o, _ := fixtureOptions(t)
+	if Run(o) != 1 {
+		t.Fatal("deliberately failing child unexpectedly started a session")
+	}
+	log, err := os.ReadFile(filepath.Join(o.Dir, "proxy.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(log), "session record committed before child read") {
+		t.Fatalf("child was not released after PID publication: %s", log)
+	}
 }
 
 func unusedPort(t *testing.T) int {
