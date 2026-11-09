@@ -296,7 +296,7 @@ class NativeProxyTests(unittest.TestCase):
         return base64.b64decode(json.loads(data)["body_base64"])
 
     def debug_lines(self, state):
-        text = (state / "debug-findings.log").read_text()
+        text = (state / "debug-findings.log").read_text(encoding="utf-8")
         self.assertNotIn(SECRET, text)
         self.assertNotIn("private-url-value", text)
         self.assertNotIn('"event":', text)

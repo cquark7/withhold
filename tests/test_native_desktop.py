@@ -77,8 +77,12 @@ class NativeDesktopTests(unittest.TestCase):
             text=True,
             timeout=20,
         )
-        if expected is not None:
-            self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+        if expected is not None and result.returncode != expected:
+            details = result.stdout + result.stderr
+            log = self.root / "state" / "proxy.log"
+            if log.exists():
+                details += "\nIsolated proxy log:\n" + log.read_text(encoding="utf-8")
+            self.assertEqual(result.returncode, expected, details)
         return result
 
     def on(self, *args):
