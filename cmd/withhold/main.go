@@ -240,7 +240,8 @@ func run(args []string) int {
 			if absolute, err := filepath.Abs(path); err == nil {
 				path = absolute
 			}
-			if _, err := fmt.Fprintf(os.Stdout, "# Configuration file: %s\n", path); err != nil {
+			displayPath := strings.NewReplacer("\r", `\r`, "\n", `\n`).Replace(path)
+			if _, err := fmt.Fprintf(os.Stdout, "# Configuration file: %s\n", displayPath); err != nil {
 				return 1
 			}
 			if _, err := os.Lstat(path); os.IsNotExist(err) {

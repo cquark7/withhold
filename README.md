@@ -48,9 +48,6 @@ requirements. Want another coding agent? [Help build an integration](#contribute
 
 ### macOS and Linux
 
-These instructions apply to releases with standalone binaries. The older
-v0.1.0 installer uses archives and still requires GitHub CLI.
-
 With `curl` and `sha256sum` or `shasum`, run:
 
 ```sh
@@ -58,19 +55,17 @@ curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-The installer selects your OS and CPU, checks the downloaded SHA-256 checksum,
-and installs to `~/.local/bin`. No sudo, Go, Python, or GitHub CLI is needed.
-Checksums detect download errors but do not prove who built the binary; optional
-signed provenance verification is described in the installation guide.
-See the [installation guide](docs/usage.md#installation) to review the script,
-pin a version, or choose another directory.
+For releases with standalone binaries, the installer checks SHA-256 but does not
+authenticate the publisher; it needs no sudo, Go, Python, or GitHub CLI. See the
+[installation guide](docs/usage.md#installation) for provenance, pinning, or
+reviewing the script.
 
 ### Windows
 
 Download the x64 or ARM64 executable and matching notices from
-[Releases](https://github.com/cquark7/withhold/releases/latest), follow the
+[Releases](https://github.com/cquark7/withhold/releases/latest). Follow the
 [installation and verification steps](docs/usage.md#windows-and-manual-downloads),
-and add the printed directory to your user PATH. Archives remain available too.
+then add the printed directory to your user PATH.
 
 ### Build from source
 

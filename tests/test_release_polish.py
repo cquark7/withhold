@@ -218,3 +218,21 @@ class ReleasePolishTests(unittest.TestCase):
         )
         self.assertEqual(list(self.home.iterdir()), [])
         self.command("config", "--example", "--json", env=env, expected=2)
+
+    @unittest.skipIf(os.name == "nt", "Windows paths cannot contain line breaks")
+    def test_effective_toml_escapes_line_breaks_in_config_path_comment(self):
+        env = {
+            key: value
+            for key, value in self.env.items()
+            if not key.startswith("WITHHOLD_")
+        }
+        directory = self.root / "custom\nstate\r"
+        env["WITHHOLD_DIR"] = str(directory)
+        path = directory / "config.toml"
+        result = self.command("config", env=env)
+        display_path = str(path).replace("\r", r"\r").replace("\n", r"\n")
+        self.assertEqual(
+            result.stdout.splitlines()[0],
+            f"# Configuration file: {display_path}",
+        )
+        self.assertEqual(tomllib.loads(result.stdout)["schema"], 1)
