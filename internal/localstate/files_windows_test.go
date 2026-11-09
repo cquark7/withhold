@@ -38,3 +38,51 @@ func TestPrivateFilesRejectNonregularAndSharedWindowsACL(t *testing.T) {
 		t.Fatal("shared ACL accepted as private")
 	}
 }
+
+func TestPrivateDACLRequiresProtectedCurrentUserPermissions(t *testing.T) {
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sid := user.User.Sid.String()
+	for _, test := range []struct {
+		name, descriptor string
+		private          bool
+	}{
+		{"private", "D:P(A;;FA;;;" + sid + ")", true},
+		{"owner and group metadata", "O:BAG:BAD:P(A;;FA;;;" + sid + ")", true},
+		{"inheritance bookkeeping", "D:PAI(A;;FA;;;" + sid + ")", true},
+		{"unprotected", "D:(A;;FA;;;" + sid + ")", false},
+		{"shared", "D:P(A;;FA;;;" + sid + ")(A;;FR;;;WD)", false},
+		{"other principal", "D:P(A;;FA;;;WD)", false},
+		{"read only", "D:P(A;;FR;;;" + sid + ")", false},
+		{"inheritable entry", "D:P(A;OI;FA;;;" + sid + ")", false},
+		{"inherited entry", "D:P(A;ID;FA;;;" + sid + ")", false},
+		{"empty", "D:P", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			sd, err := windows.SecurityDescriptorFromString(test.descriptor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := privateDACL(sd); got != test.private {
+				t.Fatalf("private DACL: got %t, want %t", got, test.private)
+			}
+		})
+	}
+	t.Run("null DACL", func(t *testing.T) {
+		sd, err := windows.NewSecurityDescriptor()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = sd.SetDACL(nil, true, false); err != nil {
+			t.Fatal(err)
+		}
+		if err = sd.SetControl(windows.SE_DACL_PROTECTED, windows.SE_DACL_PROTECTED); err != nil {
+			t.Fatal(err)
+		}
+		if privateDACL(sd) {
+			t.Fatal("null DACL accepted as private")
+		}
+	})
+}

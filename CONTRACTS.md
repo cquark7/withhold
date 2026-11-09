@@ -134,6 +134,8 @@ Streaming detection and local error framing never change scanning or admission.
 `setup` creates an EC P-256 CA and configures current-user trust; manual imports
 are the user's responsibility. Existing or partial CA files are not overwritten.
 Private keys/state use mode 0600 on POSIX or protected current-user Windows ACLs.
+Windows privacy checks require a protected DACL containing only the current
+user's full-control entry, independent of descriptor bookkeeping metadata.
 Leaf certificates expire within 24 hours or at CA expiry.
 
 `on` backs up and applies application settings, records effective configuration,

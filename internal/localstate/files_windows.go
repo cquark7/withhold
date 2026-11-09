@@ -2,8 +2,9 @@ package localstate
 
 import (
 	"errors"
-	"golang.org/x/sys/windows"
 	"os"
+
+	"golang.org/x/sys/windows"
 )
 
 func privateSD() (*windows.SECURITY_DESCRIPTOR, error) {
@@ -32,20 +33,41 @@ func CheckPrivate(path string) error {
 	if !info.Mode().IsRegular() {
 		return errors.New("local state must be a regular file")
 	}
-	expected, err := privateSD()
-	if err != nil {
-		return err
-	}
 	actual, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
 		return err
 	}
-	// Accept only the protected current-user ACL created by this runtime.
-	if actual.String() != expected.String() {
+	if !privateDACL(actual) {
 		return errors.New("local state must have a protected current-user ACL")
 	}
 	return nil
 }
+
+func privateDACL(actual *windows.SECURITY_DESCRIPTOR) bool {
+	control, _, err := actual.Control()
+	if err != nil || control&windows.SE_DACL_PROTECTED == 0 {
+		return false
+	}
+	dacl, _, err := actual.DACL()
+	if err != nil || dacl == nil {
+		return false
+	}
+	// Compare the protected permission entries. Windows also records owner,
+	// group, and inheritance bookkeeping in stored security descriptors.
+	normalized, err := windows.NewSecurityDescriptor()
+	if err != nil {
+		return false
+	}
+	if err = normalized.SetDACL(dacl, true, false); err != nil {
+		return false
+	}
+	if err = normalized.SetControl(windows.SE_DACL_PROTECTED, windows.SE_DACL_PROTECTED); err != nil {
+		return false
+	}
+	expected, err := privateSD()
+	return err == nil && normalized.String() == expected.String()
+}
+
 func Lock(path string) (func(), error) {
 	if err := Regular(path); err != nil {
 		return nil, err
