@@ -4,7 +4,7 @@
 
 # withhold
 
-**Catch secrets before they become AI context.**
+**Catch secrets and PII before they become AI context.**
 
 Local secret redaction for coding agents. Offline scanning. One Go binary.
 
@@ -18,14 +18,13 @@ Local secret redaction for coding agents. Offline scanning. One Go binary.
 </div>
 
 Coding agents send context beyond the text you type: file contents, tool results,
-and examples can contain credentials. withhold inspects supported outgoing
+and examples can contain credentials. <span style="color:#10b981; font-weight:bold;">withhold</span> inspects supported outgoing
 request bodies on your machine and replaces detected values or blocks the request
 before forwarding it to the provider.
 
 <p align="center">
   <img src="docs/assets/request-flow.gif" alt="A coding agent sends supported request bodies to withhold for local inspection. Detected values are redacted before forwarding in redact mode, or the request is stopped locally in block mode." width="960">
   <br>
-  <a href="docs/assets/request-flow.svg">View the static diagram</a>
 </p>
 
 **Works with desktop VS Code + GitHub Copilot.** See the
@@ -49,27 +48,52 @@ requirements. Want another coding agent? [Help build an integration](#contribute
 
 ### macOS and Linux
 
-Install [GitHub CLI](https://cli.github.com/) for release provenance verification,
-then run:
+With `curl` and `sha256sum` or `shasum`, run:
 
 ```sh
 curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-The installer selects your OS and CPU, verifies the binary's provenance and
-checksum, and installs to `~/.local/bin`. No sudo, Go, or Python is needed.
-See the [installation guide](docs/usage.md#installation) to review the script,
-pin a version, or choose another directory.
+For releases with standalone binaries, the installer checks SHA-256 but does not
+authenticate the publisher; it needs no sudo, Go, Python, or GitHub CLI. See the
+[installation guide](docs/usage.md#installation) for provenance, pinning, or
+reviewing the script.
 
 ### Windows
 
-Download the x64 or ARM64 archive from
-[Releases](https://github.com/cquark7/withhold/releases/latest), follow the
-[verification steps](docs/usage.md#windows-and-manual-downloads), then run
-`.\withhold.exe install`. Add the printed directory to your user PATH.
+Download the x64 or ARM64 executable and matching notices from
+[Releases](https://github.com/cquark7/withhold/releases/latest). Follow the
+[installation and verification steps](docs/usage.md#windows-and-manual-downloads),
+then add the printed directory to your user PATH.
 
-Prefer to compile it yourself? See [building from source](docs/usage.md#build-from-source).
+### Build from source
+
+From a trusted checkout, using Git and [Go 1.26 or later](https://go.dev/dl/):
+
+macOS and Linux:
+
+```sh
+git clone https://github.com/cquark7/withhold.git
+cd withhold
+go build -trimpath -o withhold ./cmd/withhold
+./withhold install
+export PATH="$HOME/.local/bin:$PATH"
+withhold version
+```
+
+Windows PowerShell:
+
+```powershell
+git clone https://github.com/cquark7/withhold.git
+Set-Location withhold
+go build -trimpath -o withhold.exe ./cmd/withhold
+.\withhold.exe install
+```
+
+Add the printed installation directory to your user PATH on Windows. Installation
+does not change certificate trust or editor settings; see the
+[source installation guide](docs/usage.md#build-from-source) for details.
 
 ## Try it locally
 
@@ -111,12 +135,12 @@ sessions and CA cleanup. withhold does not restart automatically at login/reboot
 
 ## What it inspects
 
-| Surface | Default behavior |
-| --- | --- |
-| Chat | Redact detected secrets, then forward. |
-| Inline completions | Block requests containing findings. |
-| Embeddings | Attempt redaction; inspection-policy failures pass through unscanned. |
-| Optional PII | Email, phone, payment card, US SSN, IP address, and Aadhaar; off by default. |
+| Surface            | Default behavior                                                             |
+| ------------------ | ---------------------------------------------------------------------------- |
+| Chat               | Redact detected secrets, then forward.                                       |
+| Inline completions | Block requests containing findings.                                          |
+| Embeddings         | Attempt redaction; inspection-policy failures pass through unscanned.        |
+| Optional PII       | Email, phone, payment card, US SSN, IP address, and Aadhaar; off by default. |
 
 The scanner walks eligible JSON strings and keys, tool text, and decoded base64
 text. HTTP/HTTPS, HTTP/2, compressed request bodies, and JSON WebSocket messages
@@ -135,8 +159,10 @@ withhold on --pii email,phone      # Enable selected PII categories.
 withhold on --chat-mode block     # Block chat findings instead of redacting.
 ```
 
-Use `withhold config --example` for a commented TOML starter or read the
-[configuration reference](docs/configuration.md).
+Edit `~/.config/withhold/config.toml` to persist settings, and run
+`withhold config` to see the effective configuration. For an existing
+installation without a config file, `withhold config --init` creates one without
+overwriting anything. See the [configuration reference](docs/configuration.md).
 
 ## Privacy and limits
 
@@ -156,12 +182,12 @@ Use `withhold config --example` for a commented TOML starter or read the
 Help make local privacy a part of everyday coding. Contributions are welcome:
 new integrations, detection cases, clearer docs, and focused fixes.
 
-| You can help with | Start here |
-| --- | --- |
-| A setup problem or a synthetic detection case | [Report a bug](https://github.com/cquark7/withhold/issues/new?template=bug_report.yml). |
-| Clearer onboarding, examples, or recovery steps | [Contribution guide](CONTRIBUTING.md#your-first-contribution). |
-| Another coding agent | [Propose an integration](https://github.com/cquark7/withhold/issues/new?template=integration_request.yml), then read [the adapter guide](docs/adding-integrations.md). |
-| A vulnerability | [Report privately](SECURITY.md); keep exploit details out of public issues. |
+| You can help with                               | Start here                                                                                                                                                             |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A setup problem or a synthetic detection case   | [Report a bug](https://github.com/cquark7/withhold/issues/new?template=bug_report.yml).                                                                                |
+| Clearer onboarding, examples, or recovery steps | [Contribution guide](CONTRIBUTING.md#your-first-contribution).                                                                                                         |
+| Another coding agent                            | [Propose an integration](https://github.com/cquark7/withhold/issues/new?template=integration_request.yml), then read [the adapter guide](docs/adding-integrations.md). |
+| A vulnerability                                 | [Report privately](SECURITY.md); keep exploit details out of public issues.                                                                                            |
 
 [Good first issues](https://github.com/cquark7/withhold/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
 · [Help wanted](https://github.com/cquark7/withhold/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22help%20wanted%22)
@@ -176,5 +202,5 @@ new integrations, detection cases, clearer docs, and focused fixes.
 
 ## License
 
-[MIT](LICENSE). Binary archives include third-party license notices.
+[MIT](LICENSE). Releases include third-party license notices for each binary.
 Independent project, unaffiliated with GitHub or Microsoft.

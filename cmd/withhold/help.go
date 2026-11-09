@@ -22,7 +22,7 @@ var commands = map[string]string{
 	"init-ca":      "Create CA files only; do not install trust or change settings.",
 	"completion":   "Print shell completion for bash, zsh, fish, or powershell.",
 	"version":      "Print the native build and bundled detector versions.",
-	"config":       "Print effective JSON settings, or a commented TOML starter with --example.",
+	"config":       "View effective settings or create a user-editable TOML configuration.",
 	"integrations": "List the built-in integrations and their documentation.",
 }
 
@@ -40,7 +40,7 @@ var examples = map[string]string{
 	"init-ca":      "withhold init-ca --dir /path/to/private-state",
 	"completion":   "withhold completion bash\n  withhold completion zsh\n  withhold completion fish\n  withhold completion powershell",
 	"version":      "withhold version",
-	"config":       "withhold config\n  withhold config --example\n  withhold config --config /path/to/config.toml",
+	"config":       "withhold config\n  withhold config --init\n  withhold config --example\n  withhold config --json",
 	"integrations": "withhold integrations\n  withhold integrations --json",
 }
 
@@ -98,7 +98,7 @@ func help(w io.Writer, command string) int {
 	case "demo":
 		fmt.Fprintln(w, "\nUses synthetic values, ephemeral IPv4 loopback ports, a temporary CA, and the\nbundled scanner. TLS verification stays enabled. No provider, editor settings,\ntrust stores, or existing configuration are used. Temporary files are removed.\nThis demonstrates the local pipeline, not application routing or live compatibility.")
 	case "config":
-		fmt.Fprintln(w, "\n--example prints TOML defaults; it does not read config or create files.\nSelect its adapter with --integration or WITHHOLD_INTEGRATION. Other overrides\nare not accepted with --example. Without it, config prints effective JSON settings.")
+		fmt.Fprintln(w, "\nConfig prints effective TOML as a reloadable snapshot; it may include private\npaths and pins defaults if saved. --json prints the same settings as JSON.\n--init creates a new file with defaults commented out and never overwrites an\nexisting file; it accepts --dir, --config and --integration. --example prints\nTOML defaults without reading or writing files; it accepts only --integration.")
 	case "launch":
 		fmt.Fprintln(w, "\nLaunch is optional and integration-specific. Arguments after -- stay literal;\nthe application's exit status is preserved. Follow its integration guide for\nproxy/CA environment and process-restart requirements.")
 	case "setup":
@@ -114,7 +114,7 @@ func help(w io.Writer, command string) int {
 		fmt.Fprintln(w, "\nPolicy, cap, integration, and upstream TLS options are the same as 'withhold on'.\nPass the intended startup options when checking a nondefault configuration.")
 	}
 	if allowedFlag(command, "config") {
-		fmt.Fprintln(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nPrecedence: flags > environment > file > defaults; extra hosts/patterns merge.\n'withhold config' prints effective settings as JSON. Reference:\nhttps://github.com/cquark7/withhold/blob/main/docs/configuration.md")
+		fmt.Fprintln(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nPrecedence: flags > environment > file > defaults; extra hosts/patterns merge.\nView settings with 'withhold config'. Reference:\nhttps://github.com/cquark7/withhold/blob/main/docs/configuration.md")
 	}
 	fmt.Fprintln(w, "\nExit codes: 0 success; 1 operation/check failed; 2 invalid usage/configuration.\nDoctor --preflight returns 2 for failed checks. Launch preserves application exit codes.")
 	return 0
@@ -153,14 +153,14 @@ func allowedFlag(command, name string) bool {
 		return false
 	}
 	switch name {
-	case "example":
+	case "example", "init":
 		return command == "config"
 	case "dir":
 		return true
 	case "config":
 		return command != "init-ca" && command != "install"
 	case "json":
-		return command == "status" || command == "doctor"
+		return command == "status" || command == "doctor" || command == "config"
 	case "preflight":
 		return command == "doctor"
 	case "trust":

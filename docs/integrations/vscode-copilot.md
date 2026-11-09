@@ -98,6 +98,48 @@ Managed keys are `http.proxy`, `http.proxySupport`, `http.proxyStrictSSL`,
 entries. Bypass lists are loopback-only; TLS verification stays enabled.
 `off` restores only managed keys, preserving unrelated/mid-session edits.
 
+### Custom traffic endpoints
+
+The installed config has commented examples under `[application.traffic]`.
+Use `withhold config` to see the effective built-in hosts and path
+patterns. These rules belong to this adapter; future adapters may define their
+own settings. For example, to recognize a new reviewed Copilot host and chat or
+inline paths without replacing the current defaults:
+
+```toml
+schema = 1
+integration = "vscode-copilot"
+
+[application.traffic]
+extra_hosts = ["new-copilot.example"]
+extra_chat_paths = ["/v2/chat"]
+extra_inline_paths = ["/v2/inline"]
+```
+
+`extra_hosts`, `extra_chat_paths`, and `extra_inline_paths` add to the built-in
+lists. `hosts`, `host_suffixes`, `chat_paths`, and `inline_paths` instead
+**replace** their respective built-in lists, even when empty; omitted lists
+follow future built-in updates. Hostnames are bare and suffixes start with a
+dot. Path entries are Go RE2 regular expressions matched against the **whole**
+path, without query strings; escape regex metacharacters as needed. An inline
+match takes precedence over a chat match. A matching chat path on a `proxy.*`
+host still uses inline policy. Unknown paths on these guarded hosts fail closed.
+
+`application.traffic.extra_hosts` uses those same strict path rules. In contrast,
+the shared `proxy.extra_hosts` and `proxy.extra_host_regex` allow otherwise
+unknown paths under chat policy. The fixed `api.github.com` token exchange
+remains uninspected; it cannot be added as a traffic host. The fixed embeddings
+host retains its documented exceptions while guarded. These settings do not
+change TLS, body-size, or intake limits.
+
+**Review endpoint changes carefully:** removing a guarded host or replacing a
+path list can cause traffic to be blocked or, if a host becomes unrelated and
+unscoped, passed through uninspected. Misclassifying an inline endpoint as chat
+can permit placeholders in code. Adding a host or path does not establish that
+an endpoint uses a supported request or error protocol, or that another editor
+routes through withhold. Verify actual inspection with status/audit and use
+synthetic inputs; stop and restart the session after editing the file.
+
 ## Traffic contract
 
 Guarded hosts:
@@ -117,9 +159,10 @@ not provably bodyless. Unrelated traffic passes through.
 Scoped `/v1/engines/{model}/completions` uses inline policy (`model` is one
 nonempty segment). Paths ending in `/chat/completions` or `/responses`, or
 containing `/v1/messages`, use chat policy except on `proxy.*` hosts, which use
-inline policy. Unknown built-in paths are rejected during inspection. Explicit
-extra hosts/patterns accept unknown paths under chat policy. Queries do not
-affect routing.
+inline policy. Unknown paths on adapter hosts are rejected during inspection.
+Shared `proxy.extra_hosts` and `proxy.extra_host_regex` accept unknown paths
+under chat policy. Queries do not affect routing. The defaults above can be
+customized as described in [Custom traffic endpoints](#custom-traffic-endpoints).
 
 | Surface | Default | Inspection failure |
 | --- | --- | --- |

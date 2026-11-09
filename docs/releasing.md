@@ -1,6 +1,6 @@
 # Releasing
 
-Build reproducible native archives, verify their contents, and publish them
+Build reproducible native binaries and archives, verify their contents, and publish them
 with signed provenance. Record the checks for each target and integration.
 
 ## Review before publication
@@ -20,17 +20,18 @@ with signed provenance. Record the checks for each target and integration.
 - Record commit, date, toolchain, OS/CPU, commands, and skips. Keep local evidence
   distinct from hosted CI and live-provider validation.
 
-## Local archives
+## Local builds
 
-Use Go 1.26.10 and fresh output directories. For a matching macOS ARM64 host:
+Use the same Go toolchain as CI (currently Go 1.26.10) and fresh output directories
+when checking reproducibility. For a matching macOS ARM64 host:
 
 ```sh
 go mod verify
-python3 tools/package_native.py --version v0.1.0 --targets darwin-arm64 --output dist/packages
-python3 tools/verify_native.py --artifacts dist/packages --version v0.1.0 --targets darwin-arm64 --extract dist/verified --run
+python3 tools/package_native.py --version v1.2.3 --targets darwin-arm64 --output dist/packages
+python3 tools/verify_native.py --artifacts dist/packages --version v1.2.3 --targets darwin-arm64 --extract dist/verified --run
 ```
 
-Choose your host target for `--run`; cross-built archives can be inspected without
+Choose your host target for `--run`; cross-built files can be inspected without
 execution. Repeat packaging into another empty directory and compare
 `SHA256SUMS`. Builds disable CGO/VCS stamping, trim paths, and normalize archive
 metadata. Reproducibility requires identical source, toolchain, and settings.
@@ -43,14 +44,20 @@ mismatched dependency sources/licenses fail packaging. The archive verifier
 checks exact regular-file contents/modes before safe extraction; it does not
 authenticate the publisher.
 
+Each target also has a versioned standalone executable and matching
+`-NOTICES.txt` file containing the project license and dependency notices.
+`SHA256SUMS` covers all three target files. Verification checks that both the
+standalone executable and notices exactly match the contents of the archive;
+do not distribute the executable without its matching notices.
+
 ## Hosted builds and publication
 
 `.github/workflows/native-artifacts.yml` accepts manual SemVer builds and pushed
 `v`-prefixed SemVer tags. It tests on six matching OS/CPU runners, compares two
-builds per target, verifies extracted binaries, and attests all archives plus
-`SHA256SUMS` plus the release's `install.sh`. The collector alone signs; only
-publication can write releases.
-Actions are pinned and checkout does not retain Git credentials.
+builds per target, verifies standalone files and extracted binaries, and attests
+all binaries, notices, archives, `SHA256SUMS`, and the release's `install.sh`.
+The collector alone signs; only publication can write releases.
+Actions track their current major version tags, and checkout does not retain Git credentials.
 
 Before publishing a tag:
 
@@ -65,8 +72,9 @@ GitHub Release. Individual `native-TARGET` artifacts are unsigned intermediates;
 do not distribute them. Attestation failure must stop distribution.
 
 Tag runs in `cquark7/withhold` independently re-verify repository, workflow, tag,
-and source commit before creating a draft with all six archives, checksum
-manifest, `install.sh`, and `native-release.sigstore.json`, then publishing it. Upload failure
+and source commit before creating a draft with all six standalone binaries,
+their notices, six archives, checksum manifest, `install.sh`, and
+`native-release.sigstore.json`, then publishing it. Upload failure
 leaves a draft; inspect before retrying. Existing releases are not overwritten.
 Prereleases are not marked latest; installers must select RC tags explicitly.
 
@@ -76,11 +84,12 @@ Each release also has a version-specific installer URL. The script resolves the
 latest stable binary unless `--version` is supplied; document pinned installs with
 both a version-specific script URL and `--version`.
 
-After publication, verify the published archive as a consumer using an
+After publication, verify the published binary and archive as a consumer using an
 independently trusted source commit and the [download instructions](usage.md#installation).
-Exercise a pinned-commit installer in isolated state. Retain provenance, build
-URL, hashes, and verification results. Signing establishes origin/integrity, not
-OS trust or provider compatibility.
+Exercise the checksum-only installer without GitHub CLI and a pinned-commit
+installer in isolated state. The former checks integrity, not publisher identity.
+Retain provenance, build URL, hashes, and verification results. Signing
+establishes origin/integrity, not OS trust or provider compatibility.
 
 ## Evidence for support claims
 

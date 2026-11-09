@@ -5,22 +5,57 @@ import io
 import json
 import os
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
+import tools.package_native as packaging
 from tools.check_docs import check_links
 from tools.native_notices import build_notices
-from tools.package_native import archive, validate_version
-from tools.verify_native import extract, host_target, smoke, verify
+from tools.package_native import (
+    ROOT,
+    archive,
+    binary_name,
+    notices_name,
+    standalone_notices,
+    validate_version,
+)
+from tools.verify_native import extract, host_target, smoke, verify, verify_release
 
 VERSION = "0.0.0-test"
 NOTICES = b"Synthetic dependency license and copyright notice\n"
 
 
 class NativeArchiveTests(unittest.TestCase):
+    def test_packager_publishes_binaries_notices_and_archives_for_all_targets(self):
+        def build(command, **kwargs):
+            self.assertEqual(command[:2], ["go", "build"])
+            Path(command[command.index("-o") + 1]).write_bytes(b"synthetic binary")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with (
+                patch.object(
+                    sys,
+                    "argv",
+                    ["package_native", "--output", str(root), "--version", VERSION],
+                ),
+                patch.object(
+                    packaging.subprocess, "check_output", return_value="go1.26.10\n"
+                ),
+                patch.object(packaging.subprocess, "run", side_effect=build),
+                patch.object(packaging, "build_notices", return_value=NOTICES),
+            ):
+                packaging.main()
+            self.assertEqual(len((root / "SHA256SUMS").read_text().splitlines()), 18)
+            for target in packaging.TARGETS:
+                with self.subTest(target=target):
+                    verify_release(root, target, VERSION)
+
     def test_archive_documentation_links_work_in_the_flat_layout(self):
         for target in ("linux-amd64", "windows-arm64"):
             with (
@@ -134,6 +169,69 @@ class NativeArchiveTests(unittest.TestCase):
                 validate_version(value)
         for value in ("dev", "1.0.0", "v1.2.3-rc.1+build.01"):
             self.assertEqual(validate_version(value), value)
+
+    def test_standalone_release_matches_archive_and_checksums_for_every_target(self):
+        for target in (
+            "darwin-amd64",
+            "darwin-arm64",
+            "linux-amd64",
+            "linux-arm64",
+            "windows-amd64",
+            "windows-arm64",
+        ):
+            with (
+                self.subTest(target=target),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                root = Path(temporary)
+                binary = root / "source-binary"
+                binary.write_bytes(b"synthetic executable")
+                artifact = archive(
+                    binary,
+                    root,
+                    target,
+                    VERSION,
+                    go_version="go1.26.10",
+                    notices=NOTICES,
+                )
+                standalone = root / binary_name(target, VERSION)
+                standalone.write_bytes(binary.read_bytes())
+                notices = root / notices_name(target, VERSION)
+                notices.write_bytes(
+                    standalone_notices((ROOT / "LICENSE").read_bytes(), NOTICES)
+                )
+                paths = (artifact, standalone, notices)
+
+                def manifest():
+                    (root / "SHA256SUMS").write_text(
+                        "".join(
+                            f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n"
+                            for p in paths
+                        )
+                    )
+
+                manifest()
+                verify_release(root, target, VERSION)
+                for path in (standalone, notices):
+                    original = path.read_bytes()
+                    path.write_bytes(original + b"modified")
+                    manifest()  # Matching checksums must not hide a different executable or notices.
+                    with self.assertRaises(ValueError):
+                        verify_release(root, target, VERSION)
+                    path.write_bytes(original)
+                    manifest()
+                    checksum = (root / "SHA256SUMS").read_text()
+                    (root / "SHA256SUMS").write_text(
+                        checksum.replace(hashlib.sha256(original).hexdigest(), "0" * 64)
+                    )
+                    with self.assertRaises(ValueError):
+                        verify_release(root, target, VERSION)
+                    manifest()
+                (root / "SHA256SUMS").write_text(
+                    f"{hashlib.sha256(artifact.read_bytes()).hexdigest()}  {artifact.name}\n"
+                )
+                with self.assertRaises(ValueError):
+                    verify_release(root, target, VERSION)
 
     @staticmethod
     def manifest(root, path):
@@ -289,8 +387,6 @@ class NativeArchiveTests(unittest.TestCase):
             version = subprocess.check_output(
                 [str(binary), "version"], text=True
             ).split()[1]
-            from tools.package_native import ROOT
-
             notices = build_notices(
                 binary, cwd=ROOT, env=dict(os.environ, GOWORK="off", GOFLAGS="")
             )

@@ -14,6 +14,15 @@ func TestApplicationConfigIsStrictTypedAndValueFree(t *testing.T) {
 		`{"binary":null}`, `{"Binary":"PRIVATE"}`,
 		`{"binary":"one","binary":"PRIVATE"}`,
 		`{"profile":"PRIVATE"}`, `{"settings_dir":"../PRIVATE"}`,
+		`{"traffic":{"extra_chat_paths":["PRIVATE["]}}`,
+		`{"traffic":{"chat_paths":[""]}}`,
+		`{"traffic":{"inline_paths":[null]}}`,
+		`{"traffic":{"hosts":["https://PRIVATE"]}}`,
+		`{"traffic":{"hosts":["*.PRIVATE"]}}`,
+		`{"traffic":{"hosts":["PRIVATE..example"]}}`,
+		`{"traffic":{"extra_hosts":["api.github.com"]}}`,
+		`{"traffic":{"host_suffixes":[".github.com"]}}`,
+		`{"traffic":{"unknown":"PRIVATE"}}`,
 	} {
 		if _, err := Configure(json.RawMessage(text), nil); err == nil || strings.Contains(err.Error(), "PRIVATE") {
 			t.Fatalf("invalid application config accepted or value exposed: %v", err)

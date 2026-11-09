@@ -60,8 +60,8 @@ Import-boundary tests protect this separation.
   so harness-specific endpoint/provider choices need no shared config fields.
 - **TOML for humans, JSON for machines.** User files have one strict TOML schema
   and one default filename, `config.toml`. JSON is the internal representation
-  shared by typed adapter settings, frozen session records, and CLI output, not
-  an alternate file format. Do not add fallback formats, renamed-option aliases,
+  shared by typed adapter settings, frozen session records, and machine-readable
+  CLI output, not an alternate file format. Do not add fallback formats, renamed-option aliases,
   or older private-protocol readers without an established support requirement.
 - **Optional launch, explicit routing.** `integration.Launcher` is optional.
   Applications receive port/CA setup context, and record an absolute recovery

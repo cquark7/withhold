@@ -1,6 +1,7 @@
 package copilot
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -51,6 +52,58 @@ func TestCopilotRoutingContract(t *testing.T) {
 		if _, err := NewTraffic(o); err == nil {
 			t.Fatal("invalid scope accepted")
 		}
+	}
+}
+
+func TestConfiguredHostsAndPathsPreserveFailClosedClassification(t *testing.T) {
+	input := json.RawMessage(`{"traffic":{"extra_hosts":["new-provider.example"],"extra_chat_paths":["/v2/chat","/v2/inline"],"extra_inline_paths":["/v2/inline"]}}`)
+	frozen, err := Configure(input, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, err := TrafficFromSettings(policy.ScopeOptions{}, frozen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		host, path, surface, mode string
+		unknown                   bool
+	}{
+		{"api.githubcopilot.com", "/chat/completions", "chat", "redact", false},
+		{"api.githubcopilot.com", "/v2/chat?secret=ignored", "chat", "redact", false},
+		{"new-provider.example", "/v2/chat", "chat", "redact", false},
+		{"new-provider.example", "/v2/inline", "inline", "block", false},
+		{"new-provider.example", "/v2/inline/other", "unknown-path", "redact", true},
+		{"proxy.enterprise.githubcopilot.com", "/v2/chat", "inline", "block", false},
+	} {
+		r := scope.Classify(test.host, test.path)
+		if !r.Scoped || r.Surface != test.surface || r.Mode != test.mode || r.Unknown != test.unknown {
+			t.Errorf("unexpected route %s%s: %+v", test.host, test.path, r)
+		}
+	}
+
+	// Explicit replacement removes the old rule; unknown vendor paths remain blocked.
+	replacement := json.RawMessage(`{"traffic":{"chat_paths":["/v3/chat"],"inline_paths":[]}}`)
+	scope, err = TrafficFromSettings(policy.ScopeOptions{}, replacement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !scope.Classify("api.githubcopilot.com", "/chat/completions").Unknown || scope.Classify("api.githubcopilot.com", "/v3/chat").Unknown {
+		t.Fatal("explicit path replacement was not applied")
+	}
+	if !scope.Classify("api.githubcopilot.com", "/v1/engines/model/completions").Unknown {
+		t.Fatal("empty inline replacement did not fail closed")
+	}
+
+	scope, err = TrafficFromSettings(policy.ScopeOptions{}, json.RawMessage(`{"traffic":{"hosts":["fresh.example"],"host_suffixes":[]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !scope.Classify("fresh.example", "/chat/completions").Scoped || scope.Classify("api.githubcopilot.com", "/chat/completions").Scoped || scope.Classify("proxy.business.githubcopilot.com", "/responses").Scoped {
+		t.Fatal("host and suffix replacements were not applied")
+	}
+	if !scope.Classify(TokenHost, "/copilot_internal/v2/token").Passthrough {
+		t.Fatal("host replacement changed the fixed token exception")
 	}
 }
 

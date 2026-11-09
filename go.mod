@@ -5,13 +5,13 @@ go 1.26.0
 toolchain go1.26.10
 
 require (
-	github.com/andybalholm/brotli v1.2.7
+	github.com/andybalholm/brotli v1.2.8
 	github.com/betterleaks/betterleaks v1.10.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hoophq/alcatraz v0.23.0
-	github.com/klauspost/compress v1.20.2
-	github.com/pelletier/go-toml/v2 v2.3.1
-	github.com/rs/zerolog v1.33.0
+	github.com/klauspost/compress v1.20.3
+	github.com/pelletier/go-toml/v2 v2.4.3
+	github.com/rs/zerolog v1.35.1
 	golang.org/x/net v0.62.0
 	golang.org/x/text v0.43.0
 )

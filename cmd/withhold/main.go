@@ -127,6 +127,9 @@ func run(args []string) int {
 	if homeErr != nil && !flagSet(flags, "dir") && os.Getenv("WITHHOLD_DIR") == "" {
 		return commandUsageError(verb, "cannot resolve home directory; set WITHHOLD_DIR or use --dir")
 	}
+	if verb == "config" && o.init {
+		return configInit(os.Stdout, o, flags)
+	}
 	if verb == "init-ca" {
 		if err = certstore.Init(o.dir); err != nil {
 			fmt.Fprintln(os.Stderr, "withhold:", err)
@@ -182,6 +185,11 @@ func run(args []string) int {
 		} else {
 			c.Application = application
 		}
+		if strings.TrimSpace(c.Proxy.SuspicionPattern) == "" {
+			if pattern, e := integrations.SuspicionDefault(c.Integration); e == nil {
+				c.Proxy.SuspicionPattern = pattern
+			}
+		}
 		scope, err = integrations.Traffic(c.Integration, c.Scope(), c.Application)
 		if err != nil {
 			configError = err.Error()
@@ -218,6 +226,36 @@ func run(args []string) int {
 		}
 		if err != nil {
 			return commandUsageError(verb, err.Error())
+		}
+		if !o.json {
+			data, err := config.TOML(c)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "withhold: cannot render effective TOML configuration")
+				return 1
+			}
+			path := o.configPath
+			if path == "" {
+				path = filepath.Join(o.dir, "config.toml")
+			}
+			if absolute, err := filepath.Abs(path); err == nil {
+				path = absolute
+			}
+			displayPath := strings.NewReplacer("\r", `\r`, "\n", `\n`).Replace(path)
+			if _, err := fmt.Fprintf(os.Stdout, "# Configuration file: %s\n", displayPath); err != nil {
+				return 1
+			}
+			if _, err := os.Lstat(path); os.IsNotExist(err) {
+				if _, err := fmt.Fprintln(os.Stdout, "# No file found; use 'withhold config --init' with the same selection to create one."); err != nil {
+					return 1
+				}
+			}
+			if _, err := fmt.Fprintln(os.Stdout, "# Effective settings for a new session. Saving this snapshot pins defaults and may expose private paths."); err != nil {
+				return 1
+			}
+			if _, err := os.Stdout.Write(data); err != nil {
+				return 1
+			}
+			return 0
 		}
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
@@ -259,7 +297,11 @@ func run(args []string) int {
 		if appErr != nil {
 			return commandUsageError(verb, appErr.Error())
 		}
-		return session.Run(session.Options{Verb: verb, Dir: o.dir, Port: o.port, PortSet: portSet, JSON: o.json, Preflight: o.preflight, KeepFiles: o.keep, Debug: o.debug, TrustMode: o.trust, BinDir: o.binDir, ApplicationArgs: applicationArgs, StartupTimeout: startupTimeout, ConfigError: configError, Integration: c.Integration, Application: application, LookupApplication: lookup, Configuration: &c, EnvironmentID: configurationID(c)})
+		rc := session.Run(session.Options{Verb: verb, Dir: o.dir, Port: o.port, PortSet: portSet, JSON: o.json, Preflight: o.preflight, KeepFiles: o.keep, Debug: o.debug, TrustMode: o.trust, BinDir: o.binDir, ApplicationArgs: applicationArgs, StartupTimeout: startupTimeout, ConfigError: configError, Integration: c.Integration, Application: application, LookupApplication: lookup, Configuration: &c, EnvironmentID: configurationID(c)})
+		if verb == "install" && rc == 0 {
+			installConfig(os.Stdout, o)
+		}
+		return rc
 	}
 	ca, err := certstore.Load(o.dir)
 	if err != nil {

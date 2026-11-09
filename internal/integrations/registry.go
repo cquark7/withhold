@@ -26,6 +26,7 @@ type Description struct {
 type definition struct {
 	Description
 	example     string
+	suspicion   string
 	configure   func(json.RawMessage, func(string) string) (json.RawMessage, error)
 	traffic     func(policy.ScopeOptions, json.RawMessage) (policy.Profile, error)
 	application func(integration.ApplicationOptions) (integration.Application, error)
@@ -36,8 +37,11 @@ type definition struct {
 var builtins = []definition{{
 	Description: Description{ID: Default, Name: "VS Code + GitHub Copilot", Documentation: "docs/integrations/vscode-copilot.md"},
 	example:     copilot.Example,
+	suspicion:   copilot.DefaultSuspicion,
 	configure:   copilot.Configure,
-	traffic:     func(o policy.ScopeOptions, _ json.RawMessage) (policy.Profile, error) { return copilot.NewTraffic(o) },
+	traffic: func(o policy.ScopeOptions, settings json.RawMessage) (policy.Profile, error) {
+		return copilot.TrafficFromSettings(o, settings)
+	},
 	application: func(o integration.ApplicationOptions) (integration.Application, error) {
 		return copilot.Application{Options: o}, nil
 	},
@@ -78,6 +82,16 @@ func Example(id string) (string, error) {
 		return "", err
 	}
 	return d.example, nil
+}
+
+// SuspicionDefault exposes the selected profile's effective default for config
+// display and session recording when no shared override was supplied.
+func SuspicionDefault(id string) (string, error) {
+	d, err := lookup(id)
+	if err != nil {
+		return "", err
+	}
+	return d.suspicion, nil
 }
 
 func Traffic(id string, options policy.ScopeOptions, settings json.RawMessage) (policy.Profile, error) {

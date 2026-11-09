@@ -23,10 +23,10 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - name: Validate release version
@@ -76,13 +76,13 @@ jobs:
       WITHHOLD_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       WITHHOLD_RELEASE_TARGET: ${{ matrix.target }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.26.10"
       - name: Validate version and native runner architecture
@@ -108,9 +108,9 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           if Path('artifacts/SHA256SUMS').read_bytes() != Path('rebuild/SHA256SUMS').read_bytes():
-              raise SystemExit('repeated build did not produce identical archives')
+              raise SystemExit('repeated build did not produce identical release files')
           PY
-      - name: Verify and execute the extracted archive
+      - name: Verify standalone files and execute the extracted archive
         shell: bash
         run: python tools/verify_native.py --artifacts artifacts --version "$WITHHOLD_RELEASE_VERSION" --targets "$WITHHOLD_RELEASE_TARGET" --extract extracted --run
       - name: Build loopback acceptance fixture
@@ -121,7 +121,7 @@ jobs:
           WITHHOLD_TEST_NATIVE: ${{ github.workspace }}/extracted/${{ matrix.target }}/withhold${{ matrix.suffix }}
           WITHHOLD_TEST_NATIVE_FIXTURE: ${{ github.workspace }}/fixture${{ matrix.suffix }}
         run: python -m unittest tests.test_native_proxy tests.test_native_desktop tests.test_package_native tests.test_install tests.test_documentation tests.test_release_polish -q
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.target }}
           path: artifacts/*
@@ -139,13 +139,13 @@ jobs:
     env:
       WITHHOLD_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: native-*
           path: incoming
@@ -156,16 +156,18 @@ jobs:
           import os
           import shutil
           from pathlib import Path
-          from tools.package_native import TARGETS, artifact_name
-          from tools.verify_native import verify
+          from tools.package_native import TARGETS, artifact_name, binary_name, notices_name
+          from tools.verify_native import verify_release
           output = Path('artifacts')
           output.mkdir()
           sums = []
           for target in sorted(TARGETS):
               source = Path('incoming') / ('native-' + target)
-              verify(source, target, os.environ['WITHHOLD_RELEASE_VERSION'])
-              name = artifact_name(target, os.environ['WITHHOLD_RELEASE_VERSION'])
-              shutil.copyfile(source / name, output / name)
+              version = os.environ['WITHHOLD_RELEASE_VERSION']
+              verify_release(source, target, version)
+              for name in (artifact_name, binary_name, notices_name):
+                  filename = name(target, version)
+                  shutil.copyfile(source / filename, output / filename)
               sums.append((source / 'SHA256SUMS').read_text())
           (output / 'SHA256SUMS').write_text(''.join(sums), encoding='ascii')
           PY
@@ -174,9 +176,9 @@ jobs:
         run: |
           sh -n install.sh
           cp install.sh artifacts/install.sh
-      - name: Attest verified archives, checksum manifest, and installer
+      - name: Attest verified release files, checksum manifest, and installer
         id: provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        uses: actions/attest@v4
         with:
           subject-path: artifacts/*
       - name: Preserve and verify provenance for every distributed file
@@ -194,7 +196,7 @@ jobs:
               --bundle "$WITHHOLD_ATTESTATION_BUNDLE"
           done
           cp "$WITHHOLD_ATTESTATION_BUNDLE" artifacts/native-release.sigstore.json
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@v7
         with:
           name: native-release
           path: artifacts/*
@@ -215,14 +217,14 @@ jobs:
       GH_REPO: ${{ github.repository }}
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
       - name: Refuse a tag moved since the build started
         shell: bash
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+      - uses: actions/download-artifact@v8
         with:
           name: native-release
           path: artifacts
@@ -249,15 +251,15 @@ jobs:
 
           ### Install
 
-          macOS and Linux (requires [GitHub CLI](https://cli.github.com/) for provenance verification):
+          macOS and Linux:
 
           \`\`\`sh
-          curl -fsSL https://github.com/$GITHUB_REPOSITORY/releases/latest/download/install.sh | sh
+          curl -fsSL https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_VERSION/install.sh | sh -s -- --version $RELEASE_VERSION
           export PATH="\$HOME/.local/bin:\$PATH"
           withhold demo
           \`\`\`
 
-          Windows: download the ZIP for your CPU, follow the [verification steps](https://github.com/$GITHUB_REPOSITORY/blob/$RELEASE_VERSION/docs/usage.md#windows-and-manual-downloads), then run \`.\\withhold.exe install\`.
+          Windows: download the executable and matching notices for your CPU; follow the [installation and verification steps](https://github.com/$GITHUB_REPOSITORY/blob/$RELEASE_VERSION/docs/usage.md#windows-and-manual-downloads).
 
           ### Included
 
@@ -272,8 +274,10 @@ jobs:
           Source commit: \`$GITHUB_SHA\`
           Build: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
 
-          Each archive includes the executable, setup guide, licenses, and build metadata.
-          Verify provenance before extraction; checksums alone do not establish origin.
+          The installer verifies SHA-256 checksums; checksums alone do not establish origin.
+          Optional signed provenance verification is available with GitHub CLI.
+          Standalone binaries have matching license/notice files. Archives also include
+          the setup guide, behavior contract, licenses, and build metadata.
           See https://github.com/$GITHUB_REPOSITORY/blob/$RELEASE_VERSION/docs/usage.md for installation, privacy limits, and rollback.
           EOF
           flags=()
