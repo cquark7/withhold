@@ -105,7 +105,9 @@ def render_notices(build: dict, modules: dict, goroot: Path) -> bytes:
 
 def build_notices(binary: Path, *, cwd: Path, env: dict) -> bytes:
     def go(*args):
-        return subprocess.check_output(["go", *args], cwd=cwd, env=env, text=True)
+        return subprocess.check_output(
+            ["go", *args], cwd=cwd, env=env, encoding="utf-8"
+        )
 
     build = json.loads(go("version", "-m", "-json", str(binary)))
     modules = {}
