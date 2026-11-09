@@ -1,0 +1,40 @@
+name: Integration proposal
+description: Help establish support for another coding agent.
+labels: [integration, enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A supported integration needs verified routing and reversible setup, alongside
+        a traffic contract. Read [Adding an integration](https://github.com/cquark7/withhold/blob/main/docs/adding-integrations.md).
+        Omit credentials, private endpoints, and raw traffic captures.
+  - type: input
+    id: harness
+    attributes:
+      label: Coding agent and version
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Platform and networking runtime
+      description: OS/CPU, local or remote execution, and the runtime making provider requests, if known.
+    validations:
+      required: true
+  - type: textarea
+    id: routing
+    attributes:
+      label: Available routing and trust controls
+      description: Link to public documentation for proxy/base-URL settings, trusted roots, hooks, and setup/restore behavior. Unknown is a useful answer.
+    validations:
+      required: true
+  - type: textarea
+    id: surfaces
+    attributes:
+      label: Request surfaces and existing evidence
+      description: Chat, inline, tool calls, embeddings, or WebSockets. Distinguish documented behavior, synthetic fixtures, and explicitly authorized live checks.
+  - type: textarea
+    id: contribution
+    attributes:
+      label: How could you help?
+      description: Documentation research, adapter implementation, synthetic fixtures, or testing on your own setup. No commitment is required.

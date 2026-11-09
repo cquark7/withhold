@@ -1,0 +1,261 @@
+name: withhold releases
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer build version (for example 0.1.0-rc.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: withhold-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - name: Validate release version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          python - <<'PY'
+          import os
+          from tools.package_native import validate_version
+          tagged = os.environ['EVENT_NAME'] == 'push'
+          version = validate_version(os.environ['GITHUB_REF_NAME'] if tagged else os.environ['INPUT_VERSION'])
+          if version == 'dev' or tagged and not version.startswith('v'):
+              raise SystemExit('releases require a v-prefixed SemVer tag; manual builds require SemVer')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={version}\n')
+          PY
+
+  native:
+    needs: prepare
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux-amd64
+            suffix: ""
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+            suffix: ""
+          - os: macos-15-intel
+            target: darwin-amd64
+            suffix: ""
+          - os: macos-15
+            target: darwin-arm64
+            suffix: ""
+          - os: windows-2025
+            target: windows-amd64
+            suffix: .exe
+          - os: windows-11-arm
+            target: windows-arm64
+            suffix: .exe
+    runs-on: ${{ matrix.os }}
+    env:
+      WITHHOLD_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      WITHHOLD_RELEASE_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.26.10"
+      - name: Validate version and native runner architecture
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from tools.package_native import validate_version
+          from tools.verify_native import host_target
+          version = validate_version(os.environ['WITHHOLD_RELEASE_VERSION'])
+          if version == 'dev':
+              raise SystemExit('release artifacts require a SemVer version')
+          if host_target() != os.environ['WITHHOLD_RELEASE_TARGET']:
+              raise SystemExit('runner or Python architecture does not match release target')
+          PY
+      - name: Test native Go behavior
+        run: go mod verify && go test ./... -count=1 && go vet ./...
+      - name: Build twice and compare reproducibility
+        shell: bash
+        run: |
+          python tools/package_native.py --version "$WITHHOLD_RELEASE_VERSION" --targets "$WITHHOLD_RELEASE_TARGET" --output artifacts
+          python tools/package_native.py --version "$WITHHOLD_RELEASE_VERSION" --targets "$WITHHOLD_RELEASE_TARGET" --output rebuild
+          python - <<'PY'
+          from pathlib import Path
+          if Path('artifacts/SHA256SUMS').read_bytes() != Path('rebuild/SHA256SUMS').read_bytes():
+              raise SystemExit('repeated build did not produce identical archives')
+          PY
+      - name: Verify and execute the extracted archive
+        shell: bash
+        run: python tools/verify_native.py --artifacts artifacts --version "$WITHHOLD_RELEASE_VERSION" --targets "$WITHHOLD_RELEASE_TARGET" --extract extracted --run
+      - name: Build loopback acceptance fixture
+        shell: bash
+        run: CGO_ENABLED=0 go build -trimpath -o "fixture${{ matrix.suffix }}" ./tests/nativefixture
+      - name: Test extracted native proxy and desktop lifecycle
+        env:
+          WITHHOLD_TEST_NATIVE: ${{ github.workspace }}/extracted/${{ matrix.target }}/withhold${{ matrix.suffix }}
+          WITHHOLD_TEST_NATIVE_FIXTURE: ${{ github.workspace }}/fixture${{ matrix.suffix }}
+        run: python -m unittest tests.test_native_proxy tests.test_native_desktop tests.test_package_native tests.test_install tests.test_documentation tests.test_release_polish -q
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-${{ matrix.target }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14
+
+  collect:
+    needs: [prepare, native]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      WITHHOLD_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: native-*
+          path: incoming
+      - name: Collect all six verified targets
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import shutil
+          from pathlib import Path
+          from tools.package_native import TARGETS, artifact_name
+          from tools.verify_native import verify
+          output = Path('artifacts')
+          output.mkdir()
+          sums = []
+          for target in sorted(TARGETS):
+              source = Path('incoming') / ('native-' + target)
+              verify(source, target, os.environ['WITHHOLD_RELEASE_VERSION'])
+              name = artifact_name(target, os.environ['WITHHOLD_RELEASE_VERSION'])
+              shutil.copyfile(source / name, output / name)
+              sums.append((source / 'SHA256SUMS').read_text())
+          (output / 'SHA256SUMS').write_text(''.join(sums), encoding='ascii')
+          PY
+          python tools/verify_native.py --artifacts artifacts --version "$WITHHOLD_RELEASE_VERSION" --extract verified
+      - name: Attest verified archives and checksum manifest
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: artifacts/*
+      - name: Preserve and verify provenance for every distributed file
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WITHHOLD_ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          for artifact in artifacts/*; do
+            gh attestation verify "$artifact" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/native-artifacts.yml" \
+              --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners \
+              --bundle "$WITHHOLD_ATTESTATION_BUNDLE"
+          done
+          cp "$WITHHOLD_ATTESTATION_BUNDLE" artifacts/native-release.sigstore.json
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-release
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: github.event_name == 'push' && github.repository == 'cquark7/withhold'
+    needs: [prepare, collect]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+      attestations: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+      - name: Refuse a tag moved since the build started
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: native-release
+          path: artifacts
+      - name: Verify before publication
+        shell: bash
+        run: |
+          for artifact in artifacts/withhold-* artifacts/SHA256SUMS; do
+            gh attestation verify "$artifact" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/native-artifacts.yml" \
+              --source-digest "$GITHUB_SHA" \
+              --source-ref "$GITHUB_REF" \
+              --deny-self-hosted-runners \
+              --bundle artifacts/native-release.sigstore.json
+          done
+      - name: Publish complete release
+        shell: bash
+        run: |
+          cat > release-notes.md <<EOF
+          ## withhold $RELEASE_VERSION
+
+          Local secret and PII redaction for desktop VS Code with GitHub Copilot.
+          Offline inspection, reversible setup, and a bundled Go runtime.
+
+          Source commit: \`$GITHUB_SHA\`
+          Build: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          Downloads: macOS, Linux, and Windows; x64 (amd64) and ARM64.
+          Each archive includes the executable, setup guide, licenses, and build metadata.
+          Verify provenance before extraction; checksums alone do not establish origin.
+          See https://github.com/$GITHUB_REPOSITORY/blob/$RELEASE_VERSION/docs/usage.md for installation, privacy limits, and rollback.
+          EOF
+          flags=()
+          if [[ "${RELEASE_VERSION%%+*}" == *-* ]]; then
+            flags+=(--prerelease --latest=false)
+          fi
+          # Failed uploads leave an unpublished draft, never a partial public release.
+          gh release create "$RELEASE_VERSION" artifacts/* --verify-tag --draft \
+            --title "withhold $RELEASE_VERSION" --notes-file release-notes.md "${flags[@]}"
+          gh release edit "$RELEASE_VERSION" --draft=false

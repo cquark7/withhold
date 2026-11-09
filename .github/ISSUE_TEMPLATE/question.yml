@@ -1,0 +1,17 @@
+name: Usage question
+description: Ask about setup, configuration, or current protection limits.
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [the docs](https://github.com/cquark7/withhold/blob/main/docs/README.md)
+        and existing issues first. Use synthetic examples;
+        keep credentials, logs, private settings, and raw captures out of the issue.
+  - type: textarea
+    id: question
+    attributes:
+      label: What would you like to understand?
+      description: Include the relevant command, environment, and what you have tried.
+    validations:
+      required: true

@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest a focused improvement to an existing workflow.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Use synthetic examples. For another coding agent, choose the integration proposal form.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What workflow is difficult today?
+      description: Explain what you are trying to do and the current obstacle.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What behavior would help?
+      description: Describe a small useful first step and alternatives you considered.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Relevant environment
+      description: withhold version, OS/CPU, editor, and whether extensions run locally or remotely.

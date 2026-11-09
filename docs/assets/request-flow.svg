@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="448" viewBox="0 0 1120 448" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Local inspection before context reaches the provider</title>
+  <desc id="desc">VS Code and Copilot route supported request bodies through withhold. The bundled offline scanner detects secrets and optional PII. withhold redacts detected values or blocks the request before forwarding allowed context to the provider.</desc>
+  <rect x="1" y="1" width="1118" height="446" rx="22" fill="#111D26" stroke="#30434D" stroke-width="2"/>
+  <path d="M1 59H1119" stroke="#30434D"/>
+  <circle cx="29" cy="30" r="5" fill="#60717D"/>
+  <circle cx="47" cy="30" r="5" fill="#60717D"/>
+  <circle cx="65" cy="30" r="5" fill="#60717D"/>
+  <text x="1091" y="35" text-anchor="end" fill="#A9BCC7" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" letter-spacing="1.8">YOUR MACHINE / YOUR CONTEXT</text>
+  <text x="38" y="109" fill="#8CE5B5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">$ <tspan fill="#EDF4F5">withhold on</tspan></text>
+  <text x="38" y="148" fill="#A9BCC7" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16">Inspect outgoing context before it leaves your machine.</text>
+  <rect x="38" y="183" width="319" height="109" rx="12" fill="#192A34" stroke="#30434D"/>
+  <text x="58" y="213" fill="#A9BCC7" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" letter-spacing="1.4">01 / CODING AGENT</text>
+  <text x="58" y="245" fill="#EDF4F5" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="19" font-weight="600">VS Code + Copilot</text>
+  <text x="58" y="272" fill="#A9BCC7" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14">Supported bodies routed to the proxy.</text>
+  <path d="M369 238H393M387 232L393 238L387 244" stroke="#8CE5B5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="406" y="183" width="269" height="109" rx="12" fill="#203A34" stroke="#557E69"/>
+  <text x="426" y="213" fill="#8CE5B5" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" letter-spacing="1.4">02 / WITHHOLD</text>
+  <text x="426" y="245" fill="#EDF4F5" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="19" font-weight="600">Scan. Redact or block.</text>
+  <text x="426" y="272" fill="#BED5CA" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14">Offline scanner + HTTPS proxy.</text>
+  <path d="M687 238H711M705 232L711 238L705 244" stroke="#8CE5B5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="724" y="183" width="358" height="109" rx="12" fill="#192A34" stroke="#30434D"/>
+  <text x="744" y="213" fill="#A9BCC7" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" letter-spacing="1.4">03 / PROVIDER</text>
+  <text x="744" y="245" fill="#EDF4F5" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="19" font-weight="600">Allowed context continues.</text>
+  <text x="744" y="272" fill="#A9BCC7" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14">Detected values become placeholders.</text>
+  <path d="M38 324H1082" stroke="#30434D"/>
+  <rect x="38" y="347" width="65" height="24" rx="5" fill="#203A34"/>
+  <text x="70.5" y="364" text-anchor="middle" fill="#8CE5B5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="600">REDACT</text>
+  <text x="116" y="364" fill="#EDF4F5" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="15">Keep useful context</text>
+  <rect x="328" y="347" width="59" height="24" rx="5" fill="#203A34"/>
+  <text x="357.5" y="364" text-anchor="middle" fill="#8CE5B5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="600">BLOCK</text>
+  <text x="400" y="364" fill="#EDF4F5" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="15">Stop requests with findings</text>
+  <text x="38" y="411" fill="#A9BCC7" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14">All inspection runs on your machine.</text>
+  <text x="1082" y="411" text-anchor="end" fill="#A9BCC7" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14">Secrets + optional PII</text>
+</svg>

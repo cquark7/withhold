@@ -1,0 +1,45 @@
+# Python bytecode (never commit)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Packaging / caches
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+
+# Local tooling state (ephemeral, machine-specific)
+.direnv/
+.venv/
+*.log
+.envrc
+opencode.json
+
+# OS noise
+.DS_Store
+
+# Local editor and agent state
+bm_docs/
+.vscode
+.opencode
+
+# Local implementation plans; publish user and contributor documentation only.
+/plans/
+
+# Generated distributions and local proxy identity/settings snapshots.
+/dist/
+/withhold
+/withhold.exe
+ca.key
+ca.crt
+placeholder-key
+session.json
+trust-state.json
+*.withhold-backup
+*.withhold-session
+*.withhold-lock
+audit.jsonl
+audit.jsonl.1
+/captures/

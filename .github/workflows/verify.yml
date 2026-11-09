@@ -1,0 +1,85 @@
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.26.10"
+
+      - name: Install verification tools
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run project verification gate
+        run: python tools/verify.py --race
+
+      - name: Check workflows and installer syntax
+        run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          sh -n install.sh
+          bash -n tools/proof/block_direct.sh
+
+  native-runtime:
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            executable: withhold-scanner
+            native: withhold
+            fixture: withhold-native-fixture
+          - os: windows-latest
+            executable: withhold-scanner.exe
+            native: withhold.exe
+            fixture: withhold-native-fixture.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.26.10"
+      - name: Build native runtime and acceptance fixture
+        shell: bash
+        run: |
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/${{ matrix.executable }}" ./cmd/withhold-scanner
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/${{ matrix.native }}" ./cmd/withhold
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/${{ matrix.fixture }}" ./tests/nativefixture
+      - name: Check native Go behavior
+        run: go test ./... && go vet ./...
+      - name: Check detector behavior and pipe lifecycle
+        env:
+          WITHHOLD_TEST_SCANNER_WORKER: ${{ runner.temp }}/${{ matrix.executable }}
+          WITHHOLD_TEST_NATIVE: ${{ runner.temp }}/${{ matrix.native }}
+          WITHHOLD_TEST_NATIVE_FIXTURE: ${{ runner.temp }}/${{ matrix.fixture }}
+        run: python -m unittest tests.test_scanner_contract tests.test_native_proxy tests.test_native_desktop tests.test_documentation tests.test_release_polish -q

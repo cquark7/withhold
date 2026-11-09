@@ -1,0 +1,5 @@
+# Python development tools and acceptance tests.
+target-version = "py311"
+
+[lint]
+select = ["F", "I", "UP"]

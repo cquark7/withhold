@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">withhold</title>
+  <desc id="desc">Mint brackets surrounding three masked characters on a dark square.</desc>
+  <rect x="2" y="2" width="140" height="140" rx="34" fill="#111D26" stroke="#30434D" stroke-width="2"/>
+  <path d="M44 42H31V102H44M100 42H113V102H100" stroke="#8CE5B5" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="48" y="61" width="10" height="22" rx="5" fill="#8CE5B5"/>
+  <rect x="67" y="61" width="10" height="22" rx="5" fill="#8CE5B5"/>
+  <rect x="86" y="61" width="10" height="22" rx="5" fill="#8CE5B5"/>
+</svg>

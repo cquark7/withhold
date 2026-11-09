@@ -1,0 +1,43 @@
+name: Bug report
+description: Report a reproducible setup, scanning, or integration problem.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use synthetic data only. Never include credentials, CA keys, session records,
+        settings backups, finding logs, or raw request captures. Report vulnerabilities
+        privately through [Security](https://github.com/cquark7/withhold/security/advisories/new).
+        See [SUPPORT.md](https://github.com/cquark7/withhold/blob/main/SUPPORT.md) for troubleshooting and recovery.
+  - type: input
+    id: version
+    attributes:
+      label: withhold version or source commit
+      description: Run `withhold version`; source builds may report dev.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS/CPU, VS Code and Copilot versions, integration, and any remote extension host or corporate proxy.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the command and a minimal synthetic input when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and observed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Minimal diagnostic excerpt
+      description: Review `withhold status` and `withhold doctor` output. Anonymize paths, hostnames, and metadata before pasting.

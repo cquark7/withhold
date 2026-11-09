@@ -1,0 +1,32 @@
+name: Dependency security
+
+on:
+  push:
+    branches: [main]
+    paths: [go.mod, go.sum, .github/workflows/security.yml]
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vulnerabilities:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.26.10"
+      - name: Verify modules and check reachable vulnerabilities
+        run: |
+          go mod verify
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
