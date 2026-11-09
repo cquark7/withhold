@@ -9,10 +9,11 @@
 Local secret redaction for coding agents. Offline scanning. One Go binary.
 
 [![Verify](https://github.com/cquark7/withhold/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/cquark7/withhold/actions/workflows/verify.yml)
+[![Release](https://img.shields.io/github/v/release/cquark7/withhold?color=78dba9)](https://github.com/cquark7/withhold/releases/latest)
 [![MIT license](https://img.shields.io/badge/license-MIT-78dba9?style=flat)](LICENSE)
 [![Go](https://img.shields.io/badge/built_with-Go-5fcde4?style=flat)](CONTRIBUTING.md#development-setup)
 
-[Try it](#try-it-locally) · [Connect Copilot](#connect-vs-code--copilot) · [Protection](#what-it-inspects) · [Docs](docs/README.md) · [Contribute](#contribute)
+[Install](#install) · [Try it](#try-it-locally) · [Connect Copilot](#connect-vs-code--copilot) · [Docs](docs/README.md) · [Contribute](#contribute)
 
 </div>
 
@@ -42,35 +43,42 @@ requirements. Want another coding agent? [Help build an integration](#contribute
 - **Explicit integrations.** Each supported harness has a documented traffic
   contract, recovery behavior, and validation matrix.
 
-## Try it locally
+## Install
 
-From a trusted checkout, using **Go 1.26.10**:
+### macOS and Linux
+
+Install [GitHub CLI](https://cli.github.com/) for release provenance verification,
+then run:
 
 ```sh
-git clone https://github.com/cquark7/withhold.git
-cd withhold
-go build -trimpath -o withhold ./cmd/withhold
-./withhold demo
+curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+The installer selects your OS and CPU, verifies the binary's provenance and
+checksum, and installs to `~/.local/bin`. No sudo, Go, or Python is needed.
+See the [installation guide](docs/usage.md#installation) to review the script,
+pin a version, or choose another directory.
+
+### Windows
+
+Download the x64 or ARM64 archive from
+[Releases](https://github.com/cquark7/withhold/releases/latest), follow the
+[verification steps](docs/usage.md#windows-and-manual-downloads), then run
+`.\withhold.exe install`. Add the printed directory to your user PATH.
+
+Prefer to compile it yourself? See [building from source](docs/usage.md#build-from-source).
+
+## Try it locally
+
+```sh
+withhold demo
 ```
 
 The demo sends a synthetic value through the bundled scanner and HTTPS proxy to
 a temporary local receiver. It verifies the redacted bytes and checks that a
 blocked request never reaches that receiver. No Copilot account, editor setup,
 or system trust changes are needed. It does not verify real editor routing.
-
-On Windows, build with `-o withhold.exe` and run `.\withhold.exe demo`.
-
-Install the executable when you are ready:
-
-```sh
-./withhold install
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Windows: `.\withhold.exe install`, then add the printed directory to your user
-PATH. For verified binary downloads, see the
-[installation guide](docs/usage.md#installation); build from source if no release
-is available.
 
 ## Connect VS Code + Copilot
 

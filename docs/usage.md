@@ -8,34 +8,31 @@ Use the [integration catalog](integrations/README.md) for support and setup. Rea
 
 ## Installation
 
-### Build from source
-
-From a trusted checkout with Go 1.26.10:
-
-```sh
-go build -trimpath -o withhold ./cmd/withhold
-./withhold install
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Windows PowerShell: `go build -trimpath -o withhold.exe ./cmd/withhold`, then
-`.\withhold.exe install`. Add the printed directory to your user PATH.
-Installation copies the executable; it does not change trust or editor settings.
-
 ### macOS and Linux downloads
 
 Install [GitHub CLI](https://cli.github.com/), `tar`, and a SHA-256 utility
-(`shasum` or `sha256sum`). Choose a published tag from
-[Releases](https://github.com/cquark7/withhold/releases); if none is available,
-build from source. Download and review the installer before running it:
+(`shasum` or `sha256sum`). Go and Python are not required.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/cquark7/withhold/main/install.sh -o install.sh
+curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+withhold version
+withhold demo
+```
+
+To download and review the script before running it:
+
+```sh
+curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.sh -o install.sh
 less install.sh
 sh install.sh --help
-# Replace the example with a published tag.
-sh install.sh --version v0.1.0-rc.1
-export PATH="$HOME/.local/bin:$PATH"
+sh install.sh
+```
+
+To install a specific release:
+
+```sh
+curl -fsSL https://github.com/cquark7/withhold/releases/download/v0.1.0/install.sh | sh -s -- --version v0.1.0
 ```
 
 Without `--version`, the installer selects the latest **non-prerelease**; RCs
@@ -57,7 +54,7 @@ Use GitHub CLI to download and verify an archive before extracting it. This
 PowerShell example requires a published tag and independently obtained commit:
 
 ```powershell
-$version = "v0.1.0-rc.1" # Replace with a published tag.
+$version = "v0.1.0" # Choose a tag from Releases.
 $commit = "FULL_COMMIT_SHA"
 $target = "windows-amd64" # Use windows-arm64 on ARM64.
 $archive = "withhold-$version-$target.zip"
@@ -75,6 +72,22 @@ PATH. Unix archives use `.tar.gz` and `darwin`/`linux` with `amd64`/`arm64`;
 the same attestation checks apply. Verify `SHA256SUMS` separately if using it.
 Keep the license/notices and verification bundle. Checksums alone do not prove
 origin; attestations do not establish security, OS notarization, or compatibility.
+
+### Build from source
+
+From a trusted checkout with Go 1.26.10:
+
+```sh
+git clone https://github.com/cquark7/withhold.git
+cd withhold
+go build -trimpath -o withhold ./cmd/withhold
+./withhold install
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Windows PowerShell: `go build -trimpath -o withhold.exe ./cmd/withhold`, then
+`.\withhold.exe install`. Add the printed directory to your user PATH.
+Installation copies the executable; it does not change trust or editor settings.
 
 ## Start and stop
 

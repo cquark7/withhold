@@ -170,7 +170,11 @@ jobs:
           (output / 'SHA256SUMS').write_text(''.join(sums), encoding='ascii')
           PY
           python tools/verify_native.py --artifacts artifacts --version "$WITHHOLD_RELEASE_VERSION" --extract verified
-      - name: Attest verified archives and checksum manifest
+      - name: Include the release installer
+        run: |
+          sh -n install.sh
+          cp install.sh artifacts/install.sh
+      - name: Attest verified archives, checksum manifest, and installer
         id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
@@ -225,7 +229,7 @@ jobs:
       - name: Verify before publication
         shell: bash
         run: |
-          for artifact in artifacts/withhold-* artifacts/SHA256SUMS; do
+          for artifact in artifacts/withhold-* artifacts/SHA256SUMS artifacts/install.sh; do
             gh attestation verify "$artifact" \
               --repo "$GITHUB_REPOSITORY" \
               --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/native-artifacts.yml" \
@@ -243,10 +247,31 @@ jobs:
           Local secret and PII redaction for desktop VS Code with GitHub Copilot.
           Offline inspection, reversible setup, and a bundled Go runtime.
 
+          ### Install
+
+          macOS and Linux (requires [GitHub CLI](https://cli.github.com/) for provenance verification):
+
+          \`\`\`sh
+          curl -fsSL https://github.com/$GITHUB_REPOSITORY/releases/latest/download/install.sh | sh
+          export PATH="\$HOME/.local/bin:\$PATH"
+          withhold demo
+          \`\`\`
+
+          Windows: download the ZIP for your CPU, follow the [verification steps](https://github.com/$GITHUB_REPOSITORY/blob/$RELEASE_VERSION/docs/usage.md#windows-and-manual-downloads), then run \`.\\withhold.exe install\`.
+
+          ### Included
+
+          - Local secret detection and optional PII redaction.
+          - Chat redaction and inline-completion blocking.
+          - Reversible VS Code + Copilot setup and session management.
+          - A local demo that checks redaction and blocking without an account or editor setup.
+          - Native binaries for macOS, Linux, and Windows on x64 and ARM64.
+
+          ### Verification
+
           Source commit: \`$GITHUB_SHA\`
           Build: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
 
-          Downloads: macOS, Linux, and Windows; x64 (amd64) and ARM64.
           Each archive includes the executable, setup guide, licenses, and build metadata.
           Verify provenance before extraction; checksums alone do not establish origin.
           See https://github.com/$GITHUB_REPOSITORY/blob/$RELEASE_VERSION/docs/usage.md for installation, privacy limits, and rollback.
@@ -254,6 +279,8 @@ jobs:
           flags=()
           if [[ "${RELEASE_VERSION%%+*}" == *-* ]]; then
             flags+=(--prerelease --latest=false)
+          else
+            flags+=(--latest)
           fi
           # Failed uploads leave an unpublished draft, never a partial public release.
           gh release create "$RELEASE_VERSION" artifacts/* --verify-tag --draft \

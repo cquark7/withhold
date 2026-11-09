@@ -26,8 +26,8 @@ Use Go 1.26.10 and fresh output directories. For a matching macOS ARM64 host:
 
 ```sh
 go mod verify
-python3 tools/package_native.py --version 0.1.0-rc.1 --targets darwin-arm64 --output dist/packages
-python3 tools/verify_native.py --artifacts dist/packages --version 0.1.0-rc.1 --targets darwin-arm64 --extract dist/verified --run
+python3 tools/package_native.py --version v0.1.0 --targets darwin-arm64 --output dist/packages
+python3 tools/verify_native.py --artifacts dist/packages --version v0.1.0 --targets darwin-arm64 --extract dist/verified --run
 ```
 
 Choose your host target for `--run`; cross-built archives can be inspected without
@@ -48,7 +48,8 @@ authenticate the publisher.
 `.github/workflows/native-artifacts.yml` accepts manual SemVer builds and pushed
 `v`-prefixed SemVer tags. It tests on six matching OS/CPU runners, compares two
 builds per target, verifies extracted binaries, and attests all archives plus
-`SHA256SUMS`. The collector alone signs; only publication can write releases.
+`SHA256SUMS` plus the release's `install.sh`. The collector alone signs; only
+publication can write releases.
 Actions are pinned and checkout does not retain Git credentials.
 
 Before publishing a tag:
@@ -65,9 +66,15 @@ do not distribute them. Attestation failure must stop distribution.
 
 Tag runs in `cquark7/withhold` independently re-verify repository, workflow, tag,
 and source commit before creating a draft with all six archives, checksum
-manifest, and `native-release.sigstore.json`, then publishing it. Upload failure
+manifest, `install.sh`, and `native-release.sigstore.json`, then publishing it. Upload failure
 leaves a draft; inspect before retrying. Existing releases are not overwritten.
 Prereleases are not marked latest; installers must select RC tags explicitly.
+
+The stable bootstrap URL is
+`https://github.com/cquark7/withhold/releases/latest/download/install.sh`.
+Each release also has a version-specific installer URL. The script resolves the
+latest stable binary unless `--version` is supplied; document pinned installs with
+both a version-specific script URL and `--version`.
 
 After publication, verify the published archive as a consumer using an
 independently trusted source commit and the [download instructions](usage.md#installation).
