@@ -23,7 +23,9 @@ request bodies on your machine and replaces detected values or blocks the reques
 before forwarding it to the provider.
 
 <p align="center">
-  <img src="docs/assets/request-flow.svg" alt="VS Code and Copilot route supported request bodies through withhold for local secret and PII inspection. withhold forwards allowed context with detected values redacted, or blocks the request." width="960">
+  <img src="docs/assets/request-flow.gif" alt="A coding agent sends supported request bodies to withhold for local inspection. Detected values are redacted before forwarding in redact mode, or the request is stopped locally in block mode." width="960">
+  <br>
+  <a href="docs/assets/request-flow.svg">View the static diagram</a>
 </p>
 
 **Works with desktop VS Code + GitHub Copilot.** See the
