@@ -200,6 +200,82 @@ use synthetic data and remove the file and its `.1` backup after testing.
 Ctrl-C. `init-ca` creates CA files without trust setup. `completion SHELL`
 prints bash/zsh/fish/PowerShell completion without editing shell configuration.
 
+## Shell completion
+
+Run the commands for your shell after putting `withhold` on your `PATH`.
+The `completion` command prints a script. The examples below load that script
+and show how to keep it for your user account.
+
+### Bash
+
+For the current session, run:
+
+```bash
+source <(withhold completion bash)
+```
+
+To keep it, run `withhold completion bash > ~/.withhold-completion.bash` and
+add `source ~/.withhold-completion.bash` to `~/.bashrc` (or the startup file
+your Bash session reads). To remove it, delete that line and the generated file.
+Run `complete -r withhold` to remove the current session's registration.
+
+### Zsh
+
+Run `autoload -Uz compinit && compinit` first if your Zsh configuration has
+not already initialized completion. Then load the script for the session:
+
+```zsh
+source <(withhold completion zsh)
+```
+
+To keep it, run `withhold completion zsh > ~/.withhold-completion.zsh` and
+add `source ~/.withhold-completion.zsh` to `~/.zshrc` after completion is
+initialized. To remove it, delete that line and the generated file, then start
+a new shell or run `compdef -d withhold` in the current session.
+
+### Fish
+
+For the current session, run:
+
+```fish
+withhold completion fish | source
+```
+
+To keep it, save the script in Fish's user completions directory:
+
+```fish
+mkdir -p $__fish_config_dir/completions
+withhold completion fish > $__fish_config_dir/completions/withhold.fish
+```
+
+To remove it, delete `withhold.fish` from that directory and start a new shell,
+or run `complete -c withhold -e` to clear the current registration.
+
+### PowerShell
+
+Save the script in a temporary file and dot-source it to register the completer
+for the current session:
+
+```powershell
+$completion = Join-Path ([System.IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString() + '.ps1')
+withhold completion powershell | Set-Content -LiteralPath $completion -Encoding utf8
+. $completion
+Remove-Item -LiteralPath $completion
+```
+
+To keep it, save the generated script beside `$PROFILE`:
+
+```powershell
+$profileDir = Split-Path -Parent $PROFILE
+New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
+$completion = Join-Path $profileDir 'withhold-completion.ps1'
+withhold completion powershell | Set-Content -LiteralPath $completion -Encoding utf8
+```
+
+Add `. (Join-Path (Split-Path -Parent $PROFILE) 'withhold-completion.ps1')`
+to `$PROFILE` (create the profile if needed). To remove the completer, delete
+that line and the generated script, then start a new PowerShell session.
+
 ## Upgrade and rollback
 
 For an upgrade that changes state/configuration formats, use the installed
