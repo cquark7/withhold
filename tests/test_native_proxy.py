@@ -221,11 +221,10 @@ class NativeProxyTests(unittest.TestCase):
         log = (state / "log").open("wb")
         command = [NATIVE, "serve", "--port", str(port)]
         if "--debug" in args:
-            # Each trace has isolated state while retaining the fixture CA.
+            # Hard links retain the fixture key's private Windows ACL while
+            # giving each trace its own log directory. The CA is read-only.
             for name in ("ca.crt", "ca.key"):
-                target = state / name
-                target.write_bytes((self.root / "ca" / name).read_bytes())
-                target.chmod(0o600)
+                (state / name).hardlink_to(self.root / "ca" / name)
             command += ["--dir", str(state)]
         if trust_upstream:
             command += ["--upstream-ca", str(self.upstream_root)]

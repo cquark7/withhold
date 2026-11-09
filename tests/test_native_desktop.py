@@ -8,6 +8,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from tests.test_native_proxy import BODY, FIXTURE, NATIVE, stop
 class NativeDesktopTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="withhold-session-")
-        self.addCleanup(self.temp.cleanup)
+        self.addCleanup(self.cleanup_state)
         self.root = Path(self.temp.name)
         empty = self.root / "no-tools"
         empty.mkdir()
@@ -47,6 +48,19 @@ class NativeDesktopTests(unittest.TestCase):
         status = json.loads(self.run_guard("status", "--json").stdout)
         self.settings = Path(status["settings"]["path"])
         self.settings.parent.mkdir(parents=True, exist_ok=True)
+
+    def cleanup_state(self):
+        # Shutdown closes the listener before the detached process finishes
+        # releasing its log handle. Windows cannot unlink an open log file.
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                self.temp.cleanup()
+                return
+            except PermissionError:
+                if os.name != "nt" or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.05)
 
     def run_guard(self, *args, expected=0, env=None, binary=NATIVE):
         # With no recorded session, diagnostics/cleanup still use an isolated port.
