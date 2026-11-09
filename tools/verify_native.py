@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify native archive checksums, contents and permissions, then safely extract."""
+"""Verify native executables and archives, then safely extract and optionally run."""
 
 import argparse
 import hashlib
@@ -16,9 +16,23 @@ import zipfile
 from pathlib import Path
 
 try:
-    from tools.package_native import TARGETS, artifact_name, validate_version
+    from tools.package_native import (
+        TARGETS,
+        artifact_name,
+        binary_name,
+        notices_name,
+        standalone_notices,
+        validate_version,
+    )
 except ModuleNotFoundError:
-    from package_native import TARGETS, artifact_name, validate_version
+    from package_native import (
+        TARGETS,
+        artifact_name,
+        binary_name,
+        notices_name,
+        standalone_notices,
+        validate_version,
+    )
 
 MAX_ENTRY = 128 * 1024 * 1024
 
@@ -41,7 +55,11 @@ def checksums(directory: Path, version: str) -> dict[str, str]:
     path = directory / "SHA256SUMS"
     if not path.is_file() or path.stat().st_size > 65536:
         raise ValueError("missing or oversized SHA256SUMS")
-    allowed = {artifact_name(target, version) for target in TARGETS}
+    allowed = {
+        name(target, version)
+        for target in TARGETS
+        for name in (artifact_name, binary_name, notices_name)
+    }
     result = {}
     for row in path.read_text(encoding="ascii").splitlines():
         match = re.fullmatch(r"([0-9a-f]{64})  (.+)", row)
@@ -135,6 +153,27 @@ def verify(directory: Path, target: str, version: str) -> dict[str, bytes]:
     return files
 
 
+def verify_release(directory: Path, target: str, version: str) -> dict[str, bytes]:
+    files = verify(directory, target, version)
+    sums = checksums(directory, version)
+    binary = "withhold.exe" if target.startswith("windows-") else "withhold"
+    expected = {
+        binary_name(target, version): files[binary],
+        notices_name(target, version): standalone_notices(
+            files["LICENSE"], files["THIRD_PARTY_NOTICES.txt"]
+        ),
+    }
+    for name, contents in expected.items():
+        path = directory / name
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"missing standalone release file: {name}")
+        if path.stat().st_size != len(contents) or path.read_bytes() != contents:
+            raise ValueError(f"standalone release file differs from archive: {name}")
+        if sums.get(name) != hashlib.sha256(contents).hexdigest():
+            raise ValueError(f"standalone release checksum mismatch: {name}")
+    return files
+
+
 def extract(files: dict[str, bytes], destination: Path):
     # Members have already been reduced to fixed basenames. Never use extractall.
     destination.mkdir(parents=True, exist_ok=False)
@@ -220,7 +259,7 @@ def main():
         if args.run and args.targets != [host_target()]:
             raise ValueError("--run requires exactly the matching native target")
         for target in args.targets:
-            files = verify(args.artifacts, target, args.version)
+            files = verify_release(args.artifacts, target, args.version)
             destination = args.extract / target
             extract(files, destination)
             if args.run:

@@ -10,8 +10,11 @@ Use the [integration catalog](integrations/README.md) for support and setup. Rea
 
 ### macOS and Linux downloads
 
-Install [GitHub CLI](https://cli.github.com/), `tar`, and a SHA-256 utility
-(`shasum` or `sha256sum`). Go and Python are not required.
+These instructions apply to releases with standalone binaries. The v0.1.0
+installer still requires GitHub CLI and uses archives instead.
+
+The installer needs `curl` and a SHA-256 utility (`shasum` or `sha256sum`). Go,
+Python, GitHub CLI, and archive extraction tools are not required.
 
 ```sh
 curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
@@ -29,53 +32,98 @@ sh install.sh --help
 sh install.sh
 ```
 
-To install a specific release:
+To install a specific release that includes standalone binaries, choose its tag:
 
 ```sh
-curl -fsSL https://github.com/cquark7/withhold/releases/download/v0.1.0/install.sh | sh -s -- --version v0.1.0
+curl -fsSL https://github.com/cquark7/withhold/releases/download/VERSION/install.sh | sh -s -- --version VERSION
 ```
 
-Without `--version`, the installer selects the latest **non-prerelease**; RCs
-must be selected explicitly. `--bin-dir` chooses an absolute destination.
-`--commit FULL_SHA` also pins binary provenance; obtain that commit independently
-from a trusted announcement. For a pinned bootstrap, fetch the script from that
-reviewed commit instead of `main`.
+Replace `VERSION` in both places with the same tag, such as `v1.2.3`. Without
+`--version`, the installer selects the latest **non-prerelease**; RCs must be
+selected explicitly. `--bin-dir` chooses an absolute destination. Older releases
+without standalone binaries, including v0.1.0, have their own archive-based
+installer and instructions.
 
-The installer verifies archive and checksum-manifest provenance and SHA-256
-before extraction/execution. There is no unsigned fallback. It requires no
-sudo and does not edit PATH, trust, or editor settings. Release API access may
-require `gh auth login`. Downloads/verification contact GitHub and signing
-services, not a project telemetry service. License/docs/verification evidence
-are saved under `~/.local/share/withhold/VERSION/TARGET`.
+The installer checks the executable and license/notice file against the release's
+SHA-256 manifest before running the executable. This detects corrupt downloads,
+but a checksum downloaded alongside a substituted file does **not** authenticate
+who built it. For stronger verification, install [GitHub CLI](https://cli.github.com/)
+and add `--verify-provenance` to check the signed record against the repository,
+release workflow, and tag. Use `--commit FULL_SHA` to also pin an independently
+trusted source commit; this implies `--verify-provenance`. A requested provenance
+check fails closed; it never falls back to checksums. A pinned installation also
+requires a trusted copy of the installer itself, such as one reviewed at that
+commit. After reviewing and saving `install.sh`, for example, run
+`sh install.sh --verify-provenance` or
+`sh install.sh --version VERSION --commit FULL_SHA`. See
+[GitHub's attestation guide](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
+for what the signed record establishes.
+
+Installation requires no sudo and does not edit PATH, trust, or editor settings.
+Downloads contact GitHub; optional provenance verification may also contact
+signing services. Notices and verification evidence are saved under
+`~/.local/share/withhold/VERSION/TARGET`.
 
 ### Windows and manual downloads
 
-Use GitHub CLI to download and verify an archive before extracting it. This
-PowerShell example requires a published tag and independently obtained commit:
+Download the Windows executable and matching notice file from
+[Releases](https://github.com/cquark7/withhold/releases/latest). This PowerShell
+example downloads them and checks their SHA-256 hashes before installation:
 
 ```powershell
-$version = "v0.1.0" # Choose a tag from Releases.
-$commit = "FULL_COMMIT_SHA"
+$version = "vX.Y.Z" # Replace with a published tag that has standalone binaries.
 $target = "windows-amd64" # Use windows-arm64 on ARM64.
-$archive = "withhold-$version-$target.zip"
-gh release download $version --repo cquark7/withhold --pattern $archive --pattern native-release.sigstore.json
-if ($LASTEXITCODE -ne 0) { throw "Download failed" }
-gh attestation verify $archive --repo cquark7/withhold --signer-workflow cquark7/withhold/.github/workflows/native-artifacts.yml --source-ref "refs/tags/$version" --source-digest $commit --deny-self-hosted-runners --bundle native-release.sigstore.json
-if ($LASTEXITCODE -ne 0) { throw "Verification failed; do not extract" }
-Expand-Archive $archive -DestinationPath "withhold-$version-$target"
-Set-Location "withhold-$version-$target"
-.\withhold.exe install
+$binary = "withhold-$version-$target.exe"
+$notices = "withhold-$version-$target-NOTICES.txt"
+$base = "https://github.com/cquark7/withhold/releases/download/$version"
+foreach ($file in @($binary, $notices, "SHA256SUMS")) {
+    Invoke-WebRequest "$base/$file" -OutFile $file -UseBasicParsing -ErrorAction Stop
+}
+foreach ($file in @($binary, $notices)) {
+    $rows = @(Get-Content SHA256SUMS | Where-Object {
+        $_ -match '^([0-9a-f]{64})  (.+)$' -and $Matches[2] -ceq $file
+    })
+    if ($rows.Count -ne 1) { throw "Missing or duplicate checksum for $file" }
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant() -cne $rows[0].Substring(0, 64)) {
+        throw "Checksum mismatch for $file; do not run it"
+    }
+}
+```
+
+For optional signed provenance, before running the executable, use GitHub CLI
+and an independently trusted commit:
+
+```powershell
+$commit = "FULL_COMMIT_SHA" # Replace with an independently trusted commit.
+Invoke-WebRequest "$base/native-release.sigstore.json" -OutFile native-release.sigstore.json -UseBasicParsing -ErrorAction Stop
+foreach ($file in @($binary, $notices, "SHA256SUMS")) {
+    gh attestation verify $file --repo cquark7/withhold --signer-workflow cquark7/withhold/.github/workflows/native-artifacts.yml --source-ref "refs/tags/$version" --source-digest $commit --deny-self-hosted-runners --bundle native-release.sigstore.json
+    if ($LASTEXITCODE -ne 0) { throw "Provenance verification failed; do not run" }
+}
+```
+
+After verification, install the downloaded executable:
+
+```powershell
+& ".\$binary" install
+if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 ```
 
 Add the printed directory (normally `%LOCALAPPDATA%\withhold\bin`) to your user
-PATH. Unix archives use `.tar.gz` and `darwin`/`linux` with `amd64`/`arm64`;
-the same attestation checks apply. Verify `SHA256SUMS` separately if using it.
-Keep the license/notices and verification bundle. Checksums alone do not prove
-origin; attestations do not establish security, OS notarization, or compatibility.
+PATH, and keep the notice file with the executable.
+
+For a manual macOS/Linux download, select the `darwin` or `linux` executable
+for your CPU, its matching notices, and `SHA256SUMS`. Compare the hashes from
+`shasum -a 256 FILE` (or `sha256sum FILE`) with the matching manifest entries.
+Then run `chmod +x FILE` and `./FILE install`, replacing `FILE` with the
+downloaded executable's name. Archives are available as well.
+Attestations do not establish that software is safe or compatible, and do not
+provide macOS notarization or Windows code signing.
 
 ### Build from source
 
-From a trusted checkout with Go 1.26.10:
+From a trusted checkout with Go 1.26 or later (Go may automatically download
+the toolchain suggested by `go.mod`):
 
 ```sh
 git clone https://github.com/cquark7/withhold.git
@@ -222,7 +270,7 @@ and trust removal succeed.
 | Problem | Action |
 | --- | --- |
 | No latest download | Select a published tag with `--version`, or build from source. |
-| Verification failure | Stop; check the expected tag/commit and update GitHub CLI. Do not bypass it. |
+| Verification failure | Stop; check the expected tag and checksum. For provenance failures, check the commit and GitHub CLI version. Do not bypass verification. |
 | Certificate errors | Check `doctor` and the integration trust guide. Private upstream PKI uses `--upstream-ca FILE`. |
 | Port occupied | Check `status`; stop your session or choose `on --port 8090`. Foreign listeners are never stopped. |
 | Running, no expected traffic | Check application routing, host scope, and runtime location against the integration guide. |

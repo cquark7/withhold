@@ -172,6 +172,13 @@ that path and the default path alone. `config --init` explicitly creates a
 missing selected file without overwriting an existing file. Omitted settings
 continue to use the current built-in defaults.
 
+The macOS/Linux release installer checks SHA-256 for the standalone executable
+and its notices before execution, but checksums obtained from the same release
+do not authenticate their publisher. `--verify-provenance` additionally requires
+GitHub CLI and verifies signed provenance for both files and the manifest;
+`--commit` implies that verification and pins the source commit. Requested
+provenance failures never fall back to checksum-only installation.
+
 ## Diagnostics and interfaces
 
 Project environment variables use `WITHHOLD_*`; test-only overrides use

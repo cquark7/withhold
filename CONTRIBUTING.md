@@ -21,7 +21,7 @@ Never include real credentials or private captures, even in test fixtures.
 
 ## Development setup
 
-Use Go 1.26.10, Python 3.11+, and Ruff. Python is used for acceptance tests and
+Use Go 1.26 or later, Python 3.11+, and Ruff. Python is used for acceptance tests and
 development tools, not by the installed application.
 
 ```sh

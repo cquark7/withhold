@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build deterministic standalone native archives and a SHA-256 manifest."""
+"""Build deterministic native executables, archives, notices, and a SHA-256 manifest."""
 
 import argparse
 import gzip
@@ -8,7 +8,6 @@ import io
 import json
 import os
 import re
-import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -50,6 +49,26 @@ def artifact_name(target: str, version: str) -> str:
         raise ValueError("unsupported target")
     suffix = ".zip" if target.startswith("windows-") else ".tar.gz"
     return f"withhold-{version}-{target}{suffix}"
+
+
+def binary_name(target: str, version: str) -> str:
+    validate_version(version)
+    if target not in TARGETS:
+        raise ValueError("unsupported target")
+    return (
+        f"withhold-{version}-{target}{'.exe' if target.startswith('windows-') else ''}"
+    )
+
+
+def notices_name(target: str, version: str) -> str:
+    validate_version(version)
+    if target not in TARGETS:
+        raise ValueError("unsupported target")
+    return f"withhold-{version}-{target}-NOTICES.txt"
+
+
+def standalone_notices(license_text: bytes, notices: bytes) -> bytes:
+    return b"withhold license\n\n" + license_text + b"\n\n" + notices
 
 
 def source_digest() -> str:
@@ -176,7 +195,6 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     parser.add_argument("--version", default=os.environ.get("WITHHOLD_VERSION", "dev"))
     parser.add_argument("--targets", nargs="+", choices=TARGETS, default=TARGETS)
-    parser.add_argument("--keep-binaries", action="store_true")
     args = parser.parse_args()
     try:
         version = validate_version(args.version)
@@ -204,8 +222,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="withhold-release-") as temporary:
         for target in sorted(args.targets):
             goos, goarch = target.split("-")
-            binary_name = "withhold.exe" if goos == "windows" else "withhold"
-            binary = Path(temporary) / target / binary_name
+            executable = "withhold.exe" if goos == "windows" else "withhold"
+            binary = Path(temporary) / target / executable
             binary.parent.mkdir()
             env = dict(base_env, GOOS=goos, GOARCH=goarch)
             subprocess.run(
@@ -223,26 +241,29 @@ def main():
                 env=env,
                 check=True,
             )
+            notices = build_notices(binary, cwd=ROOT, env=env)
             artifact = archive(
                 binary,
                 args.output,
                 target,
                 version,
                 go_version=go_version,
-                notices=build_notices(binary, cwd=ROOT, env=env),
+                notices=notices,
             )
-            checksums.append(
-                (hashlib.sha256(artifact.read_bytes()).hexdigest(), artifact.name)
+            standalone = args.output / binary_name(target, version)
+            standalone.write_bytes(binary.read_bytes())
+            standalone.chmod(0o755)
+            notice_file = args.output / notices_name(target, version)
+            notice_file.write_bytes(
+                standalone_notices((ROOT / "LICENSE").read_bytes(), notices)
             )
-            if args.keep_binaries:
-                shutil.copy2(
-                    binary,
-                    args.output
-                    / f"withhold-{target}{'.exe' if goos == 'windows' else ''}",
+            for path in (artifact, standalone, notice_file):
+                checksums.append(
+                    (hashlib.sha256(path.read_bytes()).hexdigest(), path.name)
                 )
     manifest = "".join(f"{digest}  {name}\n" for digest, name in checksums)
     (args.output / "SHA256SUMS").write_text(manifest, encoding="ascii")
-    print(f"Packaged {len(checksums)} native builds in {args.output}")
+    print(f"Packaged {len(args.targets)} native builds in {args.output}")
 
 
 if __name__ == "__main__":

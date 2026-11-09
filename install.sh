@@ -6,15 +6,18 @@ main() (
     repo=cquark7/withhold
     version=
     commit=
+    provenance=false
     bin_dir=${HOME:?HOME must be set}/.local/bin
     usage() {
         cat <<'EOF'
 Install withhold on macOS or Linux (no sudo).
-Usage: sh install.sh [--version vX.Y.Z] [--commit FULL_SHA] [--bin-dir DIR]
+Usage: sh install.sh [--version vX.Y.Z] [--bin-dir DIR] [--verify-provenance] [--commit FULL_SHA]
 
-Requires GitHub CLI (gh with attestation support), tar, and sha256sum or shasum.
+Requires curl and sha256sum or shasum. GitHub CLI is optional for provenance.
 Defaults to the latest non-prerelease; pin --version for release candidates.
-Verifies GitHub provenance and SHA-256 before extracting or running the binary.
+Checks SHA-256 before running the binary; checksums alone do not prove origin.
+--verify-provenance also checks the signed release record using GitHub CLI.
+--commit FULL_SHA implies --verify-provenance and pins the source commit.
 Does not change shell files, certificate trust, or editor settings.
 EOF
     }
@@ -29,6 +32,7 @@ EOF
                     --bin-dir) bin_dir=$2 ;;
                 esac
                 shift 2 ;;
+            --verify-provenance) provenance=true; shift ;;
             -h|--help) usage; exit 0 ;;
             *) fail "unknown option $1; use --help" ;;
         esac
@@ -37,6 +41,7 @@ EOF
     if [ -n "$commit" ]; then
         [ "${#commit}" -eq 40 ] || fail '--commit must be a full lowercase Git commit SHA'
         case "$commit" in *[!0-9a-f]*) fail '--commit must be a full lowercase Git commit SHA' ;; esac
+        provenance=true
     fi
     case "$(uname -s)" in
         Darwin) os=darwin ;;
@@ -48,8 +53,10 @@ EOF
         arm64|aarch64) arch=arm64 ;;
         *) fail 'unsupported CPU; use an amd64 or arm64 build' ;;
     esac
-    command -v gh >/dev/null 2>&1 || fail 'install GitHub CLI first: https://cli.github.com/'
-    command -v tar >/dev/null 2>&1 || fail 'tar is required'
+    command -v curl >/dev/null 2>&1 || fail 'curl is required'
+    if [ "$provenance" = true ]; then
+        command -v gh >/dev/null 2>&1 || fail 'provenance verification requires GitHub CLI: https://cli.github.com/'
+    fi
     if command -v sha256sum >/dev/null 2>&1; then
         hash=sha256sum
     elif command -v shasum >/dev/null 2>&1; then
@@ -58,9 +65,17 @@ EOF
         fail 'sha256sum or shasum is required'
     fi
     if [ -z "$version" ]; then
-        version=$(gh api "repos/$repo/releases/latest" --jq .tag_name) ||
-            fail 'no latest release available; check gh authentication or pin --version vX.Y.Z (including prereleases)'
+        latest=$(curl -fsSL --proto '=https' --proto-redir '=https' -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest") ||
+            fail 'no latest release available; check your connection or pin --version vX.Y.Z'
+        case "$latest" in
+            "https://github.com/$repo/releases/tag/"*)
+                version=${latest#"https://github.com/$repo/releases/tag/"}
+                # GitHub may percent-encode the SemVer build metadata separator.
+                version=$(printf '%s' "$version" | sed 's/%2[Bb]/+/g') ;;
+            *) fail 'unexpected latest release URL; pin --version vX.Y.Z' ;;
+        esac
     fi
+    [ "${#version}" -le 128 ] || fail 'version exceeds 128 characters'
     number='(0|[1-9][0-9]*)'
     identifier="($number|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
     printf '%s\n' "$version" | grep -Eq "^v$number\.$number\.$number(-$identifier(\.$identifier)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$" ||
@@ -68,44 +83,57 @@ EOF
     # Validate the entire value, including embedded newlines, before using it as a path.
     case "$version" in *[!0-9A-Za-z.+-]*) fail 'invalid version characters' ;; esac
     target=$os-$arch
-    archive=withhold-$version-$target.tar.gz
+    binary=withhold-$version-$target
+    notices=withhold-$version-$target-NOTICES.txt
     temporary=$(mktemp -d "${TMPDIR:-/tmp}/withhold-install.XXXXXXXX") || fail 'cannot create a private temporary directory'
     trap 'rm -rf "$temporary"' EXIT
     trap 'exit 1' HUP INT TERM
     printf 'Downloading withhold %s for %s…\n' "$version" "$target"
-    gh release download "$version" --repo "$repo" --dir "$temporary" \
-        --pattern "$archive" --pattern SHA256SUMS --pattern native-release.sigstore.json ||
-        fail 'download failed; no binary was installed'
-    for subject in "$archive" SHA256SUMS; do
-        if [ -n "$commit" ]; then
-            set -- --source-digest "$commit"
-        else
-            set --
-        fi
-        gh attestation verify "$temporary/$subject" --repo "$repo" \
-            --signer-workflow "$repo/.github/workflows/native-artifacts.yml" \
-            --source-ref "refs/tags/$version" --deny-self-hosted-runners \
-            --bundle "$temporary/native-release.sigstore.json" "$@" ||
-            fail 'provenance verification failed; nothing was extracted or installed (update gh if flags are unsupported)'
+    base="https://github.com/$repo/releases/download/$version"
+    for subject in "$binary" "$notices" SHA256SUMS; do
+        curl -fsSL --proto '=https' --proto-redir '=https' -o "$temporary/$subject" "$base/$subject" ||
+            fail 'download failed; this installer requires a release with standalone binaries'
     done
-    expected=$(awk -v name="$archive" '$2 == name { count++; digest=$1 } END { if (count == 1) print digest }' "$temporary/SHA256SUMS")
-    [ "${#expected}" -eq 64 ] || fail 'missing or duplicate archive checksum'
-    case "$expected" in *[!0-9a-f]*) fail 'invalid archive checksum' ;; esac
-    if [ "$hash" = sha256sum ]; then
-        actual=$(sha256sum "$temporary/$archive")
+    if [ "$provenance" = true ]; then
+        curl -fsSL --proto '=https' --proto-redir '=https' -o "$temporary/native-release.sigstore.json" "$base/native-release.sigstore.json" ||
+            fail 'provenance download failed; nothing was installed'
+        for subject in "$binary" "$notices" SHA256SUMS; do
+            if [ -n "$commit" ]; then
+                set -- --source-digest "$commit"
+            else
+                set --
+            fi
+            gh attestation verify "$temporary/$subject" --repo "$repo" \
+                --signer-workflow "$repo/.github/workflows/native-artifacts.yml" \
+                --source-ref "refs/tags/$version" --deny-self-hosted-runners \
+                --bundle "$temporary/native-release.sigstore.json" "$@" ||
+                fail 'provenance verification failed; nothing was installed (update gh if flags are unsupported)'
+        done
     else
-        actual=$(shasum -a 256 "$temporary/$archive")
+        printf 'Checking SHA-256 checksums; these do not verify the publisher.\n'
     fi
-    [ "${actual%% *}" = "$expected" ] || fail 'archive checksum mismatch; nothing was installed'
-    tar -xzf "$temporary/$archive" -C "$temporary" \
-        withhold LICENSE THIRD_PARTY_NOTICES.txt README.md CONTRACTS.md BUILD.json
-    # The verified executable enforces the existing running-session upgrade guard.
-    "$temporary/withhold" install --bin-dir "$bin_dir"
+    for subject in "$binary" "$notices"; do
+        expected=$(awk -v name="$subject" '$2 == name { count++; digest=$1 } END { if (count == 1) print digest }' "$temporary/SHA256SUMS")
+        [ "${#expected}" -eq 64 ] || fail "missing or duplicate checksum for $subject"
+        case "$expected" in *[!0-9a-f]*) fail "invalid checksum for $subject" ;; esac
+        if [ "$hash" = sha256sum ]; then
+            actual=$(sha256sum < "$temporary/$subject")
+        else
+            actual=$(shasum -a 256 < "$temporary/$subject")
+        fi
+        [ "${actual%% *}" = "$expected" ] || fail "checksum mismatch for $subject; nothing was installed"
+    done
+    chmod 700 "$temporary/$binary"
+    # The executable enforces the existing running-session upgrade guard.
+    "$temporary/$binary" install --bin-dir "$bin_dir"
     docs="$HOME/.local/share/withhold/$version/$target"
     mkdir -p "$docs"
-    for file in LICENSE THIRD_PARTY_NOTICES.txt README.md CONTRACTS.md BUILD.json SHA256SUMS native-release.sigstore.json; do
+    for file in "$notices" SHA256SUMS; do
         cp "$temporary/$file" "$docs/$file"
     done
+    if [ "$provenance" = true ]; then
+        cp "$temporary/native-release.sigstore.json" "$docs/native-release.sigstore.json"
+    fi
     printf '\nInstalled withhold. Release documentation and verification evidence: %s\n' "$docs"
     case ":${PATH:-}:" in
         *":$bin_dir:"*) ;;
