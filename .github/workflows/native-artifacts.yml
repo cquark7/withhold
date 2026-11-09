@@ -62,7 +62,7 @@ jobs:
           - os: macos-15-intel
             target: darwin-amd64
             suffix: ""
-          - os: macos-15
+          - os: macos-26
             target: darwin-arm64
             suffix: ""
           - os: windows-2025
