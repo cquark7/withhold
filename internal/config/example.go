@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Example is a starter, not a serialization of ambient settings or local paths.
 // The application section belongs to the selected integration.
@@ -29,4 +32,25 @@ scan_timeout = %q
 # extra_hosts = ["your-reviewed-provider.example"]
 
 `, c.Integration, c.Trust, c.StartupTimeout, c.Proxy.Port, c.Proxy.MaxBytes, c.Proxy.ScanTimeout) + application
+}
+
+// Starter leaves defaults commented out so upgrades can update omitted rules.
+func Starter(id, platform, application string, selectIntegration bool) string {
+	lines := strings.Split(Example(id, platform, application), "\n")
+	var out strings.Builder
+	out.WriteString("# withhold configuration. Uncomment a section and its settings to override defaults.\n")
+	out.WriteString("# Omitted settings follow built-in updates; view effective values with 'withhold config'.\n")
+	out.WriteString("# Restart the session with 'withhold off' and 'withhold on' after changes.\n\n")
+	for _, line := range lines[2:] {
+		switch {
+		case line == "", strings.HasPrefix(line, "#"), strings.HasPrefix(line, "schema = "):
+			out.WriteString(line)
+		case selectIntegration && strings.HasPrefix(line, "integration = "):
+			out.WriteString(line)
+		default:
+			out.WriteString("# " + line)
+		}
+		out.WriteByte('\n')
+	}
+	return out.String()
 }

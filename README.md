@@ -135,8 +135,10 @@ withhold on --pii email,phone      # Enable selected PII categories.
 withhold on --chat-mode block     # Block chat findings instead of redacting.
 ```
 
-Use `withhold config --example` for a commented TOML starter or read the
-[configuration reference](docs/configuration.md).
+Edit `~/.config/withhold/config.toml` to persist settings, and run
+`withhold config` to see the effective configuration. For an existing
+installation without a config file, `withhold config --init` creates one without
+overwriting anything. See the [configuration reference](docs/configuration.md).
 
 ## Privacy and limits
 

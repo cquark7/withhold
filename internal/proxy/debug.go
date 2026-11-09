@@ -323,13 +323,13 @@ func (d *debugLog) write(row debugSummary) {
 	if err != nil {
 		d.status.WriteFailures++
 		if d.status.Healthy {
-			fmt.Fprintln(os.Stderr, "withhold: WARNING: debug findings write failed; a finding summary was lost. Check log destination, permissions, and disk space; see withhold status.")
+			fmt.Fprintln(os.Stderr, "withhold: WARNING: debug findings write failed; a finding summary was lost. Check log destination, permissions, and disk space; see 'withhold status'.")
 		}
 		d.status.Healthy = false
 		return
 	}
 	if !d.status.Healthy && d.status.WriteFailures > 0 {
-		fmt.Fprintln(os.Stderr, "withhold: debug logging recovered; earlier finding summaries were lost (see withhold status).")
+		fmt.Fprintln(os.Stderr, "withhold: debug logging recovered; earlier finding summaries were lost (see 'withhold status').")
 	}
 	d.status.Healthy = true
 	d.status.EventsWritten++

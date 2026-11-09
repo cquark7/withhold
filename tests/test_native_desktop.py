@@ -1,5 +1,6 @@
 """Native desktop checks use temporary homes, manual test trust, and empty PATH."""
 
+import base64
 import http.client
 import json
 import os
@@ -11,6 +12,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from tests.test_native_proxy import BODY, FIXTURE, NATIVE, stop
 
@@ -712,7 +714,7 @@ connection.close()
         path.write_text('schema = 1\n[proxy]\nmax_bytes = "8m"\n')
         before = path.read_bytes()
         env = dict(self.env, WITHHOLD_MAX_BYTES="16m", WITHHOLD_PII="email")
-        result = self.run_guard("config", "--max-bytes", "24m", env=env)
+        result = self.run_guard("config", "--json", "--max-bytes", "24m", env=env)
         effective = json.loads(result.stdout)
         self.assertEqual(effective["proxy"]["max_bytes"], "24m")
         self.assertEqual(effective["protection"]["pii"], ["email"])
@@ -797,7 +799,7 @@ connection.close()
         )
         before = path.read_bytes()
         env = dict(self.env, WITHHOLD_EDITOR_BIN="env-code")
-        effective = json.loads(self.run_guard("config", env=env).stdout)
+        effective = json.loads(self.run_guard("config", "--json", env=env).stdout)
         self.assertEqual(effective["application"]["binary"], "env-code")
         self.assertNotIn("profile", effective["application"])
         self.assertEqual(effective["application"]["settings_dir"], "TOMLCode")
@@ -818,12 +820,81 @@ connection.close()
         self.run_guard("off", env=dict(env, WITHHOLD_EDITOR_SETTINGS_DIR="../invalid"))
         self.assertFalse(configured.exists())
 
+    def test_custom_endpoint_routes_are_frozen_and_enforced_by_the_running_proxy(self):
+        fixture = subprocess.Popen(
+            [FIXTURE, "--root", str(self.root / "upstream.pem")],
+            env=self.env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        self.addCleanup(stop, fixture)
+        urls = json.loads(fixture.stdout.readline())
+        fixture.stdout.close()
+        path = self.root / "state" / "config.toml"
+        path.write_text(
+            "schema = 1\n[application.traffic]\n"
+            'extra_hosts = ["127.0.0.1"]\n'
+            'extra_chat_paths = ["/v2/chat"]\n'
+            'extra_inline_paths = ["/v2/inline"]\n'
+        )
+        self.on()
+
+        def send(endpoint):
+            client = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            try:
+                client.request(
+                    "POST",
+                    urls["http"] + endpoint,
+                    BODY,
+                    {"Content-Type": "application/json"},
+                )
+                response = client.getresponse()
+                return response.status, response.read()
+            finally:
+                client.close()
+
+        status, body = send("/v2/chat?ignored=query")
+        self.assertEqual(status, 200)
+        received = base64.b64decode(json.loads(body)["body_base64"])
+        self.assertNotIn(b"sk_live_4eC39HqLyjWDarjtT1zdp7dc", received)
+        self.assertIn(b"<WITHHELD_", received)
+        self.assertEqual(send("/v2/inline")[0], 429)
+        self.assertEqual(send("/v2/unknown")[0], 429)
+
+        path.write_text(
+            "schema = 1\n[application.traffic]\n"
+            'extra_hosts = ["127.0.0.1"]\n'
+            'extra_chat_paths = ["/v3/chat"]\n'
+        )
+        self.assertEqual(send("/v2/chat")[0], 200)
+        self.assertEqual(send("/v3/chat")[0], 429)
+        self.run_guard("on", "--port", self.port, expected=2)
+        self.run_guard("off")
+        self.on()
+        self.assertEqual(send("/v2/chat")[0], 429)
+        self.assertEqual(send("/v3/chat")[0], 200)
+
+        upstream = urlsplit(urls["http"])
+        client = http.client.HTTPConnection(upstream.hostname, upstream.port, timeout=5)
+        try:
+            client.request("GET", "/stats")
+            entries = json.loads(client.getresponse().read())
+        finally:
+            client.close()
+        self.assertEqual(len(entries), 3)  # Blocked paths never reached the fixture.
+        for entry in entries:
+            body = base64.b64decode(entry["body_base64"])
+            self.assertNotIn(b"sk_live_4eC39HqLyjWDarjtT1zdp7dc", body)
+            self.assertIn(b"<WITHHELD_", body)
+
     def test_default_configuration_discovers_only_toml(self):
         unrelated = self.root / "state" / "config.json"
         path = self.root / "state" / "config.toml"
         unrelated.write_text('{"schema":1,"protection":{"chat":"block"}}')
         self.assertEqual(
-            json.loads(self.run_guard("config").stdout)["protection"]["chat"], "redact"
+            json.loads(self.run_guard("config", "--json").stdout)["protection"]["chat"],
+            "redact",
         )
         path.write_text(f"schema = 1\n[proxy]\nport = {self.port}\n")
         self.run_guard("on")

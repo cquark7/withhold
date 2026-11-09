@@ -87,7 +87,8 @@ export PATH="$HOME/.local/bin:$PATH"
 
 Windows PowerShell: `go build -trimpath -o withhold.exe ./cmd/withhold`, then
 `.\withhold.exe install`. Add the printed directory to your user PATH.
-Installation copies the executable; it does not change trust or editor settings.
+Installation copies the executable and creates an absent default configuration;
+it does not overwrite existing config or change trust or editor settings.
 
 ## Start and stop
 
@@ -149,13 +150,15 @@ disable TLS verification as a workaround. `doctor` cannot verify manual imports.
 
 ## Configuration and diagnostics
 
-No configuration file is required. Use `withhold help COMMAND` for flags and
-defaults, or the [configuration reference](configuration.md) for persistent
-settings. Stop and restart a background session to change its options.
-
-`withhold config --example` prints a commented TOML starter without reading your
-configuration or writing files. Redirect it only to a new file; review before
-using it. `withhold config` without `--example` still prints effective **JSON**.
+Installation creates a starter at `~/.config/withhold/config.toml` (or
+`WITHHOLD_DIR/config.toml`) if absent; `withhold config --init` creates it for
+an existing installation without overwriting an existing file. Edit the file to
+change settings; commented defaults continue to follow built-in updates. Use
+`withhold config` to view effective TOML settings for a new session, or
+`withhold config --json` for machine-readable JSON. A
+running session retains its previous settings: stop with `withhold off`, then
+start with `withhold on`. See the [configuration reference](configuration.md)
+for precedence, custom paths, and privacy considerations.
 
 ```sh
 withhold on --pii email,phone

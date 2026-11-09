@@ -48,7 +48,7 @@ func install(o Options) int {
 	// Running session upgrades require an explicit off; installation never kills processes.
 	if r, e := LoadRecord(filepath.Join(o.Dir, StateName)); e == nil {
 		if state, _ := ownership(r.Port, r); state == "ours" {
-			return fail(1, errors.New("run withhold off before upgrading the executable"))
+			return fail(1, errors.New("run 'withhold off' before upgrading the executable"))
 		}
 	} else if !os.IsNotExist(e) {
 		return fail(1, e)
@@ -74,13 +74,13 @@ func launch(o Options, e integration.Target, r Record, recordErr error) int {
 		return fail(2, errors.New("selected integration does not support launch; follow its integration guide"))
 	}
 	if recordErr != nil {
-		return fail(1, errors.New("run withhold on before launching the application"))
+		return fail(1, errors.New("run 'withhold on' before launching the application"))
 	}
 	if state, _ := ownership(o.Port, r); state != "ours" {
 		return fail(1, errors.New("application launch requires an authenticated guard listener"))
 	}
 	if e.Resource != r.Resource || o.Integration != r.Integration {
-		return fail(1, errors.New("application settings differ from the running session; run withhold off before changing integrations or settings"))
+		return fail(1, errors.New("application settings differ from the running session; run 'withhold off' before changing integrations or settings"))
 	}
 	if _, err := certstore.Load(o.Dir); err != nil {
 		return fail(1, err)

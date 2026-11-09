@@ -165,7 +165,12 @@ Configuration uses schema 1 and strict typed validation;
 integration-owned `application` settings are validated by the selected adapter.
 Unknown keys, duplicate keys, nulls, invalid types, and unsupported TOML value
 types fail rather than silently changing protection. Configuration is never
-discovered from a project directory or rewritten automatically.
+discovered from a project directory. Installation creates an absent default
+config containing only schema 1 and commented examples; an existing file is
+never overwritten. With `WITHHOLD_CONFIG` selected, installation leaves both
+that path and the default path alone. `config --init` explicitly creates a
+missing selected file without overwriting an existing file. Omitted settings
+continue to use the current built-in defaults.
 
 ## Diagnostics and interfaces
 
@@ -185,13 +190,19 @@ workers. Usage/configuration errors return 2, operation/check failures 1, and
 success 0. `doctor --preflight` is silent on success and returns 2 on failure.
 JSON commands write one object: configuration schema 1, status schema 4, doctor
 schema 2, integration catalog schema 1, demo schema 1. Schema changes must be explicit.
-`config` prints effective settings as JSON,
-not placeholder keys, but local paths/provider names may be private.
+`config` prints a reloadable TOML snapshot of the effective public configuration,
+including adapter-owned defaults; `config --json` prints the same settings as
+JSON. Neither includes placeholder keys, but local paths/provider names may be
+private. Saving a snapshot pins its values rather than inheriting future defaults.
+These views describe the configuration for a new session, not necessarily a
+running session with previously frozen settings.
 
 `config --example` instead prints a commented TOML starter without reading files,
 discovering application settings, or exporting ambient overrides. Integration
 selection is flag, environment, then default; other flags are rejected rather
-than ignored. Each adapter owns its example application section.
+than ignored. Each adapter owns its example application section. `config --init`
+accepts only `--dir`, `--config`, and `--integration`; it does not read an
+existing config or snapshot unrelated environment overrides.
 
 `demo` exercises the bundled scanner and the proxy's HTTPS CONNECT, redaction,
 and block paths using fixed synthetic inputs and ephemeral IPv4 loopback ports.

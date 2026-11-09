@@ -1,22 +1,42 @@
 # Configuration
 
 withhold reads **TOML only** from `WITHHOLD_DIR/config.toml`, defaulting to
-`~/.config/withhold/config.toml`. No file is required. Select a different file
-with `--config FILE` or `WITHHOLD_CONFIG`; an explicitly selected file must exist.
+`~/.config/withhold/config.toml`. Installation creates this file if absent, with
+the defaults commented out; it never overwrites existing files. No file is required
+to run. Select a different file with `--config FILE` or `WITHHOLD_CONFIG`; an
+explicitly selected file must exist. If `WITHHOLD_CONFIG` is set during installation,
+neither that file nor the unused default is created.
 Every selected file is parsed as TOML, regardless of its name. No alternate
 default filenames or working-directory files are discovered or auto-edited.
 
-Comments explain security choices and sections separate shared policy from
-integration settings. JSON is reserved for machine-readable CLI output, internal
-state, and IPC; it is not accepted as user configuration. `withhold config`
-prints effective settings as JSON, not a configuration-file template.
+For an existing installation, create the file with `withhold config --init`.
+It will not overwrite a file, even if it is invalid. It honors `--dir`,
+`--config FILE`, and `WITHHOLD_CONFIG`; `--integration NAME` or
+`WITHHOLD_INTEGRATION` selects and saves the adapter. Edit the printed path and
+uncomment the sections and settings you want to change. Omitted values follow
+the built-in defaults, including future updates.
 
-Get a commented TOML starter with `withhold config --example`. It prints defaults
+```sh
+withhold config --init        # Only needed if the file does not already exist.
+withhold config               # Effective TOML, including integration defaults.
+withhold config --json        # Machine-readable JSON.
+```
+
+The effective views combine flags, environment, file, and current defaults for a
+**new** session; a running session retains the settings recorded when it started.
+The TOML view identifies the selected configuration path and indicates when
+the default file is absent.
+The TOML view is a reloadable snapshot, but saving it pins all displayed values
+and prevents those defaults from updating automatically. It can include private
+local paths and provider names; review before sharing. JSON remains available for
+scripts and internal state, but is not accepted as a configuration file.
+
+Get a standalone TOML example with `withhold config --example`. It prints defaults
 for the current platform and selected integration, not your effective settings.
 Use `--integration NAME` (or `WITHHOLD_INTEGRATION`) to select an adapter without
 reading an existing config. Other overrides are rejected with `--example`.
-Save the output as UTF-8 to a **new** file, review it, then select it with
-`--config FILE` or place it at the default path; do not overwrite an existing config.
+It contains active default values, so saving it pins those values. For an
+inheriting file prefer `--init`; do not overwrite an existing config.
 
 ```toml
 schema = 1
@@ -35,8 +55,8 @@ scan_timeout = "10s"
 
 Precedence is **explicit flags → environment → file → defaults**. Extra hosts
 and regexes merge across sources. `withhold config` prints normalized effective
-settings, including selected-integration defaults; review local paths/provider
-names before sharing. Stop with `off` and restart with `on` to change a session.
+settings, including selected-integration defaults. Stop with `off` and restart
+with `on` to change a session.
 Recovery uses recorded integration/resource details even with broken config.
 
 ## Shared file fields
@@ -66,10 +86,12 @@ use strings for durations and paths. Omitted fields use defaults.
 | `startup_timeout` | `"60s"`; duration from 1 to 600 seconds. |
 | `audit`, `hint` | `WITHHOLD_DIR/audit.jsonl`, `WITHHOLD_DIR/hints.log`. |
 
-Integration-specific settings live in `[application]`, not in shared policy or
-proxy fields. The selected adapter owns their schema/defaults and rejects unknown
-fields. There are no per-agent top-level flags, arbitrary plugin paths, includes,
-or inheritance. One selected integration per file/session keeps precedence clear.
+Integration-specific settings live under `[application]`, not in shared policy
+or proxy fields. The selected adapter owns their schema/defaults and rejects
+unknown fields. For example, the [Copilot guide](integrations/vscode-copilot.md#custom-traffic-endpoints)
+describes adding or replacing its host/path rules. There are no per-agent
+top-level flags, arbitrary plugin paths, includes, or file inheritance. One
+selected integration per file/session keeps precedence clear.
 
 PII categories are `aadhaar`, `credit-card`, `email`, `ip-address`, `phone`, and
 `us-ssn`; read their [format limits](../CONTRACTS.md#pii-coverage).

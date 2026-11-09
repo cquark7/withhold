@@ -102,7 +102,7 @@ func status(o Options, e integration.Target, r Record, recordErr error) int {
 				fmt.Println("WARNING: some finding summaries were lost; the findings log is incomplete.")
 			}
 		} else {
-			fmt.Println("debug: off — enable with withhold off, then withhold on --debug")
+			fmt.Println("debug: off — enable with 'withhold off', then 'withhold on --debug'")
 		}
 		if err != nil {
 			fmt.Fprintln(os.Stdout, "settings error:", err)
@@ -111,9 +111,9 @@ func status(o Options, e integration.Target, r Record, recordErr error) int {
 		case "ours":
 			fmt.Fprintf(os.Stdout, "Next: follow the %s integration guide to verify traffic is routed and inspected.\n", o.Application.Name())
 		case "foreign":
-			fmt.Fprintln(os.Stdout, "Next: release this port or choose another with withhold on --port PORT.")
+			fmt.Fprintln(os.Stdout, "Next: release this port or choose another with 'withhold on --port PORT'.")
 		default:
-			fmt.Fprintln(os.Stdout, "Next: withhold doctor checks setup; withhold on starts a session.")
+			fmt.Fprintln(os.Stdout, "Next: 'withhold doctor' checks setup; 'withhold on' starts a session.")
 		}
 	}
 	return 0

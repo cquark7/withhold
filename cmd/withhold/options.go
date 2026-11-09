@@ -17,7 +17,7 @@ import (
 
 type cliOptions struct {
 	dir, trust, binDir, chat, inline, max, audit, hint, upstreamCA string
-	json, preflight, keep, observe, debug, example                 bool
+	json, preflight, keep, observe, debug, example, init           bool
 	port                                                           int
 	timeout                                                        time.Duration
 	hosts, patterns                                                stringsFlag
@@ -40,6 +40,7 @@ func (o *cliOptions) flags(command string) *flag.FlagSet {
 	f.StringVar(&o.pii, "pii", o.pii, "optional PII: off, all, or comma-separated categories")
 	f.BoolVar(&o.json, "json", o.json, "emit one versioned JSON object")
 	f.BoolVar(&o.example, "example", o.example, "print a commented TOML starter without reading configuration or writing files")
+	f.BoolVar(&o.init, "init", o.init, "create a default-inheriting TOML config without overwriting a file")
 	f.BoolVar(&o.preflight, "preflight", o.preflight, "print only failures; exit 2 if checks fail")
 	f.BoolVar(&o.keep, "keep-files", o.keep, "retain CA files during uninstall")
 	f.StringVar(&o.trust, "trust", o.trust, "CA trust mode: system or manual")

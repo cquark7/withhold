@@ -86,7 +86,7 @@ func (t Trust) Check(s TrustState, crt string) error {
 		return nil
 	}
 	if s.Platform != t.Platform || !s.Installed {
-		return errors.New("CA trust is incomplete; run withhold setup")
+		return errors.New("CA trust is incomplete; run 'withhold setup'")
 	}
 	switch t.Platform {
 	case "darwin":
@@ -179,7 +179,7 @@ func (t Trust) Install(dir string, manual bool) error {
 			}
 		}
 	default:
-		return fmt.Errorf("manual CA trust required: certutil -user -addstore Root %q; then withhold setup --trust manual", crt)
+		return fmt.Errorf("manual CA trust required: certutil -user -addstore Root %q; then run 'withhold setup --trust manual'", crt)
 	}
 	s.Installed = true
 	if err = t.Check(s, crt); err != nil {

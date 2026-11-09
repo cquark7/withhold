@@ -1,7 +1,9 @@
 # Adding an integration
 
 Every adapter must supply a commented TOML application example for
-`withhold config --example --integration NAME`. Keep its support matrix explicit:
+`withhold config --example --integration NAME`, and a profile suspicion default
+for effective configuration. Make traffic customization adapter-owned and
+include normalized defaults in its settings where appropriate. Keep its support matrix explicit:
 record live-tested application versions and dates, or mark that validation as
 not recorded; never substitute fixture success for real application validation.
 

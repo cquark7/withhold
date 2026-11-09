@@ -50,6 +50,7 @@ class DocumentationTests(unittest.TestCase):
                         [
                             os.environ["WITHHOLD_TEST_NATIVE"],
                             "config",
+                            "--json",
                             "--config",
                             str(path),
                         ],

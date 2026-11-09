@@ -181,7 +181,7 @@ func Run(o Options) int {
 		if err = SystemTrust().Install(o.Dir, o.TrustMode == "manual"); err != nil {
 			return fail(1, err)
 		}
-		fmt.Printf("Local CA ready. Run withhold doctor, then withhold on. Follow the %s integration guide for trust and restart requirements.\n", o.Application.Name())
+		fmt.Printf("Local CA ready. Run 'withhold doctor', then 'withhold on'. Follow the %s integration guide for trust and restart requirements.\n", o.Application.Name())
 		if o.TrustMode == "manual" {
 			fmt.Printf("CA trust is manual; import %s into the application's trust store before use.\n", filepath.Join(o.Dir, "ca.crt"))
 		}
@@ -227,7 +227,7 @@ func on(o Options, e integration.Target, r Record, recordErr error) int {
 	}
 	s, err := readTrust(o.Dir)
 	if err != nil {
-		return fail(2, errors.New("run withhold setup before on"))
+		return fail(2, errors.New("run 'withhold setup' before 'withhold on'"))
 	}
 	data, err := os.ReadFile(filepath.Join(o.Dir, "ca.crt"))
 	if err != nil || certFingerprint(data) != s.Fingerprint {
@@ -254,14 +254,14 @@ func on(o Options, e integration.Target, r Record, recordErr error) int {
 				return fail(2, errors.New("existing session or foreign listener must be stopped before starting"))
 			}
 			if h.Build != build || r.Build != build || r.Integration != o.Integration || r.Environment != o.EnvironmentID || r.Debug != o.Debug {
-				return fail(2, errors.New("runtime or configuration changed; run withhold off before on"))
+				return fail(2, errors.New("runtime or configuration changed; run 'withhold off' before 'withhold on'"))
 			}
 			fmt.Printf("withhold already running on 127.0.0.1:%d (authenticated pid %d).\n", r.Port, h.PID)
 			printObserveWarning(r.Configuration.Protection.Observe)
 			return 0
 		}
 		if r.Resource != e.Resource || r.Integration != o.Integration {
-			return fail(2, errors.New("restore the previous application session with withhold off first"))
+			return fail(2, errors.New("restore the previous application session with 'withhold off' first"))
 		}
 	}
 	if listening(o.Port) {
@@ -328,7 +328,7 @@ func on(o Options, e integration.Target, r Record, recordErr error) int {
 		if h, e := control.Probe(o.Port, r.Identity); e == nil && h.Build == build && h.PID == r.PID {
 			fmt.Printf("withhold is running on 127.0.0.1:%d (authenticated pid %d). %s routing configured.\nFollow the integration guide for trust and restart requirements; startup does not prove traffic is inspected.\n", o.Port, h.PID, o.Application.Name())
 			if h.Debug != nil && h.Debug.Enabled {
-				fmt.Printf("Debug findings: %s\nUse withhold status for live traffic/redaction counters.\n", filepath.Join(o.Dir, "debug-findings.log"))
+				fmt.Printf("Debug findings: %s\nUse 'withhold status' for live traffic/redaction counters.\n", filepath.Join(o.Dir, "debug-findings.log"))
 			}
 			printObserveWarning(r.Configuration.Protection.Observe)
 			return 0
