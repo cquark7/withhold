@@ -67,7 +67,8 @@ func run(args []string) int {
 	var owner *session.Record
 	var ownerPath string
 	if len(args) == 3 && args[0] == "_session-serve" && args[1] == "--state" {
-		r, e := session.LoadRecord(args[2])
+		r, e := session.LoadStartupRecord(args[2], os.Stdin)
+		_ = os.Stdin.Close()
 		if e != nil {
 			fmt.Fprintln(os.Stderr, "withhold: invalid private runtime record")
 			return 1
@@ -363,7 +364,7 @@ func run(args []string) int {
 	}
 	if owner != nil {
 		current, e := session.LoadRecord(ownerPath)
-		if e != nil || current.Identity != owner.Identity {
+		if e != nil || current.Identity != owner.Identity || current.PID != owner.PID {
 			_ = listener.Close()
 			return 1
 		}

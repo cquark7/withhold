@@ -74,6 +74,11 @@ Import-boundary tests protect this separation.
   Single-integration sessions keep ownership and recovery understandable. State
   lives under `~/.config/withhold`; `_session-serve` consumes a complete frozen
   session record, not replayed CLI flags. Session-only debug is an explicit field.
+  The child waits for a one-byte commit signal (`0x01`) on its inherited stdin
+  before opening that record. The parent sends it only after publishing the
+  child's PID, then closes the pipe. EOF before the signal aborts startup;
+  failed publication kills and reaps the unreleased child. Private-file checks
+  and a matching child PID remain mandatory after the signal.
   The control protocol has one signed schema, without negotiation
   or fallback readers. Recovery safeguards are current behavior, not a migration layer.
 
