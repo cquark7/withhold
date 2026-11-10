@@ -36,75 +36,41 @@ the integration contract. Observe mode does not enforce these format/method poli
 
 ## Offline text inspection
 
-`scan` inspects literal UTF-8 text from `--text`, files, recursive directories,
-or stdin (`-`, or redirected stdin without targets). Positional arguments are
-paths; `--text` excludes other inputs. Interactive stdin without a target is a
-usage error. Options may follow paths; `--` ends option parsing. Stdin is consumed
-at most once. Inputs are not rewritten, concatenated across files, or interpreted
-as proxy JSON bodies. JSON escapes, key/value synthesis, numeric scalars, opaque
-leaves, and decoded PII therefore need not match proxy extraction behavior.
-
-It reuses the bundled secret rules and selected PII recognizers below. Secrets
-default on; scan-only `--secrets=false` permits PII-only inspection without
-initializing the secret engine. Both engines cannot be disabled. User TOML is
-strictly validated without application discovery. Effective PII and per-input
-limits use flags, `WITHHOLD_PII`/`WITHHOLD_MAX_BYTES`, file settings, then defaults;
-other editor/proxy environment overrides do not apply. Configuration selection
-uses the usual `--dir`, `--config`, `WITHHOLD_DIR`, and `WITHHOLD_CONFIG` rules.
-Scanning requires no setup, session, trust, editor, or placeholder key and writes
-no state or logs. Literal arguments and reported filepaths can themselves be private.
-
-Offline secret confidence uses `--confidence`, then TOML `[scan].confidence`,
-then `""` (no minimum). Accepted levels are `low`, `medium`, and `high`, trimmed
-and lowercased; explicit empty clears a configured minimum. There is no public
-confidence environment override. Filtering delegates to Betterleaks: findings
-without recognized confidence and components of accepted multipart findings
-remain included. Higher thresholds can hide real secrets. PII and proxy secret
-detection are unaffected; detector self-tests run before the scan-only minimum
-is applied. JSON schema 1 adds `detectors.confidence` with the effective minimum;
-human output identifies a selected minimum when secrets are enabled.
-
-Recursive discovery includes hidden/gitignored text subject to the bundled
-Betterleaks path prefilter. The prefilter applies to files and directories before
-reads, including explicit targets and PII-only scans; it prunes dependency trees
-such as `node_modules` and skips upstream-selected generated paths/lockfiles.
-`--no-default-excludes` disables only this prefilter. No local detector config or
-project ignore files are loaded. Intentional prefilter skips are summarized as
-`default-excluded`, not reported as inspected. Discovery also prunes `.git`
-directories and does not follow discovered symlinks. Explicit symlinks/nonregular
-inputs are errors. Read handles are confined to the selected root and verified
-against the discovered regular-file identity; POSIX opens are nonblocking and no-follow.
-Repeated/overlapping target paths are scanned once. Repeatable `--exclude PATH`
-excludes a literal file/subtree relative to the working directory, including
-explicit targets, even with `--no-default-excludes`; there are no glob or
-project-ignore settings. Binary signatures, non-text content, and invalid UTF-8
-are outside the text scope; there is no
-archive/document extraction or OCR. Skips count entries/subtree roots, not the
-unknown number of descendant files.
-
-The default per-input cap is 32 MiB, at most 128 MiB. Up to three reusable isolated
-workers inspect whole inputs; parallelism decreases with larger caps to bound
-retained input to 128 MiB plus overflow bytes. This is not a process RSS limit.
-The per-input deadline includes reading, worker startup, scanning and pipe I/O.
-At most 10,000 distinct rule/range/encoding occurrences are returned per input;
-finding/component limits, worker failure, timeout, overflow, failed walks/reads,
-and explicit unsupported inputs make the run incomplete, never clean. Intentional
-exclusions and discovered unsupported entries do not invalidate completion of
-the declared text scope, but are summarized. Files are live inputs, not snapshots.
-
-Output identifies source/filepath, rule, category, and original line/UTF-8 byte
-column without detected values, prefixes, or source excerpts. Control characters
-in human paths are escaped. Locations describe full rule matches, or encoded
-source containers marked `encoded`, not necessarily captured secret spans. Byte
-offsets are zero-based/half-open; lines and columns are one-based with exclusive
-end positions. Repeated values at distinct locations remain separate findings.
-Output order is deterministic for unchanged inputs, with bounded lookahead.
-`--json` streams one schema-1 object containing detector selection/versions,
-limits, findings, final summary (`complete`, counts, skips), and value-free errors.
-Only the first 128 error details are retained; `errors_omitted` counts the rest.
-Missing/truncated final output is not a completed report. Exit codes are **0** for
-a complete run without findings, **1** for a complete run with findings, and **2**
-for invalid usage/configuration or an incomplete/failed run. Errors dominate findings.
+- **Input:** Reads literal UTF-8 from `--text`, files, directories, or stdin.
+  Arguments are paths; `--text` is exclusive, and stdin is read once. Without a
+  target, stdin must be redirected. Inputs are never changed or joined, and proxy
+  JSON extraction is not applied.
+- **Detection and config:** Secrets are on by default; PII is optional, and both
+  cannot be disabled. TOML is validated without application discovery. Precedence
+  is flags, `WITHHOLD_PII`/`WITHHOLD_MAX_BYTES`, file, then defaults; other
+  editor/proxy environment overrides do not apply. Scans need no setup, session,
+  trust, editor, or placeholder key and write no state or logs.
+- **Confidence:** `--confidence` overrides `[scan].confidence`; values are `low`,
+  `medium`, `high`, or empty (no minimum), trimmed and lowercased. `--confidence=`
+  clears the config value. Betterleaks keeps unclassified findings and components
+  of accepted multipart findings. Higher thresholds can hide real secrets; PII
+  and proxy detection are unaffected.
+- **Discovery:** Hidden and Git-ignored text is included, subject to Betterleaks'
+  bundled exclusions. They apply to explicit targets and PII-only scans;
+  `--no-default-excludes` disables them. `.git` is always pruned. Discovered
+  symlinks are not followed; explicit symlinks/nonregular inputs are errors.
+  Repeatable `--exclude PATH` skips literal paths relative to the working
+  directory, including explicit targets. Project ignore files and local detector
+  config are not loaded. Binary, invalid UTF-8, document, and archive content is
+  skipped. Skip counts cover entries or pruned subtree roots, not descendants.
+- **Limits:** Each input defaults to 32 MiB (128 MiB maximum), a 10-second
+  deadline, and 10,000 findings. Read/walk failures, timeouts, overflow, worker
+  failures, explicit unsupported inputs, or hitting a limit make the run
+  incomplete. Intentional exclusions and discovered unsupported entries are
+  summarized but do not make it incomplete.
+- **Reports:** Findings identify source, rule/category, and location, never values
+  or excerpts. Full-match locations may include context; encoded findings refer
+  to source containers. Byte ranges are zero-based/half-open; lines and byte
+  columns are one-based with exclusive end positions. Output is deterministic.
+  JSON streams one schema-1 report; only 128 error details are included and
+  `errors_omitted` counts the rest. Missing/truncated output is incomplete. Exit
+  codes are **0** for complete without findings, **1** with findings, and **2**
+  for invalid usage/config or incomplete scans; errors take precedence.
 
 ## Scanning and redaction
 
@@ -253,21 +219,11 @@ GitHub CLI and verifies signed provenance for both files and the manifest;
 `--commit` implies that verification and pins the source commit. Requested
 provenance failures never fall back to checksum-only installation.
 
-The quickstart pipes the installer over HTTPS with a 10-second connection budget
-and a 120-second total limit, without retrying the stream. The installer defines
-its functions before invoking its entry point on the final line. A download-first
-option supports reviewing the script and checking curl succeeds before execution.
-
-Release discovery uses HEAD requests. Release files share one curl process for
-connection reuse across files and redirects; any failed transfer stops the batch
-before verification or installation. Installer downloads restrict requests and
-redirects to HTTPS, use a 10-second connection budget across resolved addresses,
-and retry transient failures up to
-twice with a 60-second retry-start window. Each attempt has a 600-second deadline;
-transfers below 1024 bytes/second for 30 seconds abort. curl retains normal proxy
-and CA configuration; no server IP is pinned. Installer stages go to stderr, with
-curl progress bars only on interactive stderr. Errors distinguish connection/DNS,
-timeout, HTTP, TLS, local-write, and verification failures before installation.
+The quickstart fetches the installer over HTTPS with a 10-second connection and
+120-second total limit; it does not retry a script piped to the shell. Release
+downloads also use HTTPS, with bounded timeouts and retries; a failed download
+stops before verification or installation. curl uses the normal proxy and CA
+settings, and shows progress only on interactive stderr.
 
 ## Diagnostics and interfaces
 
@@ -284,10 +240,11 @@ configured routing, not verified inspection coverage. Policy terms remain
 Help, version, completion, and integration discovery do not read runtime
 configuration, initialize trust, change settings, or start
 workers. Usage/configuration errors return 2, operation/check failures 1, and
-success 0, except for the documented `scan` exit codes above.
-`doctor --preflight` is silent on success and returns 2 on failure.
+success 0, except for the documented `scan` exit codes above. `doctor --preflight`
+is silent on success and returns 2 on failure.
 JSON commands write one object: configuration schema 1, status schema 4, doctor
-schema 2, integration catalog schema 1, demo schema 1, scan schema 1. Schema changes must be explicit.
+schema 2, integration catalog schema 1, demo schema 1, and scan schema 1.
+Schema changes must be explicit.
 `config` prints a reloadable TOML snapshot of the effective public configuration,
 including adapter-owned defaults; `config --json` prints the same settings as
 JSON. Neither includes placeholder keys, but local paths/provider names may be

@@ -106,8 +106,9 @@ withhold scan .env
 withhold scan . --pii email,phone
 ```
 
-Findings identify rules and locations without displaying detected values. Hidden
-and gitignored text is included; inputs are not changed. See
+Findings show rules and locations, never values; scanning does not change files.
+Hidden and Git-ignored text is included, while common dependency/generated paths
+are skipped by default. See
 [local scanning](docs/usage.md#scan-local-text) for stdin/text input, exclusions,
 PII-only scans, JSON output, and incomplete-scan limits.
 

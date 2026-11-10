@@ -24,29 +24,16 @@ withhold version
 withhold demo
 ```
 
-The initial script download has a 10-second connection budget and a 120-second
-total limit. It is not automatically retried while piping into `sh`; retrying a
-stream can duplicate script contents. To review the script or ensure curl succeeds
-before execution, use the download-first option below.
-
-The installer uses HEAD requests to find the latest release, then downloads its
-files in one curl process so connections can be reused across files and redirects.
-It handles retries and progress internally. Its downloads allow 10 seconds for
-each connection phase, including DNS and TLS. curl tries the host's
-resolved addresses within that budget rather than waiting minutes on an
-unreachable address. Downloads retry transient failures up to twice, starting no
-new retry after 60 seconds. Each attempt is capped at 10 minutes; the retry window
-is not a total deadline. Transfers below 1 KiB/s for 30 seconds are aborted. Stages
-and failures go to stderr, with progress bars only on interactive stderr. No IP
-addresses are pinned, and normal curl proxy and CA configuration still applies.
+The script is not retried when piped to the shell. Download it first if you want
+to review it before running. The installer uses bounded HTTPS downloads, respects
+curl's proxy and CA settings, and shows progress in interactive terminals.
 
 To download and review the script before running it:
 
 ```sh
 curl --fail --show-error --location --proto '=https' --proto-redir '=https' \
-  --connect-timeout 10 --max-time 120 --retry 2 --retry-max-time 60 \
-  --speed-limit 1024 --speed-time 30 \
-  --output install.sh https://github.com/cquark7/withhold/releases/latest/download/install.sh &&
+  --connect-timeout 10 --max-time 120 --output install.sh \
+  https://github.com/cquark7/withhold/releases/latest/download/install.sh &&
 less install.sh &&
 sh install.sh --help &&
 sh install.sh
@@ -56,9 +43,8 @@ To install a specific release that includes standalone binaries, choose its tag:
 
 ```sh
 curl --fail --show-error --location --proto '=https' --proto-redir '=https' \
-  --connect-timeout 10 --max-time 120 --retry 2 --retry-max-time 60 \
-  --speed-limit 1024 --speed-time 30 \
-  --output install.sh https://github.com/cquark7/withhold/releases/download/VERSION/install.sh &&
+  --connect-timeout 10 --max-time 120 --output install.sh \
+  https://github.com/cquark7/withhold/releases/download/VERSION/install.sh &&
 sh install.sh --version VERSION
 ```
 
@@ -177,69 +163,50 @@ withhold scan . --secrets=false --pii all
 withhold scan - < message.txt
 withhold scan --text 'dev@example.com' --pii email
 withhold scan . --exclude ./generated --json
-withhold scan . --no-default-excludes
+withhold scan ./vendor --no-default-excludes
 ```
 
-Paths may be files or recursive directories. Options may precede or follow paths;
-use `--` for names beginning with `-`, and `./-` for a file named `-`. Positional
-arguments are never guessed to be text. With no paths, redirected stdin is read;
-interactive use requires a target or `--text`. Explicit `-` may accompany files
-but can appear only once. `--text` cannot accompany paths/stdin. Prefer files or
-stdin for real sensitive data: arguments can enter shell history/process listings.
+Paths may be files or directories; options may appear before or after them. Use
+`--` for paths beginning with `-`. Without a path, redirected stdin is read;
+interactive use needs a target. `-` reads stdin once and can accompany paths;
+`--text` is exclusive. Prefer files or stdin for sensitive text because arguments
+may be saved in shell history or shown in process listings.
 
-Secrets default on. PII uses the [configured selection](configuration.md), off by
-default; `--pii off`, `--pii all`, or categories override it. `--secrets=false`
-requires at least one PII category. The selected TOML file is strictly validated,
-without editor discovery. No state, logs, keys, settings, or trust are written.
+Secrets are on by default; PII is off unless selected in
+[configuration](configuration.md) or with `--pii`. `--secrets=false` enables a
+PII-only scan. The selected TOML file is validated without editor discovery; scans
+write no state, logs, keys, settings, or trust.
 
-`--confidence low|medium|high` delegates a minimum confidence to Betterleaks for
-offline secret findings. It overrides `[scan].confidence` in TOML; the default is
-`""` (no minimum), and `--confidence=` clears a configured minimum. `medium`
-includes medium/high findings; `high` includes high findings. Unclassified
-findings remain included, along with components of accepted multipart findings.
-PII and proxy protection are unaffected. Higher thresholds can hide real secrets;
-confidence is a heuristic, not credential validation.
+`--confidence low|medium|high` sets a minimum for offline secret findings,
+overriding `[scan].confidence`; the default is no minimum and `--confidence=`
+clears the configured value. `medium` keeps medium and high findings; `high` keeps
+high findings. Unclassified findings remain included. Confidence does not affect
+PII or proxy protection and is heuristic, so higher thresholds can hide real secrets.
 
-Path scans use the bundled Betterleaks path prefilter before opening files or
-entering directories. This skips `node_modules`, upstream-selected vendored
-packages, common lockfiles, and other generated paths. The same scope applies to
-explicit targets and PII-only scans. Use `--no-default-excludes` to include those
-paths. Local Betterleaks configuration and project ignore files are not loaded.
+Scans include hidden and Git-ignored text, but skip common dependencies and
+generated files (such as `node_modules` and lockfiles) by default. This applies
+to explicit paths and PII-only scans; `--no-default-excludes` disables these
+defaults. `.git` is always skipped. Repeat `--exclude PATH` to skip literal paths
+or directories relative to the working directory, including explicit targets.
+Discovered symlinks and unsupported files are skipped; explicitly naming one is
+an error. Documents, archives, binary files, and invalid UTF-8 are not scanned.
+Skip counts refer to entries or subtree roots, not every file beneath them.
 
-Otherwise, directory scans include hidden/gitignored text such as `.env`, prune
-`.git` directories, and skip symlinks, nonregular files, binary/document/archive
-content, and invalid UTF-8. Explicit unsupported inputs are errors. Repeat
-`--exclude PATH` for literal files/subtrees relative to your working directory;
-these exclusions win over explicit targets even with `--no-default-excludes` and
-are not globs. Skipped counts describe entries or pruned subtree roots, not every
-descendant file; `default-excluded` counts bundled prefilter skips. Empty
-selections say `No eligible text inputs`; skipped or unreadable content is never
-presented as inspected.
+Findings show rules and locations, never values or source excerpts. Filepaths may
+be private. The scan reads literal text, including `.json` files; it does not
+apply the proxy's JSON extraction or routing policy.
 
-Human findings look like `.env:12:19  secret  aws-access-token`. Lines and UTF-8
-byte columns start at 1. Full-match locations can include nonsecret context;
-decoded findings identify their encoded source span. Filepaths may be private.
-This scans literal source text, including `.json` files, not the proxy's JSON
-extraction or routing policy; results are not an exact proxy-request simulation.
+`--json` streams a schema-1 report. Check `summary.complete` before treating it
+as finished; truncated output is incomplete. See the
+[inspection contract](../CONTRACTS.md#offline-text-inspection) for report fields
+and location conventions.
 
-`--json` streams one schema-1 object with `detectors`, `findings`, `summary`,
-`errors`, and `errors_omitted`. Each finding contains `source`, nullable `path`,
-`rule_id`, `kind`, byte `start`/`end`, `start_line`/`start_column`,
-`end_line`/`end_column`, and `encoded`. Byte ranges are zero-based and half-open;
-end line/column positions are exclusive. `summary.complete` must be true before
-treating the report as finished; truncated JSON is not a completed report.
-`detectors.confidence` records the selected minimum (empty means none); the
-schema remains 1 with this additive metadata field.
-
-Exit **0** means complete without findings; **1** complete with findings; **2**
-invalid usage/configuration or incomplete/failed scanning. Errors take precedence.
-Read failures, oversized text, timeouts, worker failures, and finding limits are
-errors, not clean results. The per-input defaults are `--max-bytes 32m` (ceiling
-`128m`) and `--scan-timeout 10s`, also inherited from the file's `proxy.max_bytes`
-and `proxy.scan_timeout`. `WITHHOLD_MAX_BYTES` and `WITHHOLD_PII` apply; unrelated
-proxy/editor environment overrides do not. Inputs are bounded, with up to three
-reused workers and 10,000 findings per input; see the
-[inspection contract](../CONTRACTS.md#offline-text-inspection) for limits.
+Exit **0** means complete with no findings; **1** means findings; **2** means
+invalid usage/configuration or an incomplete scan. Read failures, timeouts, and
+size or finding limits are incomplete, not clean. Defaults are 32 MiB per input
+(128 MiB maximum) and a 10-second timeout, also settable in proxy configuration.
+Scan accepts `WITHHOLD_PII` and `WITHHOLD_MAX_BYTES`; other proxy/editor
+environment overrides do not apply.
 
 ## Start and stop
 
