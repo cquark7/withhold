@@ -152,7 +152,8 @@ withhold scan . --confidence medium
 withhold scan . --secrets=false --pii all
 withhold scan - < message.txt
 withhold scan --text 'dev@example.com' --pii email
-withhold scan . --exclude ./node_modules --json
+withhold scan . --exclude ./generated --json
+withhold scan . --no-default-excludes
 ```
 
 Paths may be files or recursive directories. Options may precede or follow paths;
@@ -175,13 +176,21 @@ findings remain included, along with components of accepted multipart findings.
 PII and proxy protection are unaffected. Higher thresholds can hide real secrets;
 confidence is a heuristic, not credential validation.
 
-Directory scans include hidden/gitignored text such as `.env`, prune `.git`
-directories, and skip symlinks, nonregular files, binary/document/archive content,
-and invalid UTF-8. Explicit unsupported inputs are errors. Repeat `--exclude PATH`
-for literal files/subtrees relative to your working directory; exclusions win over
-explicit targets and are not globs. Skipped counts describe entries or pruned
-subtree roots, not every descendant file. Empty selections say `No eligible text
-inputs`; skipped or unreadable content is never presented as inspected.
+Path scans use the bundled Betterleaks path prefilter before opening files or
+entering directories. This skips `node_modules`, upstream-selected vendored
+packages, common lockfiles, and other generated paths. The same scope applies to
+explicit targets and PII-only scans. Use `--no-default-excludes` to include those
+paths. Local Betterleaks configuration and project ignore files are not loaded.
+
+Otherwise, directory scans include hidden/gitignored text such as `.env`, prune
+`.git` directories, and skip symlinks, nonregular files, binary/document/archive
+content, and invalid UTF-8. Explicit unsupported inputs are errors. Repeat
+`--exclude PATH` for literal files/subtrees relative to your working directory;
+these exclusions win over explicit targets even with `--no-default-excludes` and
+are not globs. Skipped counts describe entries or pruned subtree roots, not every
+descendant file; `default-excluded` counts bundled prefilter skips. Empty
+selections say `No eligible text inputs`; skipped or unreadable content is never
+presented as inspected.
 
 Human findings look like `.env:12:19  secret  aws-access-token`. Lines and UTF-8
 byte columns start at 1. Full-match locations can include nonsecret context;

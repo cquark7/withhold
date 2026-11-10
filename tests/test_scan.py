@@ -126,6 +126,43 @@ class ScanTests(unittest.TestCase):
         )
         self.assertEqual(result.stdout.strip(), "--secrets=false")
 
+    def test_bundled_path_exclusions_apply_to_all_detectors_and_can_be_disabled(self):
+        project = self.root / "project"
+        dependency = project / "node_modules" / "pkg"
+        dependency.mkdir(parents=True)
+        (project / ".env").write_text("ordinary application text\n")
+        (dependency / "index.js").write_text(TOKEN + " " + EMAIL + "\n")
+        (project / "package-lock.json").write_text(TOKEN + " " + EMAIL + "\n")
+        for selection in ((), ("--secrets=false", "--pii=email")):
+            with self.subTest(selection=selection):
+                report = json.loads(self.scan("project", *selection, "--json").stdout)
+                self.assertTrue(report["summary"]["complete"])
+                self.assertEqual(report["summary"]["files_scanned"], 1)
+                self.assertEqual(report["summary"]["skipped"], {"default-excluded": 2})
+                report = json.loads(
+                    self.scan(
+                        "project",
+                        *selection,
+                        "--no-default-excludes",
+                        "--json",
+                        expected=1,
+                    ).stdout
+                )
+                self.assertTrue(report["summary"]["complete"])
+                self.assertEqual(report["summary"]["files_scanned"], 3)
+                self.assertEqual(len(report["findings"]), 2)
+        # Explicit targets use the same scope; manual exclusions still win.
+        self.scan("project/node_modules", "--json")
+        self.scan("project/package-lock.json", "--json")
+        self.scan("project/node_modules", "--no-default-excludes", expected=1)
+        self.scan(
+            "project",
+            "--no-default-excludes",
+            "--exclude=project/node_modules",
+            "--exclude=project/package-lock.json",
+        )
+        self.scan("project/node_modules/missing", expected=2)
+
     def test_confidence_uses_config_and_flag_without_affecting_pii(self):
         text = f'api_key = "{GENERIC}"\n'
         # An inherited private worker setting must not affect default scans.

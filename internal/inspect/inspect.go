@@ -27,6 +27,7 @@ type Options struct {
 	Text     *string
 	Stdin    io.Reader
 	Exclude  []string
+	SkipPath func(string) bool
 	MaxBytes int64
 	Timeout  time.Duration
 }
@@ -189,6 +190,9 @@ func Run(ctx context.Context, o Options, scanner Scanner, yield func(Result) err
 			}
 			return false
 		}
+		prefiltered := func(name string) bool {
+			return o.SkipPath != nil && o.SkipPath(filepath.ToSlash(name))
+		}
 		inputFor := func(absolute string) Input {
 			name := absolute
 			if contains(cwd, absolute) {
@@ -246,6 +250,12 @@ func Run(ctx context.Context, o Options, scanner Scanner, yield func(Result) err
 				}
 				continue
 			}
+			if prefiltered(t.abs) {
+				if err := submit(func(context.Context) Result { return Result{Input: input, Skipped: "default-excluded"} }); err != nil {
+					return summary, err
+				}
+				continue
+			}
 			rootPath, fileName := t.abs, "."
 			if !t.info.IsDir() {
 				rootPath, fileName = filepath.Dir(t.abs), filepath.Base(t.abs)
@@ -289,10 +299,13 @@ func Run(ctx context.Context, o Options, scanner Scanner, yield func(Result) err
 					if walkErr != nil {
 						return submit(func(context.Context) Result { return Result{Input: input, Error: "walk-error"} })
 					}
-					if excluded(absolute) || entry.IsDir() && entry.Name() == ".git" {
+					if excluded(absolute) || entry.IsDir() && entry.Name() == ".git" || prefiltered(absolute) {
 						reason := "excluded"
 						if !excluded(absolute) {
-							reason = "git-metadata"
+							reason = "default-excluded"
+							if entry.IsDir() && entry.Name() == ".git" {
+								reason = "git-metadata"
+							}
 						}
 						if err := submit(func(context.Context) Result { return Result{Input: input, Skipped: reason} }); err != nil {
 							return err

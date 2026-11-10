@@ -13,10 +13,13 @@ func TestScanOptionsKeepPathsAndTextUnambiguous(t *testing.T) {
 		paths      []string
 		text       string
 		confidence string
+		noDefaults bool
 		help       bool
 		bad        bool
 	}{
 		{args: []string{"src", "--pii", "email", "config"}, paths: []string{"src", "config"}},
+		{args: []string{"src", "--no-default-excludes", "config"}, paths: []string{"src", "config"}, noDefaults: true},
+		{args: []string{"src", "--no-default-excludes=false"}, paths: []string{"src"}},
 		{args: []string{"src", "--confidence", "medium", "config"}, paths: []string{"src", "config"}, confidence: "medium"},
 		{args: []string{"src", "--confidence=high"}, paths: []string{"src"}, confidence: "high"},
 		{args: []string{"--text", "--help", "--pii=email"}, text: "--help"},
@@ -29,7 +32,7 @@ func TestScanOptionsKeepPathsAndTextUnambiguous(t *testing.T) {
 	} {
 		o := defaultOptions("~")
 		paths, showHelp, err := parseScanOptions(o.flags("scan"), test.args)
-		if (err != nil) != test.bad || showHelp != test.help || !reflect.DeepEqual(paths, test.paths) || o.text != test.text || o.confidence != test.confidence {
+		if (err != nil) != test.bad || showHelp != test.help || !reflect.DeepEqual(paths, test.paths) || o.text != test.text || o.noDefaultExcludes != test.noDefaults || o.confidence != test.confidence {
 			t.Fatalf("args=%q paths=%q help=%t error=%v", test.args, paths, showHelp, err)
 		}
 	}

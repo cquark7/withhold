@@ -160,6 +160,15 @@ func scan(out, diagnostics io.Writer, stdin *os.File, args []string) int {
 	if o.secrets {
 		settings.SecretVersion = detector.Version
 	}
+	options := inspect.Options{Paths: paths, Stdin: stdin, Exclude: o.exclude, MaxBytes: cap, Timeout: timeout}
+	if flagSet(f, "text") {
+		options.Text = &o.text
+	} else if !o.noDefaultExcludes && (len(paths) != 1 || paths[0] != "-") {
+		options.SkipPath, err = detector.DefaultPathFilter()
+		if err != nil {
+			return usage("cannot initialize bundled path prefilter")
+		}
+	}
 	output, err := inspect.NewOutput(out, diagnostics, o.json, settings)
 	if err != nil {
 		return usage("cannot write scan report")
@@ -172,10 +181,6 @@ func scan(out, diagnostics io.Writer, stdin *os.File, args []string) int {
 	defer pool.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	options := inspect.Options{Paths: paths, Stdin: stdin, Exclude: o.exclude, MaxBytes: cap, Timeout: timeout}
-	if flagSet(f, "text") {
-		options.Text = &o.text
-	}
 	progress := !o.json && inspect.IsTerminal(os.Stderr)
 	lastProgress := time.Now()
 	inputs := 0

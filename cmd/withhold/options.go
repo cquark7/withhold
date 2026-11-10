@@ -25,6 +25,7 @@ type cliOptions struct {
 	text                                                           string
 	confidence                                                     string
 	secrets                                                        bool
+	noDefaultExcludes                                              bool
 	exclude                                                        stringsFlag
 }
 
@@ -46,6 +47,7 @@ func (o *cliOptions) flags(command string) *flag.FlagSet {
 	f.StringVar(&o.confidence, "confidence", o.confidence, "minimum secret confidence: low, medium, high; empty keeps all levels (PII unchanged)")
 	f.BoolVar(&o.secrets, "secrets", o.secrets, "detect secrets; use --secrets=false for PII-only scans")
 	f.Var(&o.exclude, "exclude", "exclude a file or directory subtree, relative to the working directory (repeatable)")
+	f.BoolVar(&o.noDefaultExcludes, "no-default-excludes", false, "include paths excluded by the bundled Betterleaks prefilter")
 	f.BoolVar(&o.json, "json", o.json, "emit one versioned JSON object")
 	f.BoolVar(&o.example, "example", o.example, "print a commented TOML starter without reading configuration or writing files")
 	f.BoolVar(&o.init, "init", o.init, "create a default-inheriting TOML config without overwriting a file")

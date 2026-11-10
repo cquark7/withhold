@@ -34,7 +34,7 @@ var examples = map[string]string{
 	"status":       "withhold status\n  withhold status --json",
 	"doctor":       "withhold doctor\n  withhold doctor --json\n  withhold doctor --max-bytes 16m --chat-mode block",
 	"demo":         "withhold demo\n  withhold demo --json",
-	"scan":         "withhold scan .env\n  withhold scan . --pii email,phone\n  withhold scan . --secrets=false --pii all\n  withhold scan - < message.txt\n  withhold scan --text 'dev@example.com' --pii email\n  withhold scan . --exclude ./node_modules --json",
+	"scan":         "withhold scan .env\n  withhold scan . --pii email,phone\n  withhold scan . --secrets=false --pii all\n  withhold scan - < message.txt\n  withhold scan --text 'dev@example.com' --pii email\n  withhold scan . --exclude ./generated --json\n  withhold scan . --no-default-excludes",
 	"launch":       "withhold launch -- .\n  withhold launch -- /path/to/project",
 	"uninstall":    "withhold uninstall\n  withhold uninstall --keep-files",
 	"install":      "withhold install\n  withhold install --bin-dir /path/to/bin",
@@ -100,7 +100,7 @@ func help(w io.Writer, command string) int {
 	fmt.Fprintln(w, "\nExamples:\n  "+examples[command])
 	switch command {
 	case "scan":
-		fmt.Fprintln(w, "\nPaths may be files or recursive directories; - reads stdin once. Without paths,\nredirected stdin is read; interactive use requires a target or --text. Options\nmay follow paths; -- makes subsequent paths literal. --text excludes other inputs.\nPrefer files/stdin for sensitive data: literal arguments can enter shell history.\n\nUses configured PII (off by default); secrets default on. Both cannot be off.\nHidden/gitignored text is included; .git metadata, symlinks, nonregular files,\nand unsupported binary/document/archive content are skipped during traversal.\nExplicit unsupported inputs and read/size/timeout/scanner failures are errors.\nExclusions are literal paths, not globs. Skips count entries/subtree roots.\n\nOutput contains rule IDs and original line/byte-column locations, not values\nor source excerpts. --json streams one schema-1 object with a final complete\nsummary. This scans literal UTF-8 text, not the proxy's JSON extraction or routing.\nNo setup, active session, certificate trust, editor, or placeholder key is needed.")
+		fmt.Fprintln(w, "\nPaths may be files or recursive directories; - reads stdin once. Without paths,\nredirected stdin is read; interactive use requires a target or --text. Options\nmay follow paths; -- makes subsequent paths literal. --text excludes other inputs.\nPrefer files/stdin for sensitive data: literal arguments can enter shell history.\n\nUses configured PII (off by default); secrets default on. Both cannot be off.\nThe bundled Betterleaks path prefilter skips dependency/generated paths such as\nnode_modules and common lockfiles, including explicit targets and PII-only scans.\n--no-default-excludes disables that prefilter, not .git pruning or --exclude.\nOther hidden/gitignored text is included; symlinks, nonregular files, and\nunsupported binary/document/archive content are skipped during traversal.\nExplicit unsupported inputs and read/size/timeout/scanner failures are errors.\nExclusions are literal paths, not globs. Skips count entries/subtree roots.\n\nOutput contains rule IDs and original line/byte-column locations, not values\nor source excerpts. --json streams one schema-1 object with a final complete\nsummary. This scans literal UTF-8 text, not the proxy's JSON extraction or routing.\nNo setup, active session, certificate trust, editor, or placeholder key is needed.")
 		fmt.Fprintln(w, "\n--confidence low|medium|high sets Betterleaks' minimum for offline secrets only.\nIt overrides [scan].confidence; --confidence= clears the minimum (the default).\nUnclassified findings and components of accepted findings remain included.\nPII and proxy protection are unchanged. Higher thresholds can hide real secrets.")
 	case "demo":
 		fmt.Fprintln(w, "\nUses synthetic values, ephemeral IPv4 loopback ports, a temporary CA, and the\nbundled scanner. TLS verification stays enabled. No provider, editor settings,\ntrust stores, or existing configuration are used. Temporary files are removed.\nThis demonstrates the local pipeline, not application routing or live compatibility.")
@@ -169,7 +169,7 @@ func flagValueName(name string) string {
 func allowedFlag(command, name string) bool {
 	if command == "scan" {
 		switch name {
-		case "dir", "config", "pii", "json", "text", "secrets", "confidence", "exclude", "max-bytes", "scan-timeout":
+		case "dir", "config", "pii", "json", "text", "secrets", "confidence", "exclude", "no-default-excludes", "max-bytes", "scan-timeout":
 			return true
 		}
 		return false
@@ -181,7 +181,7 @@ func allowedFlag(command, name string) bool {
 		return false
 	}
 	switch name {
-	case "text", "secrets", "confidence", "exclude":
+	case "text", "secrets", "confidence", "exclude", "no-default-excludes":
 		return false
 	case "example", "init":
 		return command == "config"

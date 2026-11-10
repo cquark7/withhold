@@ -31,18 +31,6 @@ type TextFinding struct {
 	Encoded     bool   `json:"encoded"`
 }
 
-// textSource preserves whole-input multiline context and source coordinates.
-// It deliberately has no filepath: file-specific rules, archive extraction,
-// and repository configuration are not part of literal-text inspection.
-type textSource string
-
-func (s textSource) Fragments(ctx context.Context, yield sources.FragmentsFunc) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return yield(sources.Fragment{Raw: string(s), StartLine: 1}, nil)
-}
-
 const sourceBlock = 4096
 
 type sourceCheckpoint struct{ line, lineStart int }
@@ -175,25 +163,15 @@ func (d *Detector) Inspect(ctx context.Context, text string) ([]TextFinding, err
 		return nil
 	}
 	if d.engine != nil {
-		job, cancel := context.WithCancel(ctx)
-		defer cancel()
-		var scanErr error
-		for result := range d.engine.Run(job, textSource(text)) {
-			// Drain cancellation before another input can reuse the engine.
-			if scanErr != nil {
-				continue
+		// The fragment API preserves whole-input context without allocating Run's
+		// repository-sized result channel and goroutine for every file. Workers
+		// remain serial, isolated, and externally killable on deadline. This API
+		// is deprecated upstream but available in the pinned Betterleaks v1 SDK.
+		// Omit the filepath: literal inspection has no file-specific rules.
+		for _, finding := range d.engine.DetectContext(ctx, sources.Fragment{Raw: text, StartLine: 1}) {
+			if err := appendSecrets(finding); err != nil {
+				return nil, err
 			}
-			if result.Err != nil {
-				scanErr = errors.New("detector failed")
-			} else {
-				scanErr = appendSecrets(result.Finding)
-			}
-			if scanErr != nil {
-				cancel()
-			}
-		}
-		if scanErr != nil {
-			return nil, scanErr
 		}
 	}
 	for _, f := range d.pii.Scan(text) {

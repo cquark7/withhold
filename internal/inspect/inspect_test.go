@@ -53,6 +53,48 @@ func TestTraversalIncludesIgnoredTextAndDeduplicatesOverlappingTargets(t *testin
 	}
 }
 
+func TestPathPrefilterPrunesBeforeReadingAndCanBeDisabled(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	for name, data := range map[string]string{
+		".env": "application text", "node_modules/pkg/index.js": "dependency text", "package-lock.json": "generated text",
+	} {
+		if err := os.MkdirAll(filepath.Dir(name), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(name, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filter, err := detector.DefaultPathFilter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := scannerFunc(func(context.Context, []byte) ([]detector.TextFinding, error) { return nil, nil })
+	options := Options{Paths: []string{".", "node_modules/pkg/index.js"}, MaxBytes: 1024, Timeout: time.Second}
+	options.SkipPath = func(path string) bool {
+		if strings.Contains(filepath.ToSlash(path), "/node_modules/") {
+			t.Fatal("discovery entered a prefiltered directory")
+		}
+		if filepath.Base(path) == "package-lock.json" {
+			// A prefiltered file must not be statted/opened by the reader.
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return filter(path)
+	}
+	summary, err := Run(context.Background(), options, fake, func(Result) error { return nil })
+	if err != nil || !summary.Complete || summary.FilesScanned != 1 || !reflect.DeepEqual(summary.Skipped, map[string]int{"default-excluded": 2}) {
+		t.Fatalf("prefilter summary=%+v error=%v", summary, err)
+	}
+	options.SkipPath = nil
+	summary, err = Run(context.Background(), options, fake, func(Result) error { return nil })
+	if err != nil || !summary.Complete || summary.FilesScanned != 2 || len(summary.Skipped) != 0 {
+		t.Fatalf("unfiltered summary=%+v error=%v", summary, err)
+	}
+}
+
 func TestFailedInputsNeverProduceACompleteReportOrExposeRawErrors(t *testing.T) {
 	for _, test := range []struct {
 		name, text, code string

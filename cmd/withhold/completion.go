@@ -86,7 +86,7 @@ func valueCandidates(name, prefix string) []string {
 		return matching(ids, prefix)
 	case "pii":
 		return matching([]string{"off", "all", "aadhaar", "credit-card", "email", "ip-address", "phone", "us-ssn"}, prefix)
-	case "secrets":
+	case "secrets", "no-default-excludes":
 		return matching([]string{"true", "false"}, prefix)
 	case "confidence":
 		return matching([]string{"low", "medium", "high"}, prefix)

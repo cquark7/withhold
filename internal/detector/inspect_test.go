@@ -102,3 +102,25 @@ func TestSourceLocationsAcrossCheckpointsAndLongLines(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkInspectText(b *testing.B) {
+	d, err := NewInspection(true, "off", "")
+	if err != nil {
+		b.Fatal(err)
+	}
+	for _, test := range []struct{ name, text string }{
+		{"small", "ordinary application configuration\n"},
+		{"source", strings.Repeat("export const greeting = 'hello world';\n", 1024)},
+	} {
+		b.Run(test.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(len(test.text)))
+			for b.Loop() {
+				findings, err := d.Inspect(context.Background(), test.text)
+				if err != nil || len(findings) != 0 {
+					b.Fatalf("findings=%v error=%v", findings, err)
+				}
+			}
+		})
+	}
+}

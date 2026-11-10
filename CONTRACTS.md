@@ -64,14 +64,21 @@ detection are unaffected; detector self-tests run before the scan-only minimum
 is applied. JSON schema 1 adds `detectors.confidence` with the effective minimum;
 human output identifies a selected minimum when secrets are enabled.
 
-Recursive discovery includes hidden/gitignored text, prunes `.git` directories,
-and does not follow discovered symlinks. Explicit symlinks/nonregular inputs are
-errors. Read handles are confined to the selected root and verified against the
-discovered regular-file identity; POSIX opens are nonblocking and no-follow.
+Recursive discovery includes hidden/gitignored text subject to the bundled
+Betterleaks path prefilter. The prefilter applies to files and directories before
+reads, including explicit targets and PII-only scans; it prunes dependency trees
+such as `node_modules` and skips upstream-selected generated paths/lockfiles.
+`--no-default-excludes` disables only this prefilter. No local detector config or
+project ignore files are loaded. Intentional prefilter skips are summarized as
+`default-excluded`, not reported as inspected. Discovery also prunes `.git`
+directories and does not follow discovered symlinks. Explicit symlinks/nonregular
+inputs are errors. Read handles are confined to the selected root and verified
+against the discovered regular-file identity; POSIX opens are nonblocking and no-follow.
 Repeated/overlapping target paths are scanned once. Repeatable `--exclude PATH`
 excludes a literal file/subtree relative to the working directory, including
-explicit targets; there are no glob or project-ignore settings. Binary signatures,
-non-text content, and invalid UTF-8 are outside the text scope; there is no
+explicit targets, even with `--no-default-excludes`; there are no glob or
+project-ignore settings. Binary signatures, non-text content, and invalid UTF-8
+are outside the text scope; there is no
 archive/document extraction or OCR. Skips count entries/subtree roots, not the
 unknown number of descendant files.
 
