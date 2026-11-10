@@ -254,7 +254,8 @@ jobs:
           macOS and Linux:
 
           \`\`\`sh
-          curl -fsSL https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_VERSION/install.sh | sh -s -- --version $RELEASE_VERSION
+          curl -fsSL --connect-timeout 10 --max-time 120 --proto '=https' \\
+            https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_VERSION/install.sh | sh -s -- --version $RELEASE_VERSION
           export PATH="\$HOME/.local/bin:\$PATH"
           withhold demo
           \`\`\`

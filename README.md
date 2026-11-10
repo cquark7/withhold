@@ -51,14 +51,16 @@ requirements. Want another coding agent? [Help build an integration](#contribute
 With `curl` and `sha256sum` or `shasum`, run:
 
 ```sh
-curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
+curl -fsSL --connect-timeout 10 --max-time 120 --proto '=https' \
+  https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
 For releases with standalone binaries, the installer checks SHA-256 but does not
 authenticate the publisher; it needs no sudo, Go, Python, or GitHub CLI. See the
 [installation guide](docs/usage.md#installation) for provenance, pinning, or
-reviewing the script.
+reviewing the script. The installer handles download retries and shows progress
+on interactive terminals.
 
 ### Windows
 

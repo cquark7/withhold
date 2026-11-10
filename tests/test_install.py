@@ -3,11 +3,18 @@
 import hashlib
 import json
 import os
+import re
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
+import textwrap
+import threading
+import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from tools.package_native import (
@@ -22,6 +29,7 @@ from tools.verify_native import host_target
 VERSION = "v0.1.0-rc.1"
 COMMIT = "a" * 40
 NOTICES = b"Synthetic notices\n"
+REAL_CURL = shutil.which("curl")
 
 
 @unittest.skipIf(os.name == "nt", "the bootstrap targets macOS and Linux")
@@ -48,6 +56,7 @@ class InstallTests(unittest.TestCase):
             FIXTURE_SYSTEM="Linux",
             FIXTURE_MACHINE="x86_64",
             FIXTURE_VERSION=VERSION,
+            FIXTURE_INSTALLER=str(ROOT / "install.sh"),
         )
         self.bin = Path(self.env["HOME"]) / ".local" / "bin" / "withhold"
         self.script(
@@ -63,15 +72,31 @@ from urllib.parse import urlsplit
 args = sys.argv[1:]
 with open(os.environ['FIXTURE_LOG'], 'a') as log:
     log.write(json.dumps(['curl', *args]) + '\\n')
-url = args[-1]
-if url.endswith('/releases/latest'):
-    if os.environ.get('FIXTURE_NO_LATEST'):
-        sys.exit(1)
-    print(os.environ.get('FIXTURE_REDIRECT', 'https://github.com/cquark7/withhold/releases/tag/' + os.environ['FIXTURE_VERSION']), end='')
-else:
-    if os.environ.get('FIXTURE_DOWNLOAD_FAIL'):
-        sys.exit(1)
-    shutil.copyfile(Path(os.environ['FIXTURE_RELEASE']) / Path(urlsplit(url).path).name, args[args.index('-o') + 1])
+outputs = iter(Path(args[i + 1]) for i, arg in enumerate(args) if arg == '--output')
+for url in (arg for arg in args if arg.startswith('https://')):
+    output = next(outputs, None)
+    if url.endswith('/install.sh') and os.environ.get('FIXTURE_PARTIAL_BOOTSTRAP'):
+        partial = Path(os.environ['FIXTURE_INSTALLER']).read_text().rsplit('\\nmain "$@"', 1)[0]
+        sys.stdout.write(partial + '\\n')
+        print('curl: (28) download timed out', file=sys.stderr)
+        sys.exit(28)
+    if os.environ.get('FIXTURE_CURL_EXIT'):
+        print(os.environ.get('FIXTURE_HTTP_STATUS', '000') + ' ' + url)
+        sys.exit(int(os.environ['FIXTURE_CURL_EXIT']))
+    if url.endswith('/releases/latest'):
+        if os.environ.get('FIXTURE_NO_LATEST'):
+            sys.exit(1)
+        url = os.environ.get('FIXTURE_REDIRECT', 'https://github.com/cquark7/withhold/releases/tag/' + os.environ['FIXTURE_VERSION'])
+    else:
+        if os.environ.get('FIXTURE_DOWNLOAD_FAIL'):
+            sys.exit(1)
+        source = Path(os.environ['FIXTURE_RELEASE']) / Path(urlsplit(url).path).name
+        if output is None:
+            sys.stdout.buffer.write(source.read_bytes())
+        else:
+            shutil.copyfile(source, output)
+    if '--write-out' in args:
+        print('200 ' + url)
 """,
         )
         self.script(
@@ -149,6 +174,243 @@ shutil.copyfile(sys.argv[0], target)
             else []
         )
 
+    def assert_download_policy(self, calls, *, maximum="600", terminal=False):
+        for args in calls:
+            if args[0] != "curl":
+                continue
+            for option, value in (
+                ("--proto", "=https"),
+                ("--proto-redir", "=https"),
+                ("--connect-timeout", "10"),
+                ("--max-time", maximum),
+                ("--retry", "2"),
+                ("--retry-max-time", "60"),
+                ("--speed-limit", "1024"),
+                ("--speed-time", "30"),
+            ):
+                self.assertEqual(args[args.index(option) + 1], value)
+            self.assertIn("--show-error", args)
+            self.assertIn("--fail", args)
+            self.assertIn("--fail-early", args)
+            self.assertIn("--location", args)
+            self.assertIn("--output", args)
+            self.assertIn("--progress-bar" if terminal else "--silent", args)
+            self.assertNotIn("--silent" if terminal else "--progress-bar", args)
+            for option in ("--insecure", "--ipv4", "--ipv6", "--resolve", "--noproxy"):
+                self.assertNotIn(option, args)
+
+    def bootstrap_examples(self):
+        for name in ("README.md", "docs/usage.md"):
+            document = (ROOT / name).read_text()
+            yield name, re.search(r"```sh\n(.*?)\n```", document, re.DOTALL)[1]
+        workflow = (ROOT / ".github/workflows/native-artifacts.yml").read_text()
+        heredoc = workflow.split("cat > release-notes.md <<EOF\n", 1)[1].split(
+            "\n          EOF", 1
+        )[0]
+        rendered = subprocess.run(
+            ["/bin/sh", "-c", "cat <<EOF\n" + textwrap.dedent(heredoc) + "\nEOF"],
+            env=dict(
+                self.env,
+                GITHUB_REPOSITORY="cquark7/withhold",
+                RELEASE_VERSION=VERSION,
+                GITHUB_SHA=COMMIT,
+                GITHUB_SERVER_URL="https://github.com",
+                GITHUB_RUN_ID="1",
+            ),
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+        yield (
+            "release notes",
+            re.search(r"```sh\n(.*?)\n```", rendered.stdout, re.DOTALL)[1],
+        )
+
+    def run_bootstrap(self, example, *, success=True):
+        # Exercise the documented pipeline, not unrelated post-install commands.
+        command = example.split("\nexport PATH=", 1)[0]
+        result = subprocess.run(
+            ["/bin/sh", "-c", command],
+            env=self.env,
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
+        return result
+
+    def assert_bootstrap_policy(self, args):
+        for option, value in (
+            ("--proto", "=https"),
+            ("--connect-timeout", "10"),
+            ("--max-time", "120"),
+        ):
+            self.assertEqual(args[args.index(option) + 1], value)
+        self.assertIn("-fsSL", args)
+        self.assertNotIn("--retry", args)
+        self.assertNotIn("--output", args)
+
+    def serve_release(
+        self, *, stall_first_address=False, responses=None, redirect_assets=False
+    ):
+        """Use real curl with a private TLS server and no external networking."""
+        if not REAL_CURL or not shutil.which("openssl"):
+            self.skipTest("curl and openssl are required for loopback download checks")
+        config = self.root / "tls.cnf"
+        config.write_text(
+            "[req]\nprompt = no\ndistinguished_name = dn\n"
+            "[dn]\nCN = localhost\n[extensions]\n"
+            "subjectAltName = DNS:localhost,DNS:github.com,DNS:release-assets.githubusercontent.com\n"
+            "basicConstraints = critical,CA:TRUE\n"
+            "keyUsage = critical,digitalSignature,keyEncipherment,keyCertSign\n"
+            "extendedKeyUsage = serverAuth\n"
+        )
+        certificate, key = self.root / "tls.pem", self.root / "tls.key"
+        subprocess.run(
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-days",
+                "1",
+                "-config",
+                str(config),
+                "-extensions",
+                "extensions",
+                "-keyout",
+                str(key),
+                "-out",
+                str(certificate),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=15,
+        )
+        requests = []
+        self.download_connections = []
+        self.download_methods = []
+        connections = self.download_connections
+        methods = self.download_methods
+        release = self.release
+        responses = {} if responses is None else responses
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def do_HEAD(self):
+                self.respond(head=True)
+
+            def do_GET(self):
+                self.respond()
+
+            def respond(self, *, head=False):
+                name = self.path.rsplit("/", 1)[-1]
+                requests.append(name)
+                methods.append(self.command)
+                asset_redirect = (
+                    redirect_assets
+                    and self.headers["Host"] == "github.com"
+                    and name not in ("latest", VERSION)
+                )
+                queued = responses.get(name, [])
+                status = queued.pop(0) if queued and not asset_redirect else 200
+                if name == "latest" or asset_redirect:
+                    status, body = 302, b""
+                elif name == VERSION:
+                    body = b"release page"
+                else:
+                    body = (
+                        (release / name).read_bytes()
+                        if status == 200
+                        else b"unavailable"
+                    )
+                self.send_response(status)
+                if name == "latest":
+                    self.send_header(
+                        "Location", f"/cquark7/withhold/releases/tag/{VERSION}"
+                    )
+                elif asset_redirect:
+                    self.send_header(
+                        "Location",
+                        f"https://release-assets.githubusercontent.com/assets/{name}",
+                    )
+                if status >= 400:
+                    self.send_header("Connection", "close")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                if not head:
+                    self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        class Server(ThreadingHTTPServer):
+            address_family = socket.AF_INET6
+            daemon_threads = True
+
+            def server_bind(self):
+                self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                super().server_bind()
+
+            def get_request(self):
+                connection, address = super().get_request()
+                connections.append(address)
+                return connection, address
+
+        server = Server(("::1", 0), Handler)
+        self.addCleanup(server.server_close)
+        port = server.server_port
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certificate, key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+
+        def stop():
+            server.shutdown()
+            thread.join(timeout=5)
+
+        self.addCleanup(stop)
+        if stall_first_address:
+            # A full, unaccepted loopback queue drops further SYNs. IPv4-mapped
+            # IPv6 and ::1 give curl two addresses of the same family, so this
+            # exercises sequential address timeout rather than dual-stack racing.
+            blackhole = socket.socket()
+            self.addCleanup(blackhole.close)
+            blackhole.bind(("127.0.0.1", port))
+            blackhole.listen(1)
+            for _ in range(10):
+                client = socket.socket()
+                self.addCleanup(client.close)
+                client.settimeout(0.1)
+                try:
+                    client.connect(("127.0.0.1", port))
+                except TimeoutError:
+                    break
+            else:
+                self.fail("could not fill the isolated connection queue")
+        self.script(
+            self.tools / "curl",
+            f"""import json, os, subprocess, sys
+from urllib.parse import urlsplit
+args = sys.argv[1:]
+with open(os.environ['FIXTURE_LOG'], 'a') as log:
+    log.write(json.dumps(['curl', *args]) + '\\n')
+assert all(urlsplit(arg).hostname == 'github.com' for arg in args if arg.startswith('https://'))
+addresses = {"[::ffff:127.0.0.1],[::1]" if stall_first_address else "[::1]"!r}
+sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
+    '--cacert', {str(certificate)!r}, '--resolve', 'localhost:{port}:' + addresses,
+    '--connect-to', 'github.com:443:localhost:{port}',
+    '--connect-to', 'release-assets.githubusercontent.com:443:localhost:{port}', *args]))
+""",
+        )
+        return requests
+
     def isolate_path_without_gh(self, *, shasum_only=False):
         (self.tools / "gh").unlink()
         for name in ("awk", "grep", "sed", "mktemp", "rm", "chmod", "mkdir", "cp"):
@@ -165,6 +427,7 @@ shutil.copyfile(sys.argv[0], target)
         self.assertTrue(self.bin.is_file())
         self.assertTrue(all(args[0] == "curl" for args in self.calls()))
         self.assertTrue(self.calls()[0][-1].endswith("/releases/latest"))
+        self.assertIn("--head", self.calls()[0])
         self.assertIn("do not verify the publisher", result.stdout)
         docs = (
             Path(self.env["HOME"]) / ".local/share/withhold" / VERSION / "linux-amd64"
@@ -177,6 +440,181 @@ shutil.copyfile(sys.argv[0], target)
         self.assertFalse((docs / "native-release.sigstore.json").exists())
         self.assertFalse((Path(self.env["HOME"]) / ".config").exists())
         self.assertIn("withhold setup", result.stdout)
+
+    def test_every_download_is_bounded_and_stages_do_not_pollute_metadata(self):
+        result = self.run_installer("--verify-provenance")
+        self.assert_download_policy(self.calls())
+        downloads = [args for args in self.calls() if args[0] == "curl"]
+        self.assertEqual(len(downloads), 2)
+        self.assertEqual(
+            [Path(arg).name for arg in downloads[1] if arg.startswith("https://")],
+            [
+                binary_name("linux-amd64", VERSION),
+                notices_name("linux-amd64", VERSION),
+                "SHA256SUMS",
+                "native-release.sigstore.json",
+            ],
+        )
+        stages = (
+            "Finding latest release…",
+            f"Downloading withhold {VERSION} for linux-amd64…",
+            "Verifying signed provenance…",
+            "Verifying SHA-256 checksums…",
+            f"Installing to {self.bin}…",
+        )
+        positions = [result.stderr.index(stage) for stage in stages]
+        self.assertEqual(positions, sorted(positions))
+        for stage in stages:
+            self.assertNotIn(stage, result.stdout)
+        self.assertIn(f"Installed withhold to {self.bin}", result.stdout)
+
+    def test_progress_bars_are_enabled_only_for_interactive_stderr(self):
+        import pty
+
+        master, slave = pty.openpty()
+        self.addCleanup(os.close, master)
+        self.addCleanup(os.close, slave)
+        result = subprocess.run(
+            ["/bin/sh", str(ROOT / "install.sh"), "--version", VERSION],
+            env=self.env,
+            cwd=self.root,
+            stdout=subprocess.PIPE,
+            stderr=slave,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assert_download_policy(self.calls(), terminal=True)
+
+    def test_download_errors_identify_failure_and_preserve_existing_install(self):
+        self.bin.parent.mkdir(parents=True)
+        self.bin.write_text("existing executable")
+        for status, http, detail in (
+            (5, "000", "DNS lookup failed"),
+            (6, "000", "DNS lookup failed"),
+            (7, "000", "connection failed"),
+            (28, "000", "connection or download timed out after limited retries"),
+            (22, "404", "release file not found (HTTP 404)"),
+            (22, "429", "GitHub rate limit reached (HTTP 429)"),
+            (22, "503", "server returned HTTP 503"),
+            (35, "000", "HTTPS verification or TLS handshake failed"),
+            (60, "000", "HTTPS verification or TLS handshake failed"),
+            (23, "200", "cannot write the download"),
+            (18, "200", "download failed (curl exit 18)"),
+        ):
+            with self.subTest(status=status, http=http):
+                self.env.update(FIXTURE_CURL_EXIT=str(status), FIXTURE_HTTP_STATUS=http)
+                result = self.run_installer("--version", VERSION, success=False)
+                self.assertIn(
+                    f"Downloading withhold {VERSION} for linux-amd64: {detail}",
+                    result.stderr,
+                )
+                self.assertIn("nothing was installed", result.stderr)
+                self.assertNotIn("Installing to", result.stderr)
+                self.assertEqual(self.bin.read_text(), "existing executable")
+
+    def test_bootstrap_examples_stream_installer_with_bounded_connection(self):
+        shutil.copyfile(ROOT / "install.sh", self.release / "install.sh")
+        for name, example in self.bootstrap_examples():
+            with self.subTest(example=name):
+                before = len(self.calls())
+                self.run_bootstrap(example)
+                calls = self.calls()[before:]
+                self.assertTrue(calls[0][-1].endswith("/install.sh"))
+                self.assert_bootstrap_policy(calls[0])
+                self.assert_download_policy(calls[1:])
+                self.assertTrue(self.bin.is_file())
+                if name == "release notes":
+                    self.assertIn(
+                        f"/releases/download/{VERSION}/install.sh", calls[0][-1]
+                    )
+                    self.assertFalse(
+                        any(args[-1].endswith("/latest") for args in calls)
+                    )
+
+    def test_truncated_bootstrap_never_calls_install_entry_point(self):
+        self.env["FIXTURE_PARTIAL_BOOTSTRAP"] = "1"
+        for name, example in self.bootstrap_examples():
+            with self.subTest(example=name):
+                before = len(self.calls())
+                result = self.run_bootstrap(example)
+                self.assertIn("curl: (28) download timed out", result.stderr)
+                self.assertEqual(len(self.calls()) - before, 1)
+                self.assertFalse(self.bin.exists())
+
+    def test_real_curl_moves_past_a_stalled_address_within_connection_budget(self):
+        requests = self.serve_release(stall_first_address=True)
+        started = time.monotonic()
+        self.run_installer("--version", VERSION)
+        self.assertLess(time.monotonic() - started, 20)
+        self.assertEqual(requests.count(binary_name("linux-amd64", VERSION)), 1)
+        self.assertEqual(len(requests), 3)
+        self.assertEqual(len(self.download_connections), 1)
+        self.assertTrue(self.bin.is_file())
+
+    def test_latest_discovery_uses_head_and_release_files_share_one_connection(self):
+        requests = self.serve_release()
+        self.run_installer("--verify-provenance")
+        self.assertEqual(requests[:2], ["latest", VERSION])
+        self.assertEqual(
+            self.download_methods, ["HEAD", "HEAD", "GET", "GET", "GET", "GET"]
+        )
+        self.assertEqual(len(self.download_connections), 2)
+        self.assertTrue(self.bin.is_file())
+
+    def test_release_redirects_reuse_github_and_asset_connections(self):
+        requests = self.serve_release(redirect_assets=True)
+        self.run_installer("--version", VERSION, "--verify-provenance")
+        self.assertEqual(len(requests), 8)
+        self.assertEqual(len(self.download_connections), 2)
+        self.assertEqual(len([args for args in self.calls() if args[0] == "curl"]), 1)
+
+    def test_failed_batch_member_stops_downloads_and_preserves_install(self):
+        self.bin.parent.mkdir(parents=True)
+        self.bin.write_text("existing executable")
+        responses = {}
+        requests = self.serve_release(responses=responses)
+        subjects = [
+            binary_name("linux-amd64", VERSION),
+            notices_name("linux-amd64", VERSION),
+            "SHA256SUMS",
+            "native-release.sigstore.json",
+        ]
+        for index, subject in enumerate(subjects):
+            with self.subTest(subject=subject):
+                requests.clear()
+                responses[subject] = [404]
+                result = self.run_installer(
+                    "--version", VERSION, "--verify-provenance", success=False
+                )
+                self.assertEqual(requests, subjects[: index + 1])
+                self.assertIn("release file not found (HTTP 404)", result.stderr)
+                self.assertNotIn("Verifying", result.stderr)
+                self.assertEqual(self.bin.read_text(), "existing executable")
+        self.assertFalse(any(args[0] == "gh" for args in self.calls()))
+
+    def test_real_curl_retries_transient_http_failure_but_not_missing_files(self):
+        binary = binary_name("linux-amd64", VERSION)
+        responses = {binary: [503]}
+        requests = self.serve_release(responses=responses)
+        self.run_installer("--version", VERSION)
+        self.assertEqual(requests.count(binary), 2)
+        self.assertEqual(self.bin.read_bytes(), self.binary.read_bytes())
+        requests.clear()
+        responses[binary] = [404]
+        result = self.run_installer("--version", VERSION, success=False)
+        self.assertIn("release file not found (HTTP 404)", result.stderr)
+        self.assertEqual(requests, [binary])
+        self.assertEqual(self.bin.read_bytes(), self.binary.read_bytes())
+
+    def test_real_bootstrap_streams_the_installer_once(self):
+        Path(self.env["HOME"]).mkdir()
+        (self.release / "install.sh").write_text('touch "$HOME/bootstrap-ran"\n')
+        requests = self.serve_release()
+        _, example = next(self.bootstrap_examples())
+        self.run_bootstrap(example)
+        self.assertEqual(requests, ["install.sh"])
+        self.assertTrue((Path(self.env["HOME"]) / "bootstrap-ran").is_file())
 
     @unittest.skipUnless(shutil.which("shasum"), "shasum is unavailable")
     def test_installer_supports_shasum_without_sha256sum(self):

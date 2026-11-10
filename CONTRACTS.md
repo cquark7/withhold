@@ -253,6 +253,22 @@ GitHub CLI and verifies signed provenance for both files and the manifest;
 `--commit` implies that verification and pins the source commit. Requested
 provenance failures never fall back to checksum-only installation.
 
+The quickstart pipes the installer over HTTPS with a 10-second connection budget
+and a 120-second total limit, without retrying the stream. The installer defines
+its functions before invoking its entry point on the final line. A download-first
+option supports reviewing the script and checking curl succeeds before execution.
+
+Release discovery uses HEAD requests. Release files share one curl process for
+connection reuse across files and redirects; any failed transfer stops the batch
+before verification or installation. Installer downloads restrict requests and
+redirects to HTTPS, use a 10-second connection budget across resolved addresses,
+and retry transient failures up to
+twice with a 60-second retry-start window. Each attempt has a 600-second deadline;
+transfers below 1024 bytes/second for 30 seconds abort. curl retains normal proxy
+and CA configuration; no server IP is pinned. Installer stages go to stderr, with
+curl progress bars only on interactive stderr. Errors distinguish connection/DNS,
+timeout, HTTP, TLS, local-write, and verification failures before installation.
+
 ## Diagnostics and interfaces
 
 Project environment variables use `WITHHOLD_*`; test-only overrides use

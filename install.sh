@@ -22,6 +22,41 @@ Does not change shell files, certificate trust, or editor settings.
 EOF
     }
     fail() { printf 'withhold installer: %s\n' "$*" >&2; exit 1; }
+    fetch() (
+        label=$1; shift
+        printf '%s…\n' "$label" >&2
+        progress=--silent
+        if [ -t 2 ]; then progress=--progress-bar; fi
+        # curl shares the connection budget across resolved addresses, so a
+        # stalled address does not consume the default multi-minute timeout.
+        # Always write to a file: curl can then discard partial data on retry.
+        if response=$(curl "$progress" --show-error --fail --fail-early --location \
+            --proto '=https' --proto-redir '=https' \
+            --connect-timeout 10 --max-time 600 \
+            --retry 2 --retry-max-time 60 \
+            --speed-limit 1024 --speed-time 30 \
+            --write-out '%{http_code} %{url_effective}\n' "$@"); then
+            printf '%s' "$response"
+            return 0
+        else
+            status=$?
+        fi
+        http=$(printf '%s\n' "$response" | awk 'END { print $1 }')
+        case "$status" in
+            5|6) fail "$label: DNS lookup failed; check your connection and proxy settings; nothing was installed" ;;
+            7) fail "$label: connection failed; check your connection and proxy settings; nothing was installed" ;;
+            28) fail "$label: connection or download timed out after limited retries; check your connection and try again; nothing was installed" ;;
+            22)
+                case "$http" in
+                    404) fail "$label: release file not found (HTTP 404); check the version and that the release includes standalone binaries; nothing was installed" ;;
+                    429) fail "$label: GitHub rate limit reached (HTTP 429); try again later; nothing was installed" ;;
+                    *) fail "$label: server returned HTTP $http after limited retries; try again later; nothing was installed" ;;
+                esac ;;
+            35|51|60) fail "$label: HTTPS verification or TLS handshake failed; check your CA and proxy configuration; nothing was installed" ;;
+            23) fail "$label: cannot write the download; check free space and permissions; nothing was installed" ;;
+            *) fail "$label: download failed (curl exit $status); nothing was installed" ;;
+        esac
+    )
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --version|--commit|--bin-dir)
@@ -64,9 +99,12 @@ EOF
     else
         fail 'sha256sum or shasum is required'
     fi
+    temporary=$(mktemp -d "${TMPDIR:-/tmp}/withhold-install.XXXXXXXX") || fail 'cannot create a private temporary directory'
+    trap 'rm -rf "$temporary"' EXIT
+    trap 'exit 1' HUP INT TERM
     if [ -z "$version" ]; then
-        latest=$(curl -fsSL --proto '=https' --proto-redir '=https' -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest") ||
-            fail 'no latest release available; check your connection or pin --version vX.Y.Z'
+        latest=$(fetch 'Finding latest release' --head --output /dev/null "https://github.com/$repo/releases/latest") || exit 1
+        latest=${latest#* }
         case "$latest" in
             "https://github.com/$repo/releases/tag/"*)
                 version=${latest#"https://github.com/$repo/releases/tag/"}
@@ -85,18 +123,17 @@ EOF
     target=$os-$arch
     binary=withhold-$version-$target
     notices=withhold-$version-$target-NOTICES.txt
-    temporary=$(mktemp -d "${TMPDIR:-/tmp}/withhold-install.XXXXXXXX") || fail 'cannot create a private temporary directory'
-    trap 'rm -rf "$temporary"' EXIT
-    trap 'exit 1' HUP INT TERM
-    printf 'Downloading withhold %s for %s…\n' "$version" "$target"
     base="https://github.com/$repo/releases/download/$version"
-    for subject in "$binary" "$notices" SHA256SUMS; do
-        curl -fsSL --proto '=https' --proto-redir '=https' -o "$temporary/$subject" "$base/$subject" ||
-            fail 'download failed; this installer requires a release with standalone binaries'
-    done
+    # One curl process reuses connections across files and release redirects.
+    set -- --output "$temporary/$binary" "$base/$binary" \
+        --output "$temporary/$notices" "$base/$notices" \
+        --output "$temporary/SHA256SUMS" "$base/SHA256SUMS"
     if [ "$provenance" = true ]; then
-        curl -fsSL --proto '=https' --proto-redir '=https' -o "$temporary/native-release.sigstore.json" "$base/native-release.sigstore.json" ||
-            fail 'provenance download failed; nothing was installed'
+        set -- "$@" --output "$temporary/native-release.sigstore.json" "$base/native-release.sigstore.json"
+    fi
+    fetch "Downloading withhold $version for $target" "$@" >/dev/null || exit 1
+    if [ "$provenance" = true ]; then
+        printf 'Verifying signed provenance…\n' >&2
         for subject in "$binary" "$notices" SHA256SUMS; do
             if [ -n "$commit" ]; then
                 set -- --source-digest "$commit"
@@ -112,6 +149,7 @@ EOF
     else
         printf 'Checking SHA-256 checksums; these do not verify the publisher.\n'
     fi
+    printf 'Verifying SHA-256 checksums…\n' >&2
     for subject in "$binary" "$notices"; do
         expected=$(awk -v name="$subject" '$2 == name { count++; digest=$1 } END { if (count == 1) print digest }' "$temporary/SHA256SUMS")
         [ "${#expected}" -eq 64 ] || fail "missing or duplicate checksum for $subject"
@@ -125,6 +163,7 @@ EOF
     done
     chmod 700 "$temporary/$binary"
     # The executable enforces the existing running-session upgrade guard.
+    printf 'Installing to %s/withhold…\n' "$bin_dir" >&2
     "$temporary/$binary" install --bin-dir "$bin_dir"
     docs="$HOME/.local/share/withhold/$version/$target"
     mkdir -p "$docs"
@@ -134,7 +173,7 @@ EOF
     if [ "$provenance" = true ]; then
         cp "$temporary/native-release.sigstore.json" "$docs/native-release.sigstore.json"
     fi
-    printf '\nInstalled withhold. Release documentation and verification evidence: %s\n' "$docs"
+    printf '\nInstalled withhold to %s/withhold.\nRelease documentation and verification evidence: %s\n' "$bin_dir" "$docs"
     case ":${PATH:-}:" in
         *":$bin_dir:"*) ;;
         *) printf 'Add the install directory to PATH (no shell files were edited):\n  export PATH="%s:$PATH"\n' "$bin_dir" ;;

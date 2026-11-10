@@ -17,25 +17,49 @@ The installer needs `curl` and a SHA-256 utility (`shasum` or `sha256sum`). Go,
 Python, GitHub CLI, and archive extraction tools are not required.
 
 ```sh
-curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
+curl -fsSL --connect-timeout 10 --max-time 120 --proto '=https' \
+  https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 withhold version
 withhold demo
 ```
 
+The initial script download has a 10-second connection budget and a 120-second
+total limit. It is not automatically retried while piping into `sh`; retrying a
+stream can duplicate script contents. To review the script or ensure curl succeeds
+before execution, use the download-first option below.
+
+The installer uses HEAD requests to find the latest release, then downloads its
+files in one curl process so connections can be reused across files and redirects.
+It handles retries and progress internally. Its downloads allow 10 seconds for
+each connection phase, including DNS and TLS. curl tries the host's
+resolved addresses within that budget rather than waiting minutes on an
+unreachable address. Downloads retry transient failures up to twice, starting no
+new retry after 60 seconds. Each attempt is capped at 10 minutes; the retry window
+is not a total deadline. Transfers below 1 KiB/s for 30 seconds are aborted. Stages
+and failures go to stderr, with progress bars only on interactive stderr. No IP
+addresses are pinned, and normal curl proxy and CA configuration still applies.
+
 To download and review the script before running it:
 
 ```sh
-curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.sh -o install.sh
-less install.sh
-sh install.sh --help
+curl --fail --show-error --location --proto '=https' --proto-redir '=https' \
+  --connect-timeout 10 --max-time 120 --retry 2 --retry-max-time 60 \
+  --speed-limit 1024 --speed-time 30 \
+  --output install.sh https://github.com/cquark7/withhold/releases/latest/download/install.sh &&
+less install.sh &&
+sh install.sh --help &&
 sh install.sh
 ```
 
 To install a specific release that includes standalone binaries, choose its tag:
 
 ```sh
-curl -fsSL https://github.com/cquark7/withhold/releases/download/VERSION/install.sh | sh -s -- --version VERSION
+curl --fail --show-error --location --proto '=https' --proto-redir '=https' \
+  --connect-timeout 10 --max-time 120 --retry 2 --retry-max-time 60 \
+  --speed-limit 1024 --speed-time 30 \
+  --output install.sh https://github.com/cquark7/withhold/releases/download/VERSION/install.sh &&
+sh install.sh --version VERSION
 ```
 
 Replace `VERSION` in both places with the same tag, such as `v1.2.3`. Without
