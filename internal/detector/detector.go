@@ -36,6 +36,24 @@ type Detector struct {
 }
 
 func New(selection string) (*Detector, error) {
+	return newDetector(true, selection)
+}
+
+// NewInspection can omit the secret engine for a PII-only offline scan.
+// Proxy workers always use New, which keeps secret detection enabled.
+func NewInspection(secrets bool, selection string) (*Detector, error) {
+	return newDetector(secrets, selection)
+}
+
+func newDetector(secrets bool, selection string) (*Detector, error) {
+	p, err := pii.New(selection)
+	if err != nil {
+		return nil, err
+	}
+	scanner := &Detector{pii: p}
+	if !secrets {
+		return scanner, nil
+	}
 	logging.Logger = zerolog.Nop()
 	blregexp.SetEngine(blregexp.Stdlib{})
 	cfg, err := detectorConfig()
@@ -47,11 +65,7 @@ func New(selection string) (*Detector, error) {
 	d.MaxDecodeDepth = 5
 	d.MaxArchiveDepth = 8
 	d.SkipFindingAppend = true
-	p, err := pii.New(selection)
-	if err != nil {
-		return nil, err
-	}
-	scanner := &Detector{engine: d, pii: p}
+	scanner.engine = d
 	const canary = "AKIA4X7Q2W8K9MNDZZZZ"
 	for _, suffix := range []string{"", " # gitleaks:allow", " # betterleaks:allow"} {
 		findings, err := scanner.Scan(`token = "` + canary + `"` + suffix)

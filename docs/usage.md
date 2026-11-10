@@ -138,6 +138,65 @@ Windows PowerShell: `go build -trimpath -o withhold.exe ./cmd/withhold`, then
 Installation copies the executable and creates an absent default configuration;
 it does not overwrite existing config or change trust or editor settings.
 
+## Scan local text
+
+`scan` finds secrets and optional PII locally without rewriting input, starting a
+proxy, or requiring setup. Output identifies the rule and original location,
+not detected values or source excerpts.
+
+```sh
+withhold scan .env
+withhold scan src config
+withhold scan . --pii email,phone
+withhold scan . --secrets=false --pii all
+withhold scan - < message.txt
+withhold scan --text 'dev@example.com' --pii email
+withhold scan . --exclude ./node_modules --json
+```
+
+Paths may be files or recursive directories. Options may precede or follow paths;
+use `--` for names beginning with `-`, and `./-` for a file named `-`. Positional
+arguments are never guessed to be text. With no paths, redirected stdin is read;
+interactive use requires a target or `--text`. Explicit `-` may accompany files
+but can appear only once. `--text` cannot accompany paths/stdin. Prefer files or
+stdin for real sensitive data: arguments can enter shell history/process listings.
+
+Secrets default on. PII uses the [configured selection](configuration.md), off by
+default; `--pii off`, `--pii all`, or categories override it. `--secrets=false`
+requires at least one PII category. The selected TOML file is strictly validated,
+without editor discovery. No state, logs, keys, settings, or trust are written.
+
+Directory scans include hidden/gitignored text such as `.env`, prune `.git`
+directories, and skip symlinks, nonregular files, binary/document/archive content,
+and invalid UTF-8. Explicit unsupported inputs are errors. Repeat `--exclude PATH`
+for literal files/subtrees relative to your working directory; exclusions win over
+explicit targets and are not globs. Skipped counts describe entries or pruned
+subtree roots, not every descendant file. Empty selections say `No eligible text
+inputs`; skipped or unreadable content is never presented as inspected.
+
+Human findings look like `.env:12:19  secret  aws-access-token`. Lines and UTF-8
+byte columns start at 1. Full-match locations can include nonsecret context;
+decoded findings identify their encoded source span. Filepaths may be private.
+This scans literal source text, including `.json` files, not the proxy's JSON
+extraction or routing policy; results are not an exact proxy-request simulation.
+
+`--json` streams one schema-1 object with `detectors`, `findings`, `summary`,
+`errors`, and `errors_omitted`. Each finding contains `source`, nullable `path`,
+`rule_id`, `kind`, byte `start`/`end`, `start_line`/`start_column`,
+`end_line`/`end_column`, and `encoded`. Byte ranges are zero-based and half-open;
+end line/column positions are exclusive. `summary.complete` must be true before
+treating the report as finished; truncated JSON is not a completed report.
+
+Exit **0** means complete without findings; **1** complete with findings; **2**
+invalid usage/configuration or incomplete/failed scanning. Errors take precedence.
+Read failures, oversized text, timeouts, worker failures, and finding limits are
+errors, not clean results. The per-input defaults are `--max-bytes 32m` (ceiling
+`128m`) and `--scan-timeout 10s`, also inherited from the file's `proxy.max_bytes`
+and `proxy.scan_timeout`. `WITHHOLD_MAX_BYTES` and `WITHHOLD_PII` apply; unrelated
+proxy/editor environment overrides do not. Inputs are bounded, with up to three
+reused workers and 10,000 findings per input; see the
+[inspection contract](../CONTRACTS.md#offline-text-inspection) for limits.
+
 ## Start and stop
 
 ### Try the local pipeline first

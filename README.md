@@ -97,6 +97,20 @@ does not change certificate trust or editor settings; see the
 
 ## Try it locally
 
+Scan local files or directories without setup:
+
+```sh
+withhold scan .env
+withhold scan . --pii email,phone
+```
+
+Findings identify rules and locations without displaying detected values. Hidden
+and gitignored text is included; inputs are not changed. See
+[local scanning](docs/usage.md#scan-local-text) for stdin/text input, exclusions,
+PII-only scans, JSON output, and incomplete-scan limits.
+
+To demonstrate the local proxy pipeline:
+
 ```sh
 withhold demo
 ```

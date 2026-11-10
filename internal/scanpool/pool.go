@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cquark7/withhold/internal/detector"
 	"github.com/cquark7/withhold/internal/pii"
 	"github.com/cquark7/withhold/internal/scanner"
 	"github.com/cquark7/withhold/internal/worker"
@@ -46,6 +47,8 @@ type Pool struct {
 	pii         *pii.Metadata
 	configErr   error
 	debug       bool
+	inspection  bool
+	secrets     bool
 	done        chan struct{}
 	idleTimeout time.Duration
 }
@@ -111,14 +114,41 @@ func (p *Pool) Close() {
 }
 
 func (p *Pool) Scan(ctx context.Context, body []byte, maxBytes int64) (scanner.Report, error) {
-	if p.configErr != nil {
-		return nil, p.configErr
+	if p.inspection {
+		return nil, errScan
 	}
-	size := int64(len(body)) + 8
+	var prefix [8]byte
+	binary.BigEndian.PutUint64(prefix[:], uint64(maxBytes))
+	var report scanner.Report
+	err := p.exchange(ctx, body, prefix[:], func(data []byte) error {
+		var response struct {
+			Schema int
+			Report scanner.Report
+		}
+		if json.Unmarshal(data, &response) != nil || response.Schema != 1 || !validReportWithDebug(response.Report, p.debug) {
+			return errScan
+		}
+		report = response.Report
+		return nil
+	})
+	return report, err
+}
+
+// exchange owns process admission, reuse, deadlines, and reclamation for both
+// body and text inspection. Each caller validates its own distinct reply.
+func (p *Pool) exchange(ctx context.Context, body, prefix []byte, consume func([]byte) error) error {
+	if p.configErr != nil {
+		return p.configErr
+	}
+	size := int64(len(body)) + int64(len(prefix))
+	budget := int64(64 * 1024 * 1024)
+	if p.inspection {
+		budget = 128 * 1024 * 1024
+	}
 	p.mu.Lock()
-	if p.closed || p.jobs >= 6 || size > 128*1024*1024 || p.bytes+size > 64*1024*1024 {
+	if p.closed || p.jobs >= 6 || size > 128*1024*1024 || p.bytes+size > budget {
 		p.mu.Unlock()
-		return nil, errors.New("native scanner capacity exceeded")
+		return errors.New("native scanner capacity exceeded")
 	}
 	p.jobs++
 	p.bytes += size
@@ -127,9 +157,9 @@ func (p *Pool) Scan(ctx context.Context, body []byte, maxBytes int64) (scanner.R
 	select {
 	case <-p.available:
 	case <-ctx.Done():
-		return nil, errScan
+		return errScan
 	case <-p.done:
-		return nil, errScan
+		return errScan
 	}
 	// Reuse the most recently returned child. Sequential traffic should pay
 	// for one detector process; additional children start only under overlap.
@@ -152,7 +182,7 @@ func (p *Pool) Scan(ctx context.Context, body []byte, maxBytes int64) (scanner.R
 	}
 	if c.closed || ctx.Err() != nil {
 		c.mu.Unlock()
-		return nil, errScan
+		return errScan
 	}
 	if c.cmd == nil {
 		cmd := exec.Command(p.binary, p.args...)
@@ -160,19 +190,19 @@ func (p *Pool) Scan(ctx context.Context, body []byte, maxBytes int64) (scanner.R
 		in, err := cmd.StdinPipe()
 		if err != nil {
 			c.mu.Unlock()
-			return nil, errScan
+			return errScan
 		}
 		out, err := cmd.StdoutPipe()
 		if err != nil {
 			_ = in.Close()
 			c.mu.Unlock()
-			return nil, errScan
+			return errScan
 		}
 		if err = cmd.Start(); err != nil {
 			_ = in.Close()
 			_ = out.Close()
 			c.mu.Unlock()
-			return nil, errScan
+			return errScan
 		}
 		c.cmd, c.in, c.out = cmd, in, out
 	}
@@ -181,7 +211,6 @@ func (p *Pool) Scan(ctx context.Context, body []byte, maxBytes int64) (scanner.R
 
 	done := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() { _ = cmd.Process.Kill(); close(done) })
-	var report scanner.Report
 	var scanErr error
 	func() {
 		if first {
@@ -190,12 +219,7 @@ func (p *Pool) Scan(ctx context.Context, body []byte, maxBytes int64) (scanner.R
 				scanErr = err
 				return
 			}
-			var hello struct {
-				Schema          int
-				Engine, Version string
-				PII             *pii.Metadata
-			}
-			if json.Unmarshal(data, &hello) != nil || hello.Schema != 1 || hello.Engine != "withhold-scanner" || hello.Version != "1.10.0" || !reflect.DeepEqual(hello.PII, p.pii) {
+			if !p.validGreeting(data) {
 				scanErr = errScan
 				return
 			}
@@ -203,10 +227,13 @@ func (p *Pool) Scan(ctx context.Context, body []byte, maxBytes int64) (scanner.R
 			c.ready = true
 			c.mu.Unlock()
 		}
-		var prefix [12]byte
-		binary.BigEndian.PutUint32(prefix[:4], uint32(size))
-		binary.BigEndian.PutUint64(prefix[4:], uint64(maxBytes))
-		if _, err := in.Write(prefix[:]); err != nil {
+		var header [4]byte
+		binary.BigEndian.PutUint32(header[:], uint32(size))
+		if _, err := in.Write(header[:]); err != nil {
+			scanErr = err
+			return
+		}
+		if _, err := in.Write(prefix); err != nil {
 			scanErr = err
 			return
 		}
@@ -219,15 +246,7 @@ func (p *Pool) Scan(ctx context.Context, body []byte, maxBytes int64) (scanner.R
 			scanErr = err
 			return
 		}
-		var response struct {
-			Schema int
-			Report scanner.Report
-		}
-		if json.Unmarshal(data, &response) != nil || response.Schema != 1 || !validReportWithDebug(response.Report, p.debug) {
-			scanErr = errScan
-			return
-		}
-		report = response.Report
+		scanErr = consume(data)
 	}()
 	if !stop() {
 		<-done
@@ -251,9 +270,26 @@ func (p *Pool) Scan(ctx context.Context, body []byte, maxBytes int64) (scanner.R
 	closed := p.closed
 	p.mu.Unlock()
 	if scanErr != nil || closed {
-		return nil, errScan
+		return errScan
 	}
-	return report, nil
+	return nil
+}
+
+func (p *Pool) validGreeting(data []byte) bool {
+	if p.inspection {
+		var hello worker.TextGreeting
+		version := ""
+		if p.secrets {
+			version = detector.Version
+		}
+		return decodeText(data, &hello) == nil && reflect.DeepEqual(hello, worker.TextGreeting{Schema: 1, Engine: "withhold-text-scanner", Secrets: p.secrets, SecretVersion: version, PII: p.pii})
+	}
+	var hello struct {
+		Schema          int
+		Engine, Version string
+		PII             *pii.Metadata
+	}
+	return json.Unmarshal(data, &hello) == nil && hello.Schema == 1 && hello.Engine == "withhold-scanner" && hello.Version == "1.10.0" && reflect.DeepEqual(hello.PII, p.pii)
 }
 
 // Never let an incompatible worker reply become permission to forward a body.

@@ -97,6 +97,14 @@ PII categories are `aadhaar`, `credit-card`, `email`, `ip-address`, `phone`, and
 `us-ssn`; read their [format limits](../CONTRACTS.md#pii-coverage).
 Invalid selections fail rather than silently disabling protection.
 
+`scan` reuses configuration selection, `protection.pii`, and the per-input
+`proxy.max_bytes`/`proxy.scan_timeout` defaults, with explicit flags taking
+precedence. Only `WITHHOLD_PII` and `WITHHOLD_MAX_BYTES` apply beyond the config
+selector variables; editor/proxy environment overrides are ignored. The file is
+strictly validated without discovering an application or loading trust/state.
+Scan-only `--secrets=false` does not change proxy settings. See
+[local text inspection](usage.md#scan-local-text) for inputs, scope, and exit codes.
+
 Prefer absolute paths for logs, config, and upstream roots: relative paths use
 the invoking working directory. Application resource paths follow the selected
 integration's documented rules.
@@ -106,6 +114,8 @@ integration's documented rules.
 Use `withhold help COMMAND` for applicable flags. `--integration NAME` selects
 an adapter for `setup`, `on`, `serve`, `doctor`, `config`, and optional `launch`.
 `off` restores the recorded session, not a newly selected integration.
+`scan` accepts `--dir`, `--config`, `--pii`, `--max-bytes`, and `--scan-timeout`
+but not integration, routing, trust, or redact/block action options.
 `--debug` is session-only on `on`/`serve`, not a file field.
 
 | Variable | Setting |

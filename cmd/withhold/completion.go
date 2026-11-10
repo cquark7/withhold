@@ -58,6 +58,9 @@ func candidates(args []string) []string {
 				}
 				return values
 			}
+			if command == "scan" && !strings.HasPrefix(current, "-") {
+				return nil // Let the shell complete input paths.
+			}
 			choices = []string{"--help"}
 			f.VisitAll(func(option *flag.Flag) {
 				if allowedFlag(command, option.Name) {
@@ -83,6 +86,8 @@ func valueCandidates(name, prefix string) []string {
 		return matching(ids, prefix)
 	case "pii":
 		return matching([]string{"off", "all", "aadhaar", "credit-card", "email", "ip-address", "phone", "us-ssn"}, prefix)
+	case "secrets":
+		return matching([]string{"true", "false"}, prefix)
 	}
 	return nil
 }

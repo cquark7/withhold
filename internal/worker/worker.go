@@ -48,7 +48,7 @@ func readFrame(r io.Reader) ([]byte, error) {
 	return data, err
 }
 
-func writeFrame(w io.Writer, value response) error {
+func writeFrame(w io.Writer, value any) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return errors.New("cannot encode scan report")
@@ -66,6 +66,9 @@ func writeFrame(w io.Writer, value response) error {
 }
 
 func serve(r io.Reader, w io.Writer, mode string) error {
+	if mode == "--text" {
+		return serveText(r, w)
+	}
 	d, err := detector.New(os.Getenv("WITHHOLD_PII"))
 	if err != nil {
 		return err
@@ -151,8 +154,8 @@ func Main() {
 	if len(os.Args) == 2 {
 		mode = os.Args[1]
 	}
-	if len(os.Args) > 2 || (mode != "" && mode != "--body" && mode != "--jsonl") {
-		fmt.Fprintln(os.Stderr, "usage: withhold-scanner [--body|--jsonl] (private stdin/stdout)")
+	if len(os.Args) > 2 || (mode != "" && mode != "--body" && mode != "--jsonl" && mode != "--text") {
+		fmt.Fprintln(os.Stderr, "usage: withhold-scanner [--body|--jsonl|--text] (private stdin/stdout)")
 		os.Exit(2)
 	}
 	if err := serve(os.Stdin, os.Stdout, mode); err != nil {

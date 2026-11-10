@@ -21,6 +21,7 @@ request → transport intake → scanner pool → policy → upstream or local e
 | `internal/policy` | Traffic contracts and shared enforcement decisions. |
 | `internal/scanner` | JSON extraction, rewriting, placeholders, residue verification. |
 | `internal/detector`, `internal/pii` | Offline secret and selected PII recognizers. |
+| `internal/inspect` | Bounded local text/file traversal and value-free human/JSON inspection reports. |
 | `internal/worker`, `internal/scanpool` | Private process protocol, key resolution, admission/deadlines. |
 | `internal/session`, `internal/control` | Harness-independent sessions, authenticated ownership, trust/recovery. |
 | `internal/integration` | Reversible application-setup and optional-launch contracts. |
@@ -111,3 +112,14 @@ invalid counters/statuses, and unsafe diagnostics before policy uses them.
 UTF-8 text and returns private `RuleID`/`Secret`/`Match` findings. Raw findings
 must never enter ordinary diagnostics. Scanner statuses and runtime guarantees
 are covered by the [behavior contract](../CONTRACTS.md).
+
+`scan` instead launches `_scanner --text`, reusing pool admission, process
+lifetimes, deadlines, and kill/reap handling without changing the body protocol.
+Schema-1 text greetings identify `withhold-text-scanner`, the explicit secret
+selection/version and optional PII metadata. Requests are framed original UTF-8
+bytes; replies contain only schema, value-free location findings, and an optional
+fixed error code. Unknown fields, incompatible selections, and invalid ranges are
+rejected. No placeholder key or rewriting scanner is initialized in text mode.
+The CLI owns configuration; `internal/inspect` owns rooted regular-file intake,
+bounded scheduling and ordered output; detector adapters own original locations.
+This literal-text path does not perform proxy JSON extraction or archive walking.

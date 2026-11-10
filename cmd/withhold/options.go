@@ -22,10 +22,13 @@ type cliOptions struct {
 	timeout                                                        time.Duration
 	hosts, patterns                                                stringsFlag
 	configPath, integration, pii                                   string
+	text                                                           string
+	secrets                                                        bool
+	exclude                                                        stringsFlag
 }
 
 func defaultOptions(home string) cliOptions {
-	o := cliOptions{dir: filepath.Join(home, ".config", "withhold"), pii: "off"}
+	o := cliOptions{dir: filepath.Join(home, ".config", "withhold"), pii: "off", secrets: true}
 	o.use(config.Defaults(integrations.Default, runtime.GOOS))
 	return o
 }
@@ -38,6 +41,9 @@ func (o *cliOptions) flags(command string) *flag.FlagSet {
 	f.StringVar(&o.configPath, "config", o.configPath, "TOML user configuration (default DIR/config.toml)")
 	f.StringVar(&o.integration, "integration", o.integration, "built-in integration; list with 'withhold integrations'")
 	f.StringVar(&o.pii, "pii", o.pii, "optional PII: off, all, or comma-separated categories")
+	f.StringVar(&o.text, "text", o.text, "scan literal text instead of files or stdin (arguments can enter shell history)")
+	f.BoolVar(&o.secrets, "secrets", o.secrets, "detect secrets; use --secrets=false for PII-only scans")
+	f.Var(&o.exclude, "exclude", "exclude a file or directory subtree, relative to the working directory (repeatable)")
 	f.BoolVar(&o.json, "json", o.json, "emit one versioned JSON object")
 	f.BoolVar(&o.example, "example", o.example, "print a commented TOML starter without reading configuration or writing files")
 	f.BoolVar(&o.init, "init", o.init, "create a default-inheriting TOML config without overwriting a file")
@@ -57,6 +63,11 @@ func (o *cliOptions) flags(command string) *flag.FlagSet {
 	f.StringVar(&o.upstreamCA, "upstream-ca", o.upstreamCA, "additional PEM roots for verified upstream TLS")
 	f.Var(&o.hosts, "extra-hosts", "comma-separated provider hosts (repeatable)")
 	f.Var(&o.patterns, "extra-host-regex", "full-host RE2 provider pattern (repeatable)")
+	if command == "scan" {
+		f.Lookup("max-bytes").Usage = "per-input text cap; bytes or k/m/g suffix, at most 128m"
+		f.Lookup("scan-timeout").Usage = "per-input read/startup/scan deadline"
+		f.Lookup("dir").Usage = "directory containing the default config.toml (no state is written)"
+	}
 	return f
 }
 

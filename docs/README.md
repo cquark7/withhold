@@ -3,6 +3,7 @@
 | Need | Read |
 | --- | --- |
 | Install, operate, diagnose, recover, or remove Withhold | [Usage](usage.md) |
+| Inspect local text, files, or directories for secrets/PII | [Offline scan](usage.md#scan-local-text) |
 | Choose a supported coding harness | [Integrations](integrations/README.md) |
 | Set shared policy, limits, and integration options | [Configuration](configuration.md) |
 | Understand protection guarantees and limits | [Shared contract](../CONTRACTS.md), then the selected integration's contract |
