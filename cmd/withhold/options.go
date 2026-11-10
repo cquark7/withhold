@@ -23,6 +23,7 @@ type cliOptions struct {
 	hosts, patterns                                                stringsFlag
 	configPath, integration, pii                                   string
 	text                                                           string
+	confidence                                                     string
 	secrets                                                        bool
 	exclude                                                        stringsFlag
 }
@@ -42,6 +43,7 @@ func (o *cliOptions) flags(command string) *flag.FlagSet {
 	f.StringVar(&o.integration, "integration", o.integration, "built-in integration; list with 'withhold integrations'")
 	f.StringVar(&o.pii, "pii", o.pii, "optional PII: off, all, or comma-separated categories")
 	f.StringVar(&o.text, "text", o.text, "scan literal text instead of files or stdin (arguments can enter shell history)")
+	f.StringVar(&o.confidence, "confidence", o.confidence, "minimum secret confidence: low, medium, high; empty keeps all levels (PII unchanged)")
 	f.BoolVar(&o.secrets, "secrets", o.secrets, "detect secrets; use --secrets=false for PII-only scans")
 	f.Var(&o.exclude, "exclude", "exclude a file or directory subtree, relative to the working directory (repeatable)")
 	f.BoolVar(&o.json, "json", o.json, "emit one versioned JSON object")

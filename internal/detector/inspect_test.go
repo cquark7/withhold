@@ -23,7 +23,7 @@ func TestInspectionPreservesOccurrencesAndByteLocations(t *testing.T) {
 		{"both", true, "email", 3},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			d, err := NewInspection(test.secrets, test.pii)
+			d, err := NewInspection(test.secrets, test.pii, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -48,7 +48,7 @@ func TestInspectionPreservesOccurrencesAndByteLocations(t *testing.T) {
 }
 
 func TestInspectionReportsEncodedSourceAndDistinctMultipartComponents(t *testing.T) {
-	d, err := NewInspection(true, "off")
+	d, err := NewInspection(true, "off", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestInspectionReportsEncodedSourceAndDistinctMultipartComponents(t *testing
 
 func TestInspectionRejectsTruncatedFindings(t *testing.T) {
 	for _, secrets := range []bool{false, true} {
-		d, err := NewInspection(secrets, "email")
+		d, err := NewInspection(secrets, "email", "")
 		if err != nil {
 			t.Fatal(err)
 		}

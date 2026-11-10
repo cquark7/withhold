@@ -17,6 +17,7 @@ type TextGreeting struct {
 	Engine        string        `json:"engine"`
 	Secrets       bool          `json:"secrets"`
 	SecretVersion string        `json:"secret_version,omitempty"`
+	Confidence    string        `json:"confidence"`
 	PII           *pii.Metadata `json:"pii,omitempty"`
 }
 
@@ -32,11 +33,15 @@ func serveText(r io.Reader, w io.Writer) error {
 		return errors.New("invalid text worker selection")
 	}
 	secrets := setting == "1"
-	d, err := detector.NewInspection(secrets, os.Getenv("WITHHOLD_PII"))
+	confidence, err := detector.ParseConfidence(os.Getenv("WITHHOLD_INTERNAL_SCAN_CONFIDENCE"))
+	if err != nil {
+		return errors.New("invalid text worker confidence")
+	}
+	d, err := detector.NewInspection(secrets, os.Getenv("WITHHOLD_PII"), confidence)
 	if err != nil || !secrets && d.PII() == nil {
 		return errors.New("cannot initialize text scanner")
 	}
-	hello := TextGreeting{Schema: 1, Engine: "withhold-text-scanner", Secrets: secrets, PII: d.PII()}
+	hello := TextGreeting{Schema: 1, Engine: "withhold-text-scanner", Secrets: secrets, Confidence: confidence, PII: d.PII()}
 	if secrets {
 		hello.SecretVersion = detector.Version
 	}

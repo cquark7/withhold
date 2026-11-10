@@ -40,9 +40,18 @@ func New(selection string) (*Detector, error) {
 }
 
 // NewInspection can omit the secret engine for a PII-only offline scan.
-// Proxy workers always use New, which keeps secret detection enabled.
-func NewInspection(secrets bool, selection string) (*Detector, error) {
-	return newDetector(secrets, selection)
+// Confidence is a scan-only minimum; proxy workers use New without filtering.
+func NewInspection(secrets bool, selection, confidence string) (*Detector, error) {
+	minimum, err := ParseConfidence(confidence)
+	if err != nil {
+		return nil, err
+	}
+	d, err := newDetector(secrets, selection)
+	if err == nil && d.engine != nil {
+		// Self-tests run without filtering before the scan-only minimum applies.
+		d.engine.MinConfidence = minimum
+	}
+	return d, err
 }
 
 func newDetector(secrets bool, selection string) (*Detector, error) {

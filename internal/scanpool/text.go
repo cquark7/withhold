@@ -14,11 +14,12 @@ import (
 
 // NewInspection reuses isolated workers without enabling body rewriting or
 // inheriting private debug/engine overrides from the invoking environment.
-func NewInspection(binary string, environment []string, secrets bool, selection string) *Pool {
-	filtered := make([]string, 0, len(environment)+2)
+func NewInspection(binary string, environment []string, secrets bool, selection, confidence string) *Pool {
+	minimum, confidenceErr := detector.ParseConfidence(confidence)
+	filtered := make([]string, 0, len(environment)+3)
 	for _, entry := range environment {
 		key, _, _ := strings.Cut(entry, "=")
-		if !strings.EqualFold(key, "WITHHOLD_PII") && !strings.EqualFold(key, "WITHHOLD_INTERNAL_SCAN_SECRETS") && !strings.EqualFold(key, "WITHHOLD_INTERNAL_DEBUG_FINDINGS") {
+		if !strings.EqualFold(key, "WITHHOLD_PII") && !strings.EqualFold(key, "WITHHOLD_INTERNAL_SCAN_SECRETS") && !strings.EqualFold(key, "WITHHOLD_INTERNAL_SCAN_CONFIDENCE") && !strings.EqualFold(key, "WITHHOLD_INTERNAL_DEBUG_FINDINGS") {
 			filtered = append(filtered, entry)
 		}
 	}
@@ -26,9 +27,13 @@ func NewInspection(binary string, environment []string, secrets bool, selection 
 	if secrets {
 		setting = "1"
 	}
-	filtered = append(filtered, "WITHHOLD_PII="+selection, "WITHHOLD_INTERNAL_SCAN_SECRETS="+setting)
+	filtered = append(filtered, "WITHHOLD_PII="+selection, "WITHHOLD_INTERNAL_SCAN_SECRETS="+setting, "WITHHOLD_INTERNAL_SCAN_CONFIDENCE="+minimum)
 	p := NewWithEnvironment(binary, filtered, "_scanner", "--text")
 	p.inspection, p.secrets = true, secrets
+	p.confidence = minimum
+	if confidenceErr != nil {
+		p.configErr = confidenceErr
+	}
 	if !secrets && p.pii == nil && p.configErr == nil {
 		p.configErr = errors.New("no detectors selected")
 	}

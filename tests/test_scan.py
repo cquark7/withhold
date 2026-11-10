@@ -10,6 +10,7 @@ from pathlib import Path
 NATIVE = os.environ.get("WITHHOLD_TEST_NATIVE")
 TOKEN = "AKIA4X7Q2W3K7MNDZBXP"
 EMAIL = "scan-fixture@example.com"
+GENERIC = "Zf3D0LXCM3EIMbgJpUNnkRtOfOueHznB"
 
 
 @unittest.skipUnless(NATIVE, "native executable required")
@@ -32,6 +33,7 @@ class ScanTests(unittest.TestCase):
             WITHHOLD_INTEGRATION="invalid-but-irrelevant",
             WITHHOLD_INTERNAL_DEBUG_FINDINGS="1",
             WITHHOLD_INTERNAL_SCAN_SECRETS="0",
+            WITHHOLD_INTERNAL_SCAN_CONFIDENCE="high",
             HTTP_PROXY="http://127.0.0.1:1",
             HTTPS_PROXY="http://127.0.0.1:1",
         )
@@ -49,6 +51,7 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
         self.assertNotIn(TOKEN, result.stdout + result.stderr)
         self.assertNotIn(EMAIL, result.stdout + result.stderr)
+        self.assertNotIn(GENERIC, result.stdout + result.stderr)
         self.assertEqual(list(self.home.iterdir()), [])
         return result
 
@@ -122,3 +125,47 @@ class ScanTests(unittest.TestCase):
             timeout=5,
         )
         self.assertEqual(result.stdout.strip(), "--secrets=false")
+
+    def test_confidence_uses_config_and_flag_without_affecting_pii(self):
+        text = f'api_key = "{GENERIC}"\n'
+        # An inherited private worker setting must not affect default scans.
+        self.scan("--text", text, expected=1)
+        config = self.root / "config.toml"
+        config.write_text('schema = 1\n[scan]\nconfidence = "high"\n')
+        args = ("--config", str(config))
+        report = json.loads(self.scan(*args, "--text", text, "--json").stdout)
+        self.assertEqual(report["detectors"]["confidence"], "high")
+        self.assertTrue(report["summary"]["complete"])
+        self.assertEqual(report["findings"], [])
+        for level in ("low", ""):
+            with self.subTest(level=level):
+                report = json.loads(
+                    self.scan(
+                        *args, "--confidence=" + level, "--json", text=text, expected=1
+                    ).stdout
+                )
+                self.assertEqual(report["detectors"]["confidence"], level)
+                self.assertEqual(report["findings"][0]["rule_id"], "generic-api-key")
+        report = json.loads(
+            self.scan(
+                *args,
+                "--pii=email",
+                "--json",
+                text=text + TOKEN + "\n" + EMAIL,
+                expected=1,
+            ).stdout
+        )
+        self.assertEqual(
+            [row["rule_id"] for row in report["findings"]],
+            ["aws-access-token", "pii-email"],
+        )
+        result = self.scan(*args, "--text", text)
+        self.assertIn("minimum confidence: high", result.stdout)
+        self.scan(*args, "--secrets=false", "--pii=email", text=EMAIL, expected=1)
+        result = self.scan("--text", text, "--confidence=PRIVATE", expected=2)
+        self.assertNotIn("PRIVATE", result.stdout + result.stderr)
+        for value in ('"PRIVATE"', "42"):
+            config.write_text("schema = 1\n[scan]\nconfidence = " + value + "\n")
+            result = self.scan(*args, "--text", text, expected=2)
+            self.assertNotIn("PRIVATE", result.stdout + result.stderr)
+        self.assertIn("--confidence", self.scan(*args, "--help").stdout)

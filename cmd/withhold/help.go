@@ -101,6 +101,7 @@ func help(w io.Writer, command string) int {
 	switch command {
 	case "scan":
 		fmt.Fprintln(w, "\nPaths may be files or recursive directories; - reads stdin once. Without paths,\nredirected stdin is read; interactive use requires a target or --text. Options\nmay follow paths; -- makes subsequent paths literal. --text excludes other inputs.\nPrefer files/stdin for sensitive data: literal arguments can enter shell history.\n\nUses configured PII (off by default); secrets default on. Both cannot be off.\nHidden/gitignored text is included; .git metadata, symlinks, nonregular files,\nand unsupported binary/document/archive content are skipped during traversal.\nExplicit unsupported inputs and read/size/timeout/scanner failures are errors.\nExclusions are literal paths, not globs. Skips count entries/subtree roots.\n\nOutput contains rule IDs and original line/byte-column locations, not values\nor source excerpts. --json streams one schema-1 object with a final complete\nsummary. This scans literal UTF-8 text, not the proxy's JSON extraction or routing.\nNo setup, active session, certificate trust, editor, or placeholder key is needed.")
+		fmt.Fprintln(w, "\n--confidence low|medium|high sets Betterleaks' minimum for offline secrets only.\nIt overrides [scan].confidence; --confidence= clears the minimum (the default).\nUnclassified findings and components of accepted findings remain included.\nPII and proxy protection are unchanged. Higher thresholds can hide real secrets.")
 	case "demo":
 		fmt.Fprintln(w, "\nUses synthetic values, ephemeral IPv4 loopback ports, a temporary CA, and the\nbundled scanner. TLS verification stays enabled. No provider, editor settings,\ntrust stores, or existing configuration are used. Temporary files are removed.\nThis demonstrates the local pipeline, not application routing or live compatibility.")
 	case "config":
@@ -154,6 +155,8 @@ func flagValueName(name string) string {
 		return "NAME"
 	case "pii":
 		return "TYPES"
+	case "confidence":
+		return "LEVEL"
 	case "text":
 		return "TEXT"
 	case "exclude":
@@ -166,7 +169,7 @@ func flagValueName(name string) string {
 func allowedFlag(command, name string) bool {
 	if command == "scan" {
 		switch name {
-		case "dir", "config", "pii", "json", "text", "secrets", "exclude", "max-bytes", "scan-timeout":
+		case "dir", "config", "pii", "json", "text", "secrets", "confidence", "exclude", "max-bytes", "scan-timeout":
 			return true
 		}
 		return false
@@ -178,7 +181,7 @@ func allowedFlag(command, name string) bool {
 		return false
 	}
 	switch name {
-	case "text", "secrets", "exclude":
+	case "text", "secrets", "confidence", "exclude":
 		return false
 	case "example", "init":
 		return command == "config"

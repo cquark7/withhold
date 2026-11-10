@@ -54,6 +54,16 @@ uses the usual `--dir`, `--config`, `WITHHOLD_DIR`, and `WITHHOLD_CONFIG` rules.
 Scanning requires no setup, session, trust, editor, or placeholder key and writes
 no state or logs. Literal arguments and reported filepaths can themselves be private.
 
+Offline secret confidence uses `--confidence`, then TOML `[scan].confidence`,
+then `""` (no minimum). Accepted levels are `low`, `medium`, and `high`, trimmed
+and lowercased; explicit empty clears a configured minimum. There is no public
+confidence environment override. Filtering delegates to Betterleaks: findings
+without recognized confidence and components of accepted multipart findings
+remain included. Higher thresholds can hide real secrets. PII and proxy secret
+detection are unaffected; detector self-tests run before the scan-only minimum
+is applied. JSON schema 1 adds `detectors.confidence` with the effective minimum;
+human output identifies a selected minimum when secrets are enabled.
+
 Recursive discovery includes hidden/gitignored text, prunes `.git` directories,
 and does not follow discovered symlinks. Explicit symlinks/nonregular inputs are
 errors. Read handles are confined to the selected root and verified against the

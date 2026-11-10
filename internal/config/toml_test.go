@@ -116,3 +116,34 @@ func TestFilesAlwaysUseTOMLRegardlessOfFilename(t *testing.T) {
 		}
 	}
 }
+
+func TestScanConfidenceIsValidatedAndPreservedInTOMLSnapshots(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	for _, value := range []string{`""`, `"low"`, `" Medium "`, `"high"`, `"PRIVATE"`, `42`, `["high"]`} {
+		if err := os.WriteFile(path, []byte("schema = 1\n[scan]\nconfidence = "+value+"\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		c, err := Load(path, true, Defaults("fixture", "linux"))
+		if err == nil {
+			err = c.Validate()
+		}
+		invalid := value == `"PRIVATE"` || value == `42` || value == `["high"]`
+		if (err != nil) != invalid || err != nil && strings.Contains(err.Error(), "PRIVATE") {
+			t.Fatalf("confidence %s: error=%v", value, err)
+		}
+		if invalid {
+			continue
+		}
+		data, err := TOML(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		roundtrip, err := Load(path, true, Defaults("fixture", "linux"))
+		if err != nil || !reflect.DeepEqual(roundtrip, c) {
+			t.Fatalf("confidence lost in snapshot: %v", err)
+		}
+	}
+}

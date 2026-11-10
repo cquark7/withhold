@@ -49,6 +49,7 @@ type Pool struct {
 	debug       bool
 	inspection  bool
 	secrets     bool
+	confidence  string
 	done        chan struct{}
 	idleTimeout time.Duration
 }
@@ -282,7 +283,7 @@ func (p *Pool) validGreeting(data []byte) bool {
 		if p.secrets {
 			version = detector.Version
 		}
-		return decodeText(data, &hello) == nil && reflect.DeepEqual(hello, worker.TextGreeting{Schema: 1, Engine: "withhold-text-scanner", Secrets: p.secrets, SecretVersion: version, PII: p.pii})
+		return decodeText(data, &hello) == nil && reflect.DeepEqual(hello, worker.TextGreeting{Schema: 1, Engine: "withhold-text-scanner", Secrets: p.secrets, SecretVersion: version, Confidence: p.confidence, PII: p.pii})
 	}
 	var hello struct {
 		Schema          int

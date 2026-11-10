@@ -17,6 +17,7 @@ import (
 type Selection struct {
 	Secrets       bool          `json:"secrets"`
 	SecretVersion string        `json:"secret_version,omitempty"`
+	Confidence    string        `json:"confidence"`
 	PII           *pii.Metadata `json:"pii,omitempty"`
 	MaxBytes      int64         `json:"max_bytes"`
 	ScanTimeout   string        `json:"scan_timeout"`
@@ -147,7 +148,11 @@ func (o *Output) Finish(summary Summary) error {
 		if o.selection.PII != nil {
 			pii = strings.Join(o.selection.PII.Categories, ",")
 		}
-		if _, err := fmt.Fprintf(o.w, "%s; %d inputs scanned (%d files). Secrets: %t; PII: %s.\n", message, summary.InputsScanned, summary.FilesScanned, o.selection.Secrets, pii); err != nil {
+		confidence := ""
+		if o.selection.Secrets && o.selection.Confidence != "" {
+			confidence = " (minimum confidence: " + o.selection.Confidence + ")"
+		}
+		if _, err := fmt.Fprintf(o.w, "%s; %d inputs scanned (%d files). Secrets: %t%s; PII: %s.\n", message, summary.InputsScanned, summary.FilesScanned, o.selection.Secrets, confidence, pii); err != nil {
 			return err
 		}
 	}

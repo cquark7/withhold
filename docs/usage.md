@@ -148,6 +148,7 @@ not detected values or source excerpts.
 withhold scan .env
 withhold scan src config
 withhold scan . --pii email,phone
+withhold scan . --confidence medium
 withhold scan . --secrets=false --pii all
 withhold scan - < message.txt
 withhold scan --text 'dev@example.com' --pii email
@@ -165,6 +166,14 @@ Secrets default on. PII uses the [configured selection](configuration.md), off b
 default; `--pii off`, `--pii all`, or categories override it. `--secrets=false`
 requires at least one PII category. The selected TOML file is strictly validated,
 without editor discovery. No state, logs, keys, settings, or trust are written.
+
+`--confidence low|medium|high` delegates a minimum confidence to Betterleaks for
+offline secret findings. It overrides `[scan].confidence` in TOML; the default is
+`""` (no minimum), and `--confidence=` clears a configured minimum. `medium`
+includes medium/high findings; `high` includes high findings. Unclassified
+findings remain included, along with components of accepted multipart findings.
+PII and proxy protection are unaffected. Higher thresholds can hide real secrets;
+confidence is a heuristic, not credential validation.
 
 Directory scans include hidden/gitignored text such as `.env`, prune `.git`
 directories, and skip symlinks, nonregular files, binary/document/archive content,
@@ -186,6 +195,8 @@ extraction or routing policy; results are not an exact proxy-request simulation.
 `end_line`/`end_column`, and `encoded`. Byte ranges are zero-based and half-open;
 end line/column positions are exclusive. `summary.complete` must be true before
 treating the report as finished; truncated JSON is not a completed report.
+`detectors.confidence` records the selected minimum (empty means none); the
+schema remains 1 with this additive metadata field.
 
 Exit **0** means complete without findings; **1** complete with findings; **2**
 invalid usage/configuration or incomplete/failed scanning. Errors take precedence.

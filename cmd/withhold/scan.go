@@ -82,6 +82,9 @@ func scanConfiguration(o cliOptions, f *flag.FlagSet) (config.Config, error) {
 	if flagSet(f, "pii") {
 		c.Protection.PII = strings.Split(o.pii, ",")
 	}
+	if flagSet(f, "confidence") {
+		c.Scan.Confidence = o.confidence
+	}
 	if flagSet(f, "max-bytes") {
 		c.Proxy.MaxBytes = o.max
 	}
@@ -153,7 +156,7 @@ func scan(out, diagnostics io.Writer, stdin *os.File, args []string) int {
 	}
 	cap, _ := config.Size(c.Proxy.MaxBytes)
 	timeout, _ := time.ParseDuration(c.Proxy.ScanTimeout)
-	settings := inspect.Selection{Secrets: o.secrets, PII: meta, MaxBytes: cap, ScanTimeout: timeout.String()}
+	settings := inspect.Selection{Secrets: o.secrets, PII: meta, Confidence: c.Scan.Confidence, MaxBytes: cap, ScanTimeout: timeout.String()}
 	if o.secrets {
 		settings.SecretVersion = detector.Version
 	}
@@ -165,7 +168,7 @@ func scan(out, diagnostics io.Writer, stdin *os.File, args []string) int {
 	if err != nil {
 		return usage("cannot resolve bundled scanner")
 	}
-	pool := scanpool.NewInspection(binary, os.Environ(), o.secrets, selection)
+	pool := scanpool.NewInspection(binary, os.Environ(), o.secrets, selection, c.Scan.Confidence)
 	defer pool.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
