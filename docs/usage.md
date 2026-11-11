@@ -167,10 +167,11 @@ withhold scan ./vendor --no-default-excludes
 ```
 
 Paths may be files or directories; options may appear before or after them. Use
-`--` for paths beginning with `-`. Without a path, redirected stdin is read;
-interactive use needs a target. `-` reads stdin once and can accompany paths;
-`--text` is exclusive. Prefer files or stdin for sensitive text because arguments
-may be saved in shell history or shown in process listings.
+`--` for paths beginning with `-`. Without a path or `--text`, redirected stdin
+is read; interactive use needs a target. `-` reads stdin once and can accompany
+path arguments; `--text` selects only its literal value, ignores implicit stdin,
+and cannot be combined with path arguments. Prefer files or stdin for sensitive
+text because arguments may be saved in shell history or shown in process listings.
 
 Secrets are on by default; PII is off unless selected in
 [configuration](configuration.md) or with `--pii`. `--secrets=false` enables a

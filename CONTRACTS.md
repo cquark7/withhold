@@ -37,9 +37,11 @@ the integration contract. Observe mode does not enforce these format/method poli
 ## Offline text inspection
 
 - **Input:** Reads literal UTF-8 from `--text`, files, directories, or stdin.
-  Arguments are paths; `--text` is exclusive, and stdin is read once. Without a
-  target, stdin must be redirected. Inputs are never changed or joined, and proxy
-  JSON extraction is not applied.
+  Arguments are paths; `--text` selects only its literal value, ignores implicit
+  stdin, and cannot be combined with path arguments. Otherwise stdin is read once
+  when selected explicitly with `-` or when neither `--text` nor a path is
+  supplied and stdin is redirected. Inputs are never changed or joined, and
+  proxy JSON extraction is not applied.
 - **Detection and config:** Secrets are on by default; PII is optional, and both
   cannot be disabled. TOML is validated without application discovery. Precedence
   is flags, `WITHHOLD_PII`/`WITHHOLD_MAX_BYTES`, file, then defaults; other

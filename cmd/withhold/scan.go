@@ -123,7 +123,7 @@ func scan(out, diagnostics io.Writer, stdin *os.File, args []string) int {
 		return usage("cannot resolve home directory; use --dir or --config")
 	}
 	if flagSet(f, "text") && len(paths) != 0 {
-		return usage("--text cannot be combined with paths or stdin")
+		return usage("--text cannot be combined with paths")
 	}
 	if !flagSet(f, "text") && len(paths) == 0 {
 		if inspect.IsTerminal(stdin) {

@@ -53,6 +53,26 @@ func TestTraversalIncludesIgnoredTextAndDeduplicatesOverlappingTargets(t *testin
 	}
 }
 
+func TestExplicitTargetsInsideGitMetadataAreAlwaysSkipped(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.MkdirAll(".git", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(".git/config", []byte("synthetic metadata"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	fake := scannerFunc(func(context.Context, []byte) ([]detector.TextFinding, error) {
+		return nil, errors.New("Git metadata was scanned")
+	})
+	for _, path := range []string{".git/config", ".git"} {
+		summary, err := Run(context.Background(), Options{Paths: []string{path}, MaxBytes: 1024, Timeout: time.Second}, fake, func(Result) error { return nil })
+		if err != nil || !summary.Complete || summary.FilesScanned != 0 || !reflect.DeepEqual(summary.Skipped, map[string]int{"git-metadata": 1}) {
+			t.Fatalf("path=%q summary=%+v error=%v", path, summary, err)
+		}
+	}
+}
+
 func TestPathPrefilterPrunesBeforeReadingAndCanBeDisabled(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)

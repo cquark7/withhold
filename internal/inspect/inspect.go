@@ -75,6 +75,15 @@ func contains(parent, child string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+func gitMetadataPath(name string) bool {
+	for _, part := range strings.Split(filepath.Clean(name), string(filepath.Separator)) {
+		if part == ".git" {
+			return true
+		}
+	}
+	return false
+}
+
 // A recursive root cannot own an explicitly selected path beneath a pruned
 // metadata directory or a symlinked directory that discovery will not enter.
 func discoveredBy(parent, child string) bool {
@@ -238,11 +247,21 @@ func Run(ctx context.Context, o Options, scanner Scanner, yield func(Result) err
 				continue
 			}
 			input := inputFor(t.abs)
-			if excluded(t.abs) || t.err != nil || !t.info.IsDir() && !t.info.Mode().IsRegular() {
+			if excluded(t.abs) {
+				if err := submit(func(context.Context) Result { return Result{Input: input, Skipped: "excluded"} }); err != nil {
+					return summary, err
+				}
+				continue
+			}
+			if gitMetadataPath(t.abs) {
+				if err := submit(func(context.Context) Result { return Result{Input: input, Skipped: "git-metadata"} }); err != nil {
+					return summary, err
+				}
+				continue
+			}
+			if t.err != nil || !t.info.IsDir() && !t.info.Mode().IsRegular() {
 				r := Result{Input: input, Error: "read-error"}
-				if excluded(t.abs) {
-					r.Error, r.Skipped = "", "excluded"
-				} else if t.err == nil {
+				if t.err == nil {
 					r.Error = "unsupported-input"
 				}
 				if err := submit(func(context.Context) Result { return r }); err != nil {
