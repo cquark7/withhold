@@ -1,4 +1,4 @@
-"""Validate standalone archive contents and actual executable compression."""
+"""Validate archive contents and actual executable compression."""
 
 import hashlib
 import io
@@ -19,19 +19,16 @@ from tools.native_notices import build_notices
 from tools.package_native import (
     ROOT,
     archive,
-    binary_name,
-    notices_name,
-    standalone_notices,
     validate_version,
 )
-from tools.verify_native import extract, host_target, smoke, verify, verify_release
+from tools.verify_native import extract, host_target, smoke, verify
 
 VERSION = "0.0.0-test"
 NOTICES = b"Synthetic dependency license and copyright notice\n"
 
 
 class NativeArchiveTests(unittest.TestCase):
-    def test_packager_publishes_binaries_notices_and_archives_for_all_targets(self):
+    def test_packager_publishes_one_archive_for_every_target(self):
         def build(command, **kwargs):
             self.assertEqual(command[:2], ["go", "build"])
             Path(command[command.index("-o") + 1]).write_bytes(b"synthetic binary")
@@ -51,10 +48,12 @@ class NativeArchiveTests(unittest.TestCase):
                 patch.object(packaging, "build_notices", return_value=NOTICES),
             ):
                 packaging.main()
-            self.assertEqual(len((root / "SHA256SUMS").read_text().splitlines()), 18)
+            self.assertEqual(len((root / "SHA256SUMS").read_text().splitlines()), 6)
+            self.assertEqual(len(list(root.iterdir())), 7)
             for target in packaging.TARGETS:
                 with self.subTest(target=target):
-                    verify_release(root, target, VERSION)
+                    files = verify(root, target, VERSION)
+                    self.assertEqual(files["THIRD_PARTY_NOTICES.txt"], NOTICES)
 
     def test_archive_documentation_links_work_in_the_flat_layout(self):
         for target in ("linux-amd64", "windows-arm64"):
@@ -170,7 +169,7 @@ class NativeArchiveTests(unittest.TestCase):
         for value in ("dev", "1.0.0", "v1.2.3-rc.1+build.01"):
             self.assertEqual(validate_version(value), value)
 
-    def test_standalone_release_matches_archive_and_checksums_for_every_target(self):
+    def test_archive_checksum_is_required_for_every_target(self):
         for target in (
             "darwin-amd64",
             "darwin-arm64",
@@ -194,44 +193,12 @@ class NativeArchiveTests(unittest.TestCase):
                     go_version="go1.26.10",
                     notices=NOTICES,
                 )
-                standalone = root / binary_name(target, VERSION)
-                standalone.write_bytes(binary.read_bytes())
-                notices = root / notices_name(target, VERSION)
-                notices.write_bytes(
-                    standalone_notices((ROOT / "LICENSE").read_bytes(), NOTICES)
-                )
-                paths = (artifact, standalone, notices)
-
-                def manifest():
-                    (root / "SHA256SUMS").write_text(
-                        "".join(
-                            f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n"
-                            for p in paths
-                        )
-                    )
-
-                manifest()
-                verify_release(root, target, VERSION)
-                for path in (standalone, notices):
-                    original = path.read_bytes()
-                    path.write_bytes(original + b"modified")
-                    manifest()  # Matching checksums must not hide a different executable or notices.
-                    with self.assertRaises(ValueError):
-                        verify_release(root, target, VERSION)
-                    path.write_bytes(original)
-                    manifest()
-                    checksum = (root / "SHA256SUMS").read_text()
-                    (root / "SHA256SUMS").write_text(
-                        checksum.replace(hashlib.sha256(original).hexdigest(), "0" * 64)
-                    )
-                    with self.assertRaises(ValueError):
-                        verify_release(root, target, VERSION)
-                    manifest()
-                (root / "SHA256SUMS").write_text(
-                    f"{hashlib.sha256(artifact.read_bytes()).hexdigest()}  {artifact.name}\n"
-                )
+                self.manifest(root, artifact)
+                verify(root, target, VERSION)
+                with artifact.open("ab") as output:
+                    output.write(b"modified")
                 with self.assertRaises(ValueError):
-                    verify_release(root, target, VERSION)
+                    verify(root, target, VERSION)
 
     @staticmethod
     def manifest(root, path):

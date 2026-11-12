@@ -1,6 +1,7 @@
 """Exercise the POSIX bootstrap with local release fixtures, never live downloads."""
 
 import hashlib
+import io
 import json
 import os
 import re
@@ -9,6 +10,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import tarfile
 import tempfile
 import textwrap
 import threading
@@ -20,9 +22,7 @@ from pathlib import Path
 from tools.package_native import (
     ROOT,
     archive,
-    binary_name,
-    notices_name,
-    standalone_notices,
+    artifact_name,
 )
 from tools.verify_native import host_target
 
@@ -139,17 +139,8 @@ shutil.copyfile(sys.argv[0], target)
             go_version="go1.26.10",
             notices=NOTICES,
         )
-        binary = self.release / binary_name(target, version)
-        binary.write_bytes(self.binary.read_bytes())
-        notices = self.release / notices_name(target, version)
-        notices.write_bytes(
-            standalone_notices((ROOT / "LICENSE").read_bytes(), NOTICES)
-        )
         (self.release / "SHA256SUMS").write_text(
-            "".join(
-                f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
-                for path in (archive_path, binary, notices)
-            )
+            f"{hashlib.sha256(archive_path.read_bytes()).hexdigest()}  {archive_path.name}\n"
         )
         (self.release / "native-release.sigstore.json").write_text("fixture only")
 
@@ -241,13 +232,23 @@ shutil.copyfile(sys.argv[0], target)
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
         return result
 
-    def assert_bootstrap_policy(self, args):
-        for option, value in (
-            ("--proto", "=https"),
-            ("--connect-timeout", "10"),
-            ("--max-time", "120"),
-        ):
-            self.assertEqual(args[args.index(option) + 1], value)
+    def assert_bootstrap_policy(self, args, *, bounded=True):
+        if bounded:
+            for option, value in (
+                ("--proto", "=https"),
+                ("--connect-timeout", "10"),
+                ("--max-time", "120"),
+            ):
+                self.assertEqual(args[args.index(option) + 1], value)
+        else:
+            for option in (
+                "--proto",
+                "--proto-redir",
+                "--connect-timeout",
+                "--max-time",
+            ):
+                self.assertNotIn(option, args)
+        self.assertTrue(any(arg.startswith("https://") for arg in args), args)
         self.assertIn("-fsSL", args)
         self.assertNotIn("--retry", args)
         self.assertNotIn("--output", args)
@@ -413,7 +414,18 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
 
     def isolate_path_without_gh(self, *, shasum_only=False):
         (self.tools / "gh").unlink()
-        for name in ("awk", "grep", "sed", "mktemp", "rm", "chmod", "mkdir", "cp"):
+        for name in (
+            "awk",
+            "grep",
+            "sed",
+            "mktemp",
+            "rm",
+            "chmod",
+            "mkdir",
+            "cp",
+            "tar",
+            "gzip",
+        ):
             (self.tools / name).symlink_to(shutil.which(name))
         hash_tool = (
             "sha256sum" if not shasum_only and shutil.which("sha256sum") else "shasum"
@@ -433,9 +445,9 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
             Path(self.env["HOME"]) / ".local/share/withhold" / VERSION / "linux-amd64"
         )
         self.assertEqual(
-            (docs / notices_name("linux-amd64", VERSION)).read_bytes(),
-            standalone_notices((ROOT / "LICENSE").read_bytes(), NOTICES),
+            (docs / "LICENSE").read_bytes(), (ROOT / "LICENSE").read_bytes()
         )
+        self.assertEqual((docs / "THIRD_PARTY_NOTICES.txt").read_bytes(), NOTICES)
         self.assertTrue((docs / "SHA256SUMS").is_file())
         self.assertFalse((docs / "native-release.sigstore.json").exists())
         self.assertFalse((Path(self.env["HOME"]) / ".config").exists())
@@ -449,8 +461,7 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
         self.assertEqual(
             [Path(arg).name for arg in downloads[1] if arg.startswith("https://")],
             [
-                binary_name("linux-amd64", VERSION),
-                notices_name("linux-amd64", VERSION),
+                artifact_name("linux-amd64", VERSION),
                 "SHA256SUMS",
                 "native-release.sigstore.json",
             ],
@@ -513,7 +524,7 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
                 self.assertNotIn("Installing to", result.stderr)
                 self.assertEqual(self.bin.read_text(), "existing executable")
 
-    def test_bootstrap_examples_stream_installer_with_bounded_connection(self):
+    def test_bootstrap_examples_stream_installer_with_expected_curl_policy(self):
         shutil.copyfile(ROOT / "install.sh", self.release / "install.sh")
         for name, example in self.bootstrap_examples():
             with self.subTest(example=name):
@@ -521,7 +532,7 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
                 self.run_bootstrap(example)
                 calls = self.calls()[before:]
                 self.assertTrue(calls[0][-1].endswith("/install.sh"))
-                self.assert_bootstrap_policy(calls[0])
+                self.assert_bootstrap_policy(calls[0], bounded=name != "README.md")
                 self.assert_download_policy(calls[1:])
                 self.assertTrue(self.bin.is_file())
                 if name == "release notes":
@@ -547,8 +558,8 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
         started = time.monotonic()
         self.run_installer("--version", VERSION)
         self.assertLess(time.monotonic() - started, 20)
-        self.assertEqual(requests.count(binary_name("linux-amd64", VERSION)), 1)
-        self.assertEqual(len(requests), 3)
+        self.assertEqual(requests.count(artifact_name("linux-amd64", VERSION)), 1)
+        self.assertEqual(len(requests), 2)
         self.assertEqual(len(self.download_connections), 1)
         self.assertTrue(self.bin.is_file())
 
@@ -556,16 +567,14 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
         requests = self.serve_release()
         self.run_installer("--verify-provenance")
         self.assertEqual(requests[:2], ["latest", VERSION])
-        self.assertEqual(
-            self.download_methods, ["HEAD", "HEAD", "GET", "GET", "GET", "GET"]
-        )
+        self.assertEqual(self.download_methods, ["HEAD", "HEAD", "GET", "GET", "GET"])
         self.assertEqual(len(self.download_connections), 2)
         self.assertTrue(self.bin.is_file())
 
     def test_release_redirects_reuse_github_and_asset_connections(self):
         requests = self.serve_release(redirect_assets=True)
         self.run_installer("--version", VERSION, "--verify-provenance")
-        self.assertEqual(len(requests), 8)
+        self.assertEqual(len(requests), 6)
         self.assertEqual(len(self.download_connections), 2)
         self.assertEqual(len([args for args in self.calls() if args[0] == "curl"]), 1)
 
@@ -575,8 +584,7 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
         responses = {}
         requests = self.serve_release(responses=responses)
         subjects = [
-            binary_name("linux-amd64", VERSION),
-            notices_name("linux-amd64", VERSION),
+            artifact_name("linux-amd64", VERSION),
             "SHA256SUMS",
             "native-release.sigstore.json",
         ]
@@ -594,17 +602,17 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
         self.assertFalse(any(args[0] == "gh" for args in self.calls()))
 
     def test_real_curl_retries_transient_http_failure_but_not_missing_files(self):
-        binary = binary_name("linux-amd64", VERSION)
-        responses = {binary: [503]}
+        artifact = artifact_name("linux-amd64", VERSION)
+        responses = {artifact: [503]}
         requests = self.serve_release(responses=responses)
         self.run_installer("--version", VERSION)
-        self.assertEqual(requests.count(binary), 2)
+        self.assertEqual(requests.count(artifact), 2)
         self.assertEqual(self.bin.read_bytes(), self.binary.read_bytes())
         requests.clear()
-        responses[binary] = [404]
+        responses[artifact] = [404]
         result = self.run_installer("--version", VERSION, success=False)
         self.assertIn("release file not found (HTTP 404)", result.stderr)
-        self.assertEqual(requests, [binary])
+        self.assertEqual(requests, [artifact])
         self.assertEqual(self.bin.read_bytes(), self.binary.read_bytes())
 
     def test_real_bootstrap_streams_the_installer_once(self):
@@ -673,8 +681,8 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
                     str(destination),
                 )
                 self.assertTrue((destination / "withhold").is_file())
-                verifications = [args for args in self.calls() if args[0] == "gh"][-3:]
-                self.assertEqual(len(verifications), 3)
+                verifications = [args for args in self.calls() if args[0] == "gh"][-2:]
+                self.assertEqual(len(verifications), 2)
                 for args in verifications:
                     self.assertEqual(args[args.index("--source-digest") + 1], COMMIT)
                     self.assertEqual(
@@ -692,8 +700,7 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
 
     def test_failed_provenance_never_runs_binary(self):
         for subject in (
-            binary_name("linux-amd64", VERSION),
-            notices_name("linux-amd64", VERSION),
+            artifact_name("linux-amd64", VERSION),
             "SHA256SUMS",
         ):
             with self.subTest(subject=subject):
@@ -705,12 +712,11 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
     def test_requested_provenance_without_commit_verifies_every_file(self):
         self.run_installer("--verify-provenance")
         verifications = [args for args in self.calls() if args[0] == "gh"]
-        self.assertEqual(len(verifications), 3)
+        self.assertEqual(len(verifications), 2)
         self.assertEqual(
             {Path(args[3]).name for args in verifications},
             {
-                binary_name("linux-amd64", VERSION),
-                notices_name("linux-amd64", VERSION),
+                artifact_name("linux-amd64", VERSION),
                 "SHA256SUMS",
             },
         )
@@ -730,17 +736,52 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
         original = path.read_text()
         lines = original.splitlines(keepends=True)
         for contents in (
-            original + lines[1],
-            original + lines[2],
-            original.replace(lines[1], ""),
-            original.replace(lines[2], ""),
-            "0" * 64 + lines[1][64:] + lines[2],
-            lines[1] + "0" * 64 + lines[2][64:],
+            original + lines[0],
+            "",
+            "0" * 64 + lines[0][64:],
         ):
             with self.subTest(contents=contents):
                 path.write_text(contents)
                 self.run_installer(success=False)
                 self.assertFalse(self.bin.exists())
+
+    def test_missing_archive_notices_do_not_replace_an_existing_installation(self):
+        path = self.release / artifact_name("linux-amd64", VERSION)
+        with tarfile.open(path, "r:gz") as source:
+            members = [
+                (info, source.extractfile(info).read())
+                for info in source
+                if info.name != "THIRD_PARTY_NOTICES.txt"
+            ]
+        with tarfile.open(path, "w:gz") as output:
+            for info, data in members:
+                output.addfile(info, io.BytesIO(data))
+        (self.release / "SHA256SUMS").write_text(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+        )
+        self.bin.parent.mkdir(parents=True)
+        self.bin.write_text("existing executable")
+        result = self.run_installer(success=False)
+        self.assertIn("THIRD_PARTY_NOTICES.txt", result.stderr)
+        self.assertEqual(self.bin.read_text(), "existing executable")
+
+    def test_archive_members_cannot_write_outside_the_private_directory(self):
+        path = self.release / artifact_name("linux-amd64", VERSION)
+        with tarfile.open(path, "r:gz") as source:
+            members = [(info, source.extractfile(info).read()) for info in source]
+        with tarfile.open(path, "w:gz") as output:
+            for info, data in members:
+                output.addfile(info, io.BytesIO(data))
+            info = tarfile.TarInfo("../escaped")
+            data = b"unexpected content"
+            info.size = len(data)
+            output.addfile(info, io.BytesIO(data))
+        (self.release / "SHA256SUMS").write_text(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+        )
+        self.run_installer("--version", VERSION)
+        self.assertTrue(self.bin.is_file())
+        self.assertFalse((self.root / "escaped").exists())
 
     def test_network_failures_and_active_session_refusal_preserve_install(self):
         self.bin.parent.mkdir(parents=True)
@@ -815,3 +856,15 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
                 self.assertIn("https://cli.github.com/", result.stderr)
                 self.assertFalse(self.calls())
                 self.assertFalse(self.bin.exists())
+
+    def test_missing_archive_tools_fail_before_download(self):
+        self.isolate_path_without_gh()
+        for tool in ("tar", "gzip"):
+            with self.subTest(tool=tool):
+                link = self.tools / tool
+                link.unlink()
+                result = self.run_installer("--version", VERSION, success=False)
+                self.assertIn(f"{tool} is required", result.stderr)
+                self.assertFalse(self.calls())
+                self.assertFalse(self.bin.exists())
+                link.symlink_to(shutil.which(tool))

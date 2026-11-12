@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build deterministic native executables, archives, notices, and a SHA-256 manifest."""
+"""Build deterministic native archives and a SHA-256 manifest."""
 
 import argparse
 import gzip
@@ -49,26 +49,6 @@ def artifact_name(target: str, version: str) -> str:
         raise ValueError("unsupported target")
     suffix = ".zip" if target.startswith("windows-") else ".tar.gz"
     return f"withhold-{version}-{target}{suffix}"
-
-
-def binary_name(target: str, version: str) -> str:
-    validate_version(version)
-    if target not in TARGETS:
-        raise ValueError("unsupported target")
-    return (
-        f"withhold-{version}-{target}{'.exe' if target.startswith('windows-') else ''}"
-    )
-
-
-def notices_name(target: str, version: str) -> str:
-    validate_version(version)
-    if target not in TARGETS:
-        raise ValueError("unsupported target")
-    return f"withhold-{version}-{target}-NOTICES.txt"
-
-
-def standalone_notices(license_text: bytes, notices: bytes) -> bytes:
-    return b"withhold license\n\n" + license_text + b"\n\n" + notices
 
 
 def source_digest() -> str:
@@ -250,17 +230,9 @@ def main():
                 go_version=go_version,
                 notices=notices,
             )
-            standalone = args.output / binary_name(target, version)
-            standalone.write_bytes(binary.read_bytes())
-            standalone.chmod(0o755)
-            notice_file = args.output / notices_name(target, version)
-            notice_file.write_bytes(
-                standalone_notices((ROOT / "LICENSE").read_bytes(), notices)
+            checksums.append(
+                (hashlib.sha256(artifact.read_bytes()).hexdigest(), artifact.name)
             )
-            for path in (artifact, standalone, notice_file):
-                checksums.append(
-                    (hashlib.sha256(path.read_bytes()).hexdigest(), path.name)
-                )
     manifest = "".join(f"{digest}  {name}\n" for digest, name in checksums)
     (args.output / "SHA256SUMS").write_text(manifest, encoding="ascii")
     print(f"Packaged {len(args.targets)} native builds in {args.output}")

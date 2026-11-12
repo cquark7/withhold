@@ -10,11 +10,8 @@ Use the [integration catalog](integrations/README.md) for support and setup. Rea
 
 ### macOS and Linux downloads
 
-These instructions apply to releases with standalone binaries. The v0.1.0
-installer still requires GitHub CLI and uses archives instead.
-
-The installer needs `curl` and a SHA-256 utility (`shasum` or `sha256sum`). Go,
-Python, GitHub CLI, and archive extraction tools are not required.
+The installer needs `curl`, `tar`, `gzip`, and a SHA-256 utility (`shasum` or
+`sha256sum`). Go, Python, and GitHub CLI are not required.
 
 ```sh
 curl -fsSL --connect-timeout 10 --max-time 120 --proto '=https' \
@@ -24,9 +21,11 @@ withhold version
 withhold demo
 ```
 
-The script is not retried when piped to the shell. Download it first if you want
-to review it before running. The installer uses bounded HTTPS downloads, respects
-curl's proxy and CA settings, and shows progress in interactive terminals.
+The README's short command uses curl's default timeout and redirect behavior and
+does not retry the script download. The commands below set explicit limits when
+downloading the script for review or a pinned install. The installer uses bounded
+HTTPS downloads, respects curl's proxy and CA settings, and shows progress in
+interactive terminals.
 
 To download and review the script before running it:
 
@@ -39,7 +38,7 @@ sh install.sh --help &&
 sh install.sh
 ```
 
-To install a specific release that includes standalone binaries, choose its tag:
+To install a specific release, choose its tag:
 
 ```sh
 curl --fail --show-error --location --proto '=https' --proto-redir '=https' \
@@ -50,12 +49,10 @@ sh install.sh --version VERSION
 
 Replace `VERSION` in both places with the same tag, such as `v1.2.3`. Without
 `--version`, the installer selects the latest **non-prerelease**; RCs must be
-selected explicitly. `--bin-dir` chooses an absolute destination. Older releases
-without standalone binaries, including v0.1.0, have their own archive-based
-installer and instructions.
+selected explicitly. `--bin-dir` chooses an absolute destination.
 
-The installer checks the executable and license/notice file against the release's
-SHA-256 manifest before running the executable. This detects corrupt downloads,
+The installer checks the archive against the release's SHA-256 manifest before
+reading the executable and license notices. This detects corrupt downloads,
 but a checksum downloaded alongside a substituted file does **not** authenticate
 who built it. For stronger verification, install [GitHub CLI](https://cli.github.com/)
 and add `--verify-provenance` to check the signed record against the repository,
@@ -76,57 +73,61 @@ signing services. Notices and verification evidence are saved under
 
 ### Windows and manual downloads
 
-Download the Windows executable and matching notice file from
+Download the Windows ZIP for your CPU from
 [Releases](https://github.com/cquark7/withhold/releases/latest). This PowerShell
-example downloads them and checks their SHA-256 hashes before installation:
+example downloads it and checks its SHA-256 hash before installation:
 
 ```powershell
-$version = "vX.Y.Z" # Replace with a published tag that has standalone binaries.
+$version = "vX.Y.Z" # Replace with a published tag.
 $target = "windows-amd64" # Use windows-arm64 on ARM64.
-$binary = "withhold-$version-$target.exe"
-$notices = "withhold-$version-$target-NOTICES.txt"
+$archive = "withhold-$version-$target.zip"
 $base = "https://github.com/cquark7/withhold/releases/download/$version"
-foreach ($file in @($binary, $notices, "SHA256SUMS")) {
+foreach ($file in @($archive, "SHA256SUMS")) {
     Invoke-WebRequest "$base/$file" -OutFile $file -UseBasicParsing -ErrorAction Stop
 }
-foreach ($file in @($binary, $notices)) {
-    $rows = @(Get-Content SHA256SUMS | Where-Object {
-        $_ -match '^([0-9a-f]{64})  (.+)$' -and $Matches[2] -ceq $file
-    })
-    if ($rows.Count -ne 1) { throw "Missing or duplicate checksum for $file" }
-    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant() -cne $rows[0].Substring(0, 64)) {
-        throw "Checksum mismatch for $file; do not run it"
-    }
+$rows = @(Get-Content SHA256SUMS | Where-Object {
+    $_ -match '^([0-9a-f]{64})  (.+)$' -and $Matches[2] -ceq $archive
+})
+if ($rows.Count -ne 1) { throw "Missing or duplicate checksum for $archive" }
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant() -cne $rows[0].Substring(0, 64)) {
+    throw "Checksum mismatch for $archive; do not extract it"
 }
 ```
 
-For optional signed provenance, before running the executable, use GitHub CLI
+For optional signed provenance, before extracting the archive, use GitHub CLI
 and an independently trusted commit:
 
 ```powershell
 $commit = "FULL_COMMIT_SHA" # Replace with an independently trusted commit.
 Invoke-WebRequest "$base/native-release.sigstore.json" -OutFile native-release.sigstore.json -UseBasicParsing -ErrorAction Stop
-foreach ($file in @($binary, $notices, "SHA256SUMS")) {
+foreach ($file in @($archive, "SHA256SUMS")) {
     gh attestation verify $file --repo cquark7/withhold --signer-workflow cquark7/withhold/.github/workflows/native-artifacts.yml --source-ref "refs/tags/$version" --source-digest $commit --deny-self-hosted-runners --bundle native-release.sigstore.json
     if ($LASTEXITCODE -ne 0) { throw "Provenance verification failed; do not run" }
 }
 ```
 
-After verification, install the downloaded executable:
+After verification, extract the archive and install its executable:
 
 ```powershell
-& ".\$binary" install
+Expand-Archive -LiteralPath $archive -DestinationPath .\withhold-release -ErrorAction Stop
+& ".\withhold-release\withhold.exe" install
 if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 ```
 
 Add the printed directory (normally `%LOCALAPPDATA%\withhold\bin`) to your user
-PATH, and keep the notice file with the executable.
+PATH, and keep the included license and notice files.
 
-For a manual macOS/Linux download, select the `darwin` or `linux` executable
-for your CPU, its matching notices, and `SHA256SUMS`. Compare the hashes from
-`shasum -a 256 FILE` (or `sha256sum FILE`) with the matching manifest entries.
-Then run `chmod +x FILE` and `./FILE install`, replacing `FILE` with the
-downloaded executable's name. Archives are available as well.
+For a manual macOS/Linux download, select the `darwin` or `linux` archive for
+your CPU and `SHA256SUMS`. Compare its hash from `shasum -a 256 FILE` (or
+`sha256sum FILE`) with the matching manifest entry before extracting it. Then:
+
+```sh
+tar -xzf withhold-VERSION-TARGET.tar.gz
+./withhold install
+```
+
+Replace `VERSION` and `TARGET` with the release version and platform, such as
+`v1.2.3` and `darwin-arm64`.
 Attestations do not establish that software is safe or compatible, and do not
 provide macOS notarization or Windows code signing.
 

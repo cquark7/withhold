@@ -44,20 +44,19 @@ mismatched dependency sources/licenses fail packaging. The archive verifier
 checks exact regular-file contents/modes before safe extraction; it does not
 authenticate the publisher.
 
-Each target also has a versioned standalone executable and matching
-`-NOTICES.txt` file containing the project license and dependency notices.
-`SHA256SUMS` covers all three target files. Verification checks that both the
-standalone executable and notices exactly match the contents of the archive;
-do not distribute the executable without its matching notices.
+`SHA256SUMS` covers the six platform archives. Distribute each executable with
+the license and dependency notices included in its archive.
 
 ## Hosted builds and publication
 
 `.github/workflows/native-artifacts.yml` accepts manual SemVer builds and pushed
 `v`-prefixed SemVer tags. It tests on six matching OS/CPU runners, compares two
-builds per target, verifies standalone files and extracted binaries, and attests
-all binaries, notices, archives, `SHA256SUMS`, and the release's `install.sh`.
+builds per target, verifies the archives and extracted binaries, and attests
+the archives, `SHA256SUMS`, and the release's `install.sh`.
 The collector alone signs; only publication can write releases.
 Actions track their current major version tags, and checkout does not retain Git credentials.
+Acceptance tests and per-file provenance checks run in bounded parallel workers;
+any failed check stops collection or publication.
 
 Before publishing a tag:
 
@@ -72,8 +71,7 @@ GitHub Release. Individual `native-TARGET` artifacts are unsigned intermediates;
 do not distribute them. Attestation failure must stop distribution.
 
 Tag runs in `cquark7/withhold` independently re-verify repository, workflow, tag,
-and source commit before creating a draft with all six standalone binaries,
-their notices, six archives, checksum manifest, `install.sh`, and
+and source commit before creating a draft with six archives, checksum manifest, `install.sh`, and
 `native-release.sigstore.json`, then publishing it. Upload failure
 leaves a draft; inspect before retrying. Existing releases are not overwritten.
 Prereleases are not marked latest; installers must select RC tags explicitly.
@@ -81,10 +79,10 @@ Prereleases are not marked latest; installers must select RC tags explicitly.
 The stable bootstrap URL is
 `https://github.com/cquark7/withhold/releases/latest/download/install.sh`.
 Each release also has a version-specific installer URL. The script resolves the
-latest stable binary unless `--version` is supplied; document pinned installs with
+latest stable archive unless `--version` is supplied; document pinned installs with
 both a version-specific script URL and `--version`.
 
-After publication, verify the published binary and archive as a consumer using an
+After publication, verify the published archive as a consumer using an
 independently trusted source commit and the [download instructions](usage.md#installation).
 Exercise the checksum-only installer without GitHub CLI and a pinned-commit
 installer in isolated state. The former checks integrity, not publisher identity.

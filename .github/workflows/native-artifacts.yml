@@ -110,7 +110,7 @@ jobs:
           if Path('artifacts/SHA256SUMS').read_bytes() != Path('rebuild/SHA256SUMS').read_bytes():
               raise SystemExit('repeated build did not produce identical release files')
           PY
-      - name: Verify standalone files and execute the extracted archive
+      - name: Verify and execute the extracted archive
         shell: bash
         run: python tools/verify_native.py --artifacts artifacts --version "$WITHHOLD_RELEASE_VERSION" --targets "$WITHHOLD_RELEASE_TARGET" --extract extracted --run
       - name: Build loopback acceptance fixture
@@ -120,7 +120,7 @@ jobs:
         env:
           WITHHOLD_TEST_NATIVE: ${{ github.workspace }}/extracted/${{ matrix.target }}/withhold${{ matrix.suffix }}
           WITHHOLD_TEST_NATIVE_FIXTURE: ${{ github.workspace }}/fixture${{ matrix.suffix }}
-        run: python -m unittest tests.test_native_proxy tests.test_native_desktop tests.test_package_native tests.test_install tests.test_documentation tests.test_release_polish -q
+        run: python -m tools.parallel_unittest --workers 4 tests.test_native_proxy tests.test_native_desktop tests.test_package_native tests.test_install tests.test_documentation tests.test_release_polish
       - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.target }}
@@ -156,18 +156,17 @@ jobs:
           import os
           import shutil
           from pathlib import Path
-          from tools.package_native import TARGETS, artifact_name, binary_name, notices_name
-          from tools.verify_native import verify_release
+          from tools.package_native import TARGETS, artifact_name
+          from tools.verify_native import verify
           output = Path('artifacts')
           output.mkdir()
           sums = []
           for target in sorted(TARGETS):
               source = Path('incoming') / ('native-' + target)
               version = os.environ['WITHHOLD_RELEASE_VERSION']
-              verify_release(source, target, version)
-              for name in (artifact_name, binary_name, notices_name):
-                  filename = name(target, version)
-                  shutil.copyfile(source / filename, output / filename)
+              verify(source, target, version)
+              filename = artifact_name(target, version)
+              shutil.copyfile(source / filename, output / filename)
               sums.append((source / 'SHA256SUMS').read_text())
           (output / 'SHA256SUMS').write_text(''.join(sums), encoding='ascii')
           PY
@@ -176,7 +175,7 @@ jobs:
         run: |
           sh -n install.sh
           cp install.sh artifacts/install.sh
-      - name: Attest verified release files, checksum manifest, and installer
+      - name: Attest verified archives, checksum manifest, and installer
         id: provenance
         uses: actions/attest@v4
         with:
@@ -187,14 +186,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           WITHHOLD_ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
         run: |
-          for artifact in artifacts/*; do
-            gh attestation verify "$artifact" \
-              --repo "$GITHUB_REPOSITORY" \
-              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/native-artifacts.yml" \
-              --source-digest "$GITHUB_SHA" \
-              --deny-self-hosted-runners \
-              --bundle "$WITHHOLD_ATTESTATION_BUNDLE"
-          done
+          bash tools/verify_attestations.sh "$WITHHOLD_ATTESTATION_BUNDLE" artifacts/*
           cp "$WITHHOLD_ATTESTATION_BUNDLE" artifacts/native-release.sigstore.json
       - uses: actions/upload-artifact@v7
         with:
@@ -230,16 +222,9 @@ jobs:
           path: artifacts
       - name: Verify before publication
         shell: bash
-        run: |
-          for artifact in artifacts/withhold-* artifacts/SHA256SUMS artifacts/install.sh; do
-            gh attestation verify "$artifact" \
-              --repo "$GITHUB_REPOSITORY" \
-              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/native-artifacts.yml" \
-              --source-digest "$GITHUB_SHA" \
-              --source-ref "$GITHUB_REF" \
-              --deny-self-hosted-runners \
-              --bundle artifacts/native-release.sigstore.json
-          done
+        env:
+          WITHHOLD_ATTESTATION_SOURCE_REF: ${{ github.ref }}
+        run: bash tools/verify_attestations.sh artifacts/native-release.sigstore.json artifacts/withhold-* artifacts/SHA256SUMS artifacts/install.sh
       - name: Publish complete release
         shell: bash
         run: |
@@ -260,7 +245,7 @@ jobs:
           withhold demo
           \`\`\`
 
-          Windows: download the executable and matching notices for your CPU; follow the [installation and verification steps](https://github.com/$GITHUB_REPOSITORY/blob/$RELEASE_VERSION/docs/usage.md#windows-and-manual-downloads).
+          Windows: download the ZIP for [x64](https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_VERSION/withhold-$RELEASE_VERSION-windows-amd64.zip) or [ARM64](https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_VERSION/withhold-$RELEASE_VERSION-windows-arm64.zip), extract it, open PowerShell in the extracted folder, and run \`.\\withhold.exe install\`. See the [installation and verification steps](https://github.com/$GITHUB_REPOSITORY/blob/$RELEASE_VERSION/docs/usage.md#windows-and-manual-downloads).
 
           ### Included
 
@@ -277,8 +262,8 @@ jobs:
 
           The installer verifies SHA-256 checksums; checksums alone do not establish origin.
           Optional signed provenance verification is available with GitHub CLI.
-          Standalone binaries have matching license/notice files. Archives also include
-          the setup guide, behavior contract, licenses, and build metadata.
+          Each archive includes the executable, setup guide, behavior contract,
+          licenses, and build metadata.
           See https://github.com/$GITHUB_REPOSITORY/blob/$RELEASE_VERSION/docs/usage.md for installation, privacy limits, and rollback.
           EOF
           flags=()

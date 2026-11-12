@@ -13,7 +13,7 @@ main() (
 Install withhold on macOS or Linux (no sudo).
 Usage: sh install.sh [--version vX.Y.Z] [--bin-dir DIR] [--verify-provenance] [--commit FULL_SHA]
 
-Requires curl and sha256sum or shasum. GitHub CLI is optional for provenance.
+Requires curl, tar, gzip, and sha256sum or shasum. GitHub CLI is optional for provenance.
 Defaults to the latest non-prerelease; pin --version for release candidates.
 Checks SHA-256 before running the binary; checksums alone do not prove origin.
 --verify-provenance also checks the signed release record using GitHub CLI.
@@ -48,7 +48,7 @@ EOF
             28) fail "$label: connection or download timed out after limited retries; check your connection and try again; nothing was installed" ;;
             22)
                 case "$http" in
-                    404) fail "$label: release file not found (HTTP 404); check the version and that the release includes standalone binaries; nothing was installed" ;;
+                    404) fail "$label: release file not found (HTTP 404); check the version and platform; nothing was installed" ;;
                     429) fail "$label: GitHub rate limit reached (HTTP 429); try again later; nothing was installed" ;;
                     *) fail "$label: server returned HTTP $http after limited retries; try again later; nothing was installed" ;;
                 esac ;;
@@ -89,6 +89,8 @@ EOF
         *) fail 'unsupported CPU; use an amd64 or arm64 build' ;;
     esac
     command -v curl >/dev/null 2>&1 || fail 'curl is required'
+    command -v tar >/dev/null 2>&1 || fail 'tar is required'
+    command -v gzip >/dev/null 2>&1 || fail 'gzip is required'
     if [ "$provenance" = true ]; then
         command -v gh >/dev/null 2>&1 || fail 'provenance verification requires GitHub CLI: https://cli.github.com/'
     fi
@@ -121,12 +123,10 @@ EOF
     # Validate the entire value, including embedded newlines, before using it as a path.
     case "$version" in *[!0-9A-Za-z.+-]*) fail 'invalid version characters' ;; esac
     target=$os-$arch
-    binary=withhold-$version-$target
-    notices=withhold-$version-$target-NOTICES.txt
+    archive=withhold-$version-$target.tar.gz
     base="https://github.com/$repo/releases/download/$version"
     # One curl process reuses connections across files and release redirects.
-    set -- --output "$temporary/$binary" "$base/$binary" \
-        --output "$temporary/$notices" "$base/$notices" \
+    set -- --output "$temporary/$archive" "$base/$archive" \
         --output "$temporary/SHA256SUMS" "$base/SHA256SUMS"
     if [ "$provenance" = true ]; then
         set -- "$@" --output "$temporary/native-release.sigstore.json" "$base/native-release.sigstore.json"
@@ -134,7 +134,7 @@ EOF
     fetch "Downloading withhold $version for $target" "$@" >/dev/null || exit 1
     if [ "$provenance" = true ]; then
         printf 'Verifying signed provenance…\n' >&2
-        for subject in "$binary" "$notices" SHA256SUMS; do
+        for subject in "$archive" SHA256SUMS; do
             if [ -n "$commit" ]; then
                 set -- --source-digest "$commit"
             else
@@ -150,24 +150,28 @@ EOF
         printf 'Checking SHA-256 checksums; these do not verify the publisher.\n'
     fi
     printf 'Verifying SHA-256 checksums…\n' >&2
-    for subject in "$binary" "$notices"; do
-        expected=$(awk -v name="$subject" '$2 == name { count++; digest=$1 } END { if (count == 1) print digest }' "$temporary/SHA256SUMS")
-        [ "${#expected}" -eq 64 ] || fail "missing or duplicate checksum for $subject"
-        case "$expected" in *[!0-9a-f]*) fail "invalid checksum for $subject" ;; esac
-        if [ "$hash" = sha256sum ]; then
-            actual=$(sha256sum < "$temporary/$subject")
-        else
-            actual=$(shasum -a 256 < "$temporary/$subject")
-        fi
-        [ "${actual%% *}" = "$expected" ] || fail "checksum mismatch for $subject; nothing was installed"
+    expected=$(awk -v name="$archive" '$2 == name { count++; digest=$1 } END { if (count == 1) print digest }' "$temporary/SHA256SUMS")
+    [ "${#expected}" -eq 64 ] || fail "missing or duplicate checksum for $archive"
+    case "$expected" in *[!0-9a-f]*) fail "invalid checksum for $archive" ;; esac
+    if [ "$hash" = sha256sum ]; then
+        actual=$(sha256sum < "$temporary/$archive")
+    else
+        actual=$(shasum -a 256 < "$temporary/$archive")
+    fi
+    [ "${actual%% *}" = "$expected" ] || fail "checksum mismatch for $archive; nothing was installed"
+    # Read fixed archive members into files we create, without extracting paths or links.
+    for file in withhold LICENSE THIRD_PARTY_NOTICES.txt; do
+        tar -xzOf "$temporary/$archive" "$file" > "$temporary/$file" ||
+            fail "could not read $file from the archive; nothing was installed"
+        [ -s "$temporary/$file" ] || fail "empty $file in the archive; nothing was installed"
     done
-    chmod 700 "$temporary/$binary"
+    chmod 700 "$temporary/withhold"
     # The executable enforces the existing running-session upgrade guard.
     printf 'Installing to %s/withhold…\n' "$bin_dir" >&2
-    "$temporary/$binary" install --bin-dir "$bin_dir"
+    "$temporary/withhold" install --bin-dir "$bin_dir"
     docs="$HOME/.local/share/withhold/$version/$target"
     mkdir -p "$docs"
-    for file in "$notices" SHA256SUMS; do
+    for file in LICENSE THIRD_PARTY_NOTICES.txt SHA256SUMS; do
         cp "$temporary/$file" "$docs/$file"
     done
     if [ "$provenance" = true ]; then

@@ -48,54 +48,23 @@ requirements. Want another coding agent? [Help build an integration](#contribute
 
 ### macOS and Linux
 
-With `curl` and `sha256sum` or `shasum`, run:
-
 ```sh
-curl -fsSL --connect-timeout 10 --max-time 120 --proto '=https' \
-  https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-For releases with standalone binaries, the installer checks SHA-256 but does not
-authenticate the publisher; it needs no sudo, Go, Python, or GitHub CLI. See the
-[installation guide](docs/usage.md#installation) for provenance, pinning, or
-reviewing the script. The installer handles download retries and shows progress
-on interactive terminals.
+No administrator access is needed. For a specific version or to review the
+installer first, see the [installation guide](docs/usage.md#installation).
 
 ### Windows
 
-Download the x64 or ARM64 executable and matching notices from
-[Releases](https://github.com/cquark7/withhold/releases/latest). Follow the
-[installation and verification steps](docs/usage.md#windows-and-manual-downloads),
-then add the printed directory to your user PATH.
+Follow the
+[Windows installation instructions](docs/usage.md#windows-and-manual-downloads).
 
 ### Build from source
 
-From a trusted checkout, using Git and [Go 1.26 or later](https://go.dev/dl/):
-
-macOS and Linux:
-
-```sh
-git clone https://github.com/cquark7/withhold.git
-cd withhold
-go build -trimpath -o withhold ./cmd/withhold
-./withhold install
-export PATH="$HOME/.local/bin:$PATH"
-withhold version
-```
-
-Windows PowerShell:
-
-```powershell
-git clone https://github.com/cquark7/withhold.git
-Set-Location withhold
-go build -trimpath -o withhold.exe ./cmd/withhold
-.\withhold.exe install
-```
-
-Add the printed installation directory to your user PATH on Windows. Installation
-does not change certificate trust or editor settings; see the
-[source installation guide](docs/usage.md#build-from-source) for details.
+For Go requirements and build steps, see
+[build from source](docs/usage.md#build-from-source).
 
 ## Try it locally
 

@@ -214,18 +214,20 @@ that path and the default path alone. `config --init` explicitly creates a
 missing selected file without overwriting an existing file. Omitted settings
 continue to use the current built-in defaults.
 
-The macOS/Linux release installer checks SHA-256 for the standalone executable
-and its notices before execution, but checksums obtained from the same release
+The macOS/Linux release installer checks the archive's SHA-256 before reading
+the executable and license notices, but checksums obtained from the same release
 do not authenticate their publisher. `--verify-provenance` additionally requires
-GitHub CLI and verifies signed provenance for both files and the manifest;
+GitHub CLI and verifies signed provenance for the archive and the manifest;
 `--commit` implies that verification and pins the source commit. Requested
 provenance failures never fall back to checksum-only installation.
 
-The quickstart fetches the installer over HTTPS with a 10-second connection and
-120-second total limit; it does not retry a script piped to the shell. Release
-downloads also use HTTPS, with bounded timeouts and retries; a failed download
-stops before verification or installation. curl uses the normal proxy and CA
-settings, and shows progress only on interactive stderr.
+The README quickstart pipes the installer from an HTTPS URL to `sh` using curl's
+default timeout and redirect behavior; it does not retry the script download.
+The usage guide's review and pinned-install commands set explicit limits and
+restrict redirects to HTTPS. Release downloads also use HTTPS, with bounded
+timeouts and retries; a failed download stops before verification or installation.
+curl uses the normal proxy and CA settings, and shows progress only on interactive
+stderr.
 
 ## Diagnostics and interfaces
 
