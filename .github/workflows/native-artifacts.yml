@@ -1,4 +1,4 @@
-name: withhold releases experiment
+name: withhold releases cache experiment
 
 on:
   workflow_dispatch:
@@ -16,20 +16,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - mode: baseline
-            os: macos-15-intel
-            cache: true
-          - mode: no-cache
-            os: macos-15-intel
-            cache: false
-          - mode: preseed
-            os: macos-15-intel
-            cache: true
-          - mode: macos-26
-            os: macos-26-intel
-            cache: true
-    runs-on: ${{ matrix.os }}
+        mode: [tool-cache, modules-only]
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v7
         with:
@@ -37,30 +25,26 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - name: Preinstall Go without a second copy
-        if: matrix.mode == 'preseed'
-        shell: bash
-        run: |
-          set -euo pipefail
-          version=1.26.10
-          destination="$RUNNER_TOOL_CACHE/go/$version/x64"
-          if [ ! -f "$destination.complete" ]; then
-            archive="$RUNNER_TEMP/go.tar.gz"
-            curl -fsSL --retry 2 "https://go.dev/dl/go${version}.darwin-amd64.tar.gz" -o "$archive"
-            echo "e820ab780c273ae4a340b79d0f3c4313b74ee029aa3874792145d44b9f4f91da  $archive" | shasum -a 256 -c -
-            mkdir -p "$destination"
-            tar -xzf "$archive" --strip-components 1 -C "$destination"
-            touch "$destination.complete"
-          fi
+      - name: Cache the installed Go toolchain
+        if: matrix.mode == 'tool-cache'
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.tool_cache }}/go/1.26.10
+          key: benchmark-go-tool-macos-x64-1.26.10-v1
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version: "1.26.10"
-          cache: ${{ matrix.cache }}
+          cache: ${{ matrix.mode == 'tool-cache' }}
+      - name: Cache only Go modules
+        if: matrix.mode == 'modules-only'
+        uses: actions/cache@v5
+        with:
+          path: ~/go/pkg/mod
+          key: benchmark-go-mod-macos-x64-${{ hashFiles('go.sum') }}
       - name: Test native Go behavior
         run: go mod verify && go test ./... -count=1 && go vet ./...
       - name: Build twice and compare reproducibility
-        shell: bash
         run: |
           python tools/package_native.py --version v0.0.0 --targets darwin-amd64 --output artifacts
           python tools/package_native.py --version v0.0.0 --targets darwin-amd64 --output rebuild
@@ -69,9 +53,5 @@ jobs:
         run: python tools/verify_native.py --artifacts artifacts --version v0.0.0 --targets darwin-amd64 --extract extracted --run
       - name: Build loopback acceptance fixture
         run: CGO_ENABLED=0 go build -trimpath -o fixture ./tests/nativefixture
-      - name: Run acceptance suite on Intel
-        if: matrix.mode == 'preseed'
-        env:
-          WITHHOLD_TEST_NATIVE: ${{ github.workspace }}/extracted/darwin-amd64/withhold
-          WITHHOLD_TEST_NATIVE_FIXTURE: ${{ github.workspace }}/fixture
-        run: python -m tools.parallel_unittest --workers 4 tests.test_native_proxy tests.test_native_desktop tests.test_package_native tests.test_install tests.test_documentation tests.test_release_polish
+      - name: Show cache sizes
+        run: du -sh "$(go env GOCACHE)" "$(go env GOMODCACHE)" "$(go env GOMODCACHE)/cache/download" "$RUNNER_TOOL_CACHE/go/1.26.10"
