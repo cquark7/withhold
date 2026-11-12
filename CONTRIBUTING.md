@@ -61,6 +61,27 @@ Tests use synthetic values, isolated homes, private CAs, and loopback fixtures.
 Do not contact live providers or change real trust stores/editor settings during
 routine verification. Assert the bytes received upstream, not model responses.
 
+## CI cadence
+
+- Pull requests to `main` and pushes to `main` run the Linux verification gate,
+  including race detection, acceptance tests, lint, and workflow/installer checks.
+  Test binaries are temporary; routine CI does not package release artifacts.
+- macOS and Windows native acceptance checks run weekly on Monday at 06:41 UTC.
+  Dispatch the **Verify** workflow manually on the relevant branch for earlier
+  platform feedback; manual runs also include the Linux gate.
+- Reachable Go vulnerability scans run weekly on Monday at 06:23 UTC and through
+  the **Dependency security** workflow's manual dispatch. They do not run on
+  branch pushes or pull requests. Review failed scheduled runs and keep Actions
+  failure notifications enabled.
+- Release tags and manual SemVer builds scan for reachable vulnerabilities before
+  starting the six-target build, verification, and provenance pipeline. A failed
+  scan stops the release build. See [releasing](docs/releasing.md).
+
+Use the Linux `tests` job as the required PR check. The scheduled native jobs and
+dependency scan are maintenance checks; do not require them on every PR. GitHub
+can disable scheduled workflows in public repositories after 60 days without
+activity; re-enable them in Actions when resuming development.
+
 ## Project layout
 
 | Location | Purpose |

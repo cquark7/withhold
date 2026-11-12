@@ -1,9 +1,6 @@
 name: Dependency security
 
 on:
-  push:
-    branches: [main]
-    paths: [go.mod, go.sum, .github/workflows/security.yml]
   schedule:
     - cron: "23 6 * * 1"
   workflow_dispatch:

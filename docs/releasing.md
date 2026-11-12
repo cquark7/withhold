@@ -50,7 +50,8 @@ the license and dependency notices included in its archive.
 ## Hosted builds and publication
 
 `.github/workflows/native-artifacts.yml` accepts manual SemVer builds and pushed
-`v`-prefixed SemVer tags. It tests on six matching OS/CPU runners, compares two
+`v`-prefixed SemVer tags. It first checks reachable Go vulnerabilities; a failed
+scan stops the build. It tests on six matching OS/CPU runners, compares two
 builds per target, verifies the archives and extracted binaries, and attests
 the archives, `SHA256SUMS`, and the release's `install.sh`.
 The collector alone signs; only publication can write releases.
