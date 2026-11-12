@@ -257,17 +257,18 @@ class NativeProxyTests(unittest.TestCase):
         method="POST",
         headers=None,
         secure=False,
+        timeout=10,
     ):
         headers = {"Content-Type": "application/json", **(headers or {})}
         if secure:
             target = urlsplit(self.urls["https"])
             c = http.client.HTTPSConnection(
-                "127.0.0.1", port, context=self.trust, timeout=10
+                "127.0.0.1", port, context=self.trust, timeout=timeout
             )
             c.set_tunnel(target.hostname, target.port)
             url = path
         else:
-            c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            c = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
             url = self.urls["http"] + path
         with contextlib.closing(c):
             c.request(method, url, body, headers)
@@ -706,12 +707,14 @@ class NativeProxyTests(unittest.TestCase):
         expected_hash = hashlib.sha256(
             json.dumps(expected, separators=(",", ":")).encode()
         ).hexdigest()
+        # A 20 MiB image can take longer than the usual client timeout on CI.
         with self.proxy() as (port, _):
             status, _, data = self.request(
                 port,
                 json.dumps(body).encode(),
                 secure=True,
                 headers={"X-Withhold-Benchmark": "redacted"},
+                timeout=60,
             )
             self.assertEqual(status, 200, data)
             self.assertEqual(json.loads(data)["sha256"], expected_hash)
