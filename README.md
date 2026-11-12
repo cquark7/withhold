@@ -4,7 +4,7 @@
 
 # withhold
 
-**Catch secrets and PII before they become AI context.**
+**Catch secrets and personal information before they reach your AI assistant.**
 
 Local secret redaction for coding agents. Offline scanning. One Go binary.
 
@@ -13,13 +13,12 @@ Local secret redaction for coding agents. Offline scanning. One Go binary.
 [![MIT license](https://img.shields.io/badge/license-MIT-78dba9?style=flat)](LICENSE)
 [![Go](https://img.shields.io/badge/built_with-Go-5fcde4?style=flat)](CONTRIBUTING.md#development-setup)
 
-[Install](#install) · [Try it](#try-it-locally) · [Connect Copilot](#connect-vs-code--copilot) · [Docs](docs/README.md) · [Contribute](#contribute)
+[Install](#install) · [Try it](#try-it-locally) · [Connect Copilot](#connect-github-copilot-for-vs-code) · [Docs](docs/README.md) · [Contribute](#contribute)
 
 </div>
 
 Coding agents send context beyond the text you type: file contents, tool results,
-and examples can contain credentials. <span style="color:#10b981; font-weight:bold;">withhold</span> inspects supported outgoing
-request bodies on your machine and replaces detected values or blocks the request
+and examples can contain credentials. <span style="color:#10b981; font-weight:bold;">withhold</span> inspects supported outgoing request bodies on your machine and replaces detected values or blocks the request
 before forwarding it to the provider.
 
 <p align="center">
@@ -41,8 +40,6 @@ requirements. Want another coding agent? [Help build an integration](#contribute
   users need neither Python nor a separate detector process to manage.
 - **Reversible setup.** Managed editor settings are backed up; `withhold off`
   restores them while preserving unrelated edits.
-- **Explicit integrations.** Each supported harness has a documented traffic
-  contract, recovery behavior, and validation matrix.
 
 ## Install
 
@@ -53,18 +50,50 @@ curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-No administrator access is needed. For a specific version or to review the
-installer first, see the [installation guide](docs/usage.md#installation).
+Add the `export` line to your shell profile to keep withhold on your PATH in new terminals. For a specific version or to review the installer first, see the [installation guide](docs/usage.md#installation).
 
 ### Windows
 
-Follow the
-[Windows installation instructions](docs/usage.md#windows-and-manual-downloads).
+Download the Windows ZIP for your processor from [Releases](https://github.com/cquark7/withhold/releases/latest)
+(`windows-amd64` for x64 or `windows-arm64` for ARM64). Extract it, then open
+PowerShell in the extracted folder and run:
+
+```powershell
+.\withhold.exe install
+```
+
+Add the printed directory (normally `%LOCALAPPDATA%\withhold\bin`) to your
+user PATH, then open a new terminal. Keep the included license and notice files.
+For checksum and signed provenance verification, see the
+[Windows guide](docs/usage.md#windows-and-manual-downloads).
+
+### Install with Go
+
+With [Go](https://go.dev/dl/) 1.26 or later installed, run:
+
+```sh
+go install github.com/cquark7/withhold/cmd/withhold@latest
+```
+
+Make sure Go's binary directory is on your PATH: `GOBIN` if set, otherwise
+`GOPATH/bin` (normally `~/go/bin`, or `%USERPROFILE%\go\bin` on Windows).
+To create a configuration file, run `withhold config --init`.
 
 ### Build from source
 
-For Go requirements and build steps, see
-[build from source](docs/usage.md#build-from-source).
+Install [Go](https://go.dev/dl/) 1.26 or later and Git, then run:
+
+```sh
+git clone https://github.com/cquark7/withhold.git
+cd withhold
+go build -trimpath -o withhold ./cmd/withhold
+./withhold install
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+On Windows PowerShell, run `go build -trimpath -o withhold.exe ./cmd/withhold`
+and `.\withhold.exe install` after cloning. Add the printed directory to your
+user PATH. Installation creates a default configuration if one does not exist.
 
 ## Try it locally
 
@@ -81,22 +110,12 @@ are skipped by default. See
 [local scanning](docs/usage.md#scan-local-text) for stdin/text input, exclusions,
 PII-only scans, JSON output, and incomplete-scan limits.
 
-To demonstrate the local proxy pipeline:
+## Connect Github Copilot for VS Code
 
-```sh
-withhold demo
-```
-
-The demo sends a synthetic value through the bundled scanner and HTTPS proxy to
-a temporary local receiver. It verifies the redacted bytes and checks that a
-blocked request never reaches that receiver. No Copilot account, editor setup,
-or system trust changes are needed. It does not verify real editor routing.
-
-## Connect VS Code + Copilot
-
-Start with a working Copilot account. **Setup creates a local HTTPS inspection
-CA and changes current-user certificate trust on macOS/Linux.** Windows uses
-manual trust. Linux NSS trust may not cover Node-based extensions. Review
+Setup creates a local certificate authority
+(CA) so VS Code can trust withhold to inspect encrypted requests before they are
+sent. **Setup changes current-user certificate trust on macOS/Linux.** Windows
+uses manual trust. Review
 [certificate trust](docs/usage.md#certificate-trust) and the
 [integration guide](docs/integrations/vscode-copilot.md) first.
 
@@ -138,12 +157,16 @@ Detected values become markers such as `<WITHHELD_0123456789abcdef>`.
 The same value and local key produce the same marker; values are never restored
 in responses. Stable markers can reveal repeated values.
 
-Stop an existing session before changing its options:
+Personal information detection is off by default. To detect email addresses and
+phone numbers, stop the current session and start it with PII enabled:
 
 ```sh
-withhold on --pii email,phone      # Enable selected PII categories.
-withhold on --chat-mode block     # Block chat findings instead of redacting.
+withhold off
+withhold on --pii email,phone
 ```
+
+Chat requests redact detected values; inline completions with findings are
+blocked. To block chat requests as well, add `--chat-mode block`.
 
 Edit `~/.config/withhold/config.toml` to persist settings, and run
 `withhold config` to see the effective configuration. For an existing

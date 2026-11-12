@@ -83,13 +83,6 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      # The Intel image may not include the pinned version in its tool cache.
-      - name: Cache the macOS Intel Go toolchain
-        if: matrix.target == 'darwin-amd64'
-        uses: actions/cache@v5
-        with:
-          path: ${{ runner.tool_cache }}/go/${{ env.GO_VERSION }}
-          key: go-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ env.GO_VERSION }}-v1
       - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}

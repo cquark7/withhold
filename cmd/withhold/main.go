@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -33,6 +34,16 @@ import (
 )
 
 var version = "dev"
+
+func displayVersion(releaseVersion string, info *debug.BuildInfo) string {
+	if releaseVersion != "dev" {
+		return releaseVersion
+	}
+	if info != nil && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return releaseVersion
+}
 
 type stringsFlag []string
 
@@ -93,7 +104,8 @@ func run(args []string) int {
 		if len(args) != 1 {
 			return commandUsageError("version", "version accepts no arguments or options")
 		}
-		fmt.Printf("withhold %s (betterleaks %s)\n", version, detector.Version)
+		info, _ := debug.ReadBuildInfo()
+		fmt.Printf("withhold %s (betterleaks %s)\n", displayVersion(version, info), detector.Version)
 		return 0
 	}
 	if args[0] == "completion" {

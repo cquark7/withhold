@@ -243,7 +243,9 @@ configured routing, not verified inspection coverage. Policy terms remain
 
 Help, version, completion, and integration discovery do not read runtime
 configuration, initialize trust, change settings, or start
-workers. Usage/configuration errors return 2, operation/check failures 1, and
+workers. Version reports the release build version when supplied, otherwise the
+main module version from Go build metadata when available, or `dev` for local
+builds without a module version. Usage/configuration errors return 2, operation/check failures 1, and
 success 0, except for the documented `scan` exit codes above. `doctor --preflight`
 is silent on success and returns 2 on failure.
 JSON commands write one object: configuration schema 1, status schema 4, doctor

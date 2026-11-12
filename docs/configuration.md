@@ -1,8 +1,9 @@
 # Configuration
 
 withhold reads **TOML only** from `WITHHOLD_DIR/config.toml`, defaulting to
-`~/.config/withhold/config.toml`. Installation creates this file if absent, with
-the defaults commented out; it never overwrites existing files. No file is required
+`~/.config/withhold/config.toml`. The release installer and `withhold install`
+create this file if absent, with the defaults commented out; they never overwrite
+existing files. `go install` does not create it. No file is required
 to run. Select a different file with `--config FILE` or `WITHHOLD_CONFIG`; an
 explicitly selected file must exist. If `WITHHOLD_CONFIG` is set during installation,
 neither that file nor the unused default is created.
