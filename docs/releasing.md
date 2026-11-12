@@ -22,8 +22,9 @@ with signed provenance. Record the checks for each target and integration.
 
 ## Local builds
 
-Use the same Go toolchain as CI (currently Go 1.26.10) and fresh output directories
-when checking reproducibility. For a matching macOS ARM64 host:
+Use the latest Go 1.26 patch and fresh output directories when checking
+reproducibility. For reproducing an existing release, use the exact Go version
+recorded in its `BUILD.json`. For a matching macOS ARM64 host:
 
 ```sh
 go mod verify
@@ -54,6 +55,8 @@ the license and dependency notices included in its archive.
 scan stops the build. It tests on six matching OS/CPU runners, compares two
 builds per target, verifies the archives and extracted binaries, and attests
 the archives, `SHA256SUMS`, and the release's `install.sh`.
+The preparation job resolves the latest Go 1.26 patch once; its vulnerability
+scan and all six builders use that exact version for the entire run.
 The collector alone signs; only publication can write releases.
 Actions track their current major version tags, and checkout does not retain Git credentials.
 Acceptance tests and per-file provenance checks run in bounded parallel workers;

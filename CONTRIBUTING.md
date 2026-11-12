@@ -31,7 +31,11 @@ python3 -m venv .venv
 
 On Windows, use `.venv\Scripts\python.exe` instead of `.venv/bin/python`.
 The `go` directive in `go.mod` sets the minimum Go version; `toolchain` suggests
-the development version. CI and release builds select Go 1.26.10 explicitly.
+the development version (currently Go 1.26.11). CI selects the latest Go 1.26
+patch with `go-version: "1.26.x"` and `check-latest: true`. Release builds resolve
+that version once and use the same exact toolchain for the vulnerability scan
+and all six targets. Keep local Go installations updated to the latest 1.26 patch;
+the `toolchain` directive is a concrete suggestion, not an automatic patch updater.
 
 ## Verify changes
 

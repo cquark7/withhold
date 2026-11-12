@@ -22,7 +22,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.10"
+          go-version: "1.26.x"
+          check-latest: true
       - name: Verify modules and check reachable vulnerabilities
         run: |
           go mod verify
