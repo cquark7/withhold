@@ -357,7 +357,7 @@ class NativeArchiveTests(unittest.TestCase):
             notices = build_notices(
                 binary, cwd=ROOT, env=dict(os.environ, GOWORK="off", GOFLAGS="")
             )
-            self.assertIn(b"github.com/betterleaks/betterleaks v1.10.0", notices)
+            self.assertIn(b"github.com/betterleaks/betterleaks v1.10.1", notices)
             self.assertIn(b"Mozilla Public License", notices)
             self.assertNotIn(str(ROOT).encode(), notices)
             path = archive(

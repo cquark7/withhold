@@ -6,7 +6,7 @@ toolchain go1.26.10
 
 require (
 	github.com/andybalholm/brotli v1.2.8
-	github.com/betterleaks/betterleaks v1.10.0
+	github.com/betterleaks/betterleaks v1.10.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/hoophq/alcatraz v0.23.0
 	github.com/klauspost/compress v1.20.3

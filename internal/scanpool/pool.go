@@ -290,7 +290,7 @@ func (p *Pool) validGreeting(data []byte) bool {
 		Engine, Version string
 		PII             *pii.Metadata
 	}
-	return json.Unmarshal(data, &hello) == nil && hello.Schema == 1 && hello.Engine == "withhold-scanner" && hello.Version == "1.10.0" && reflect.DeepEqual(hello.PII, p.pii)
+	return json.Unmarshal(data, &hello) == nil && hello.Schema == 1 && hello.Engine == "withhold-scanner" && hello.Version == detector.Version && reflect.DeepEqual(hello.PII, p.pii)
 }
 
 // Never let an incompatible worker reply become permission to forward a body.

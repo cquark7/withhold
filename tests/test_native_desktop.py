@@ -332,7 +332,7 @@ class NativeDesktopTests(unittest.TestCase):
         self.run_guard("install", "--bin-dir", destination)
         binary = destination / ("withhold.exe" if os.name == "nt" else "withhold")
         self.assertIn(
-            "betterleaks 1.10.0", self.run_guard("version", binary=binary).stdout
+            "betterleaks 1.10.1", self.run_guard("version", binary=binary).stdout
         )
         self.on()
         self.run_guard("install", "--bin-dir", destination, expected=1)

@@ -17,9 +17,9 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const Version = "1.10.0"
+const Version = "1.10.1"
 
-// Betterleaks 1.10.0 caps multipart combinations at 100 without reporting
+// Betterleaks 1.10.1 caps multipart combinations at 100 without reporting
 // whether any were omitted. Treat the cap as incomplete rather than clean.
 const maxComponentSets = 100
 

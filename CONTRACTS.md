@@ -82,7 +82,7 @@ Duplicate object keys (including escape-equivalent names), invalid Unicode
 surrogates, nesting above 1,000 levels, and key-rename collisions fail closed.
 Rewriting preserves object order and scalar types, not original formatting.
 
-Secret detection uses bundled betterleaks 1.10.0 rules and Go regular
+Secret detection uses bundled betterleaks 1.10.1 rules and Go regular
 expressions, without credential validation, repository configuration, or
 allow-comment suppression. AWS access-key IDs are detected without requiring a
 secret-key component; credential URIs also recognize `psql://`. Multipart

@@ -200,7 +200,7 @@ def smoke(destination: Path, target: str, version: str):
                 if (
                     args == ("version",)
                     and result.stdout.strip()
-                    != f"withhold {version} (betterleaks 1.10.0)"
+                    != f"withhold {version} (betterleaks 1.10.1)"
                 ):
                     raise ValueError("extracted executable version mismatch")
                 if args[0] == "doctor":

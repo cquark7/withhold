@@ -102,7 +102,7 @@ worker. There is no external-detector fallback or worker listening socket.
 Frames have a four-byte big-endian length and a 128 MiB payload limit in each
 direction. Body requests contain an eight-byte signed big-endian cap followed
 by original bytes. Schema-1 greetings identify `withhold-scanner` and betterleaks
-`1.10.0`; enabled PII also identifies Alcatraz `0.23.0` and selected categories.
+`1.10.1`; enabled PII also identifies Alcatraz `0.23.0` and selected categories.
 Clients require matching metadata. Replies contain `schema: 1` and `report`;
 rewritten bytes use `body_base64`. Strict validation rejects unknown fields,
 invalid counters/statuses, and unsafe diagnostics before policy uses them.
