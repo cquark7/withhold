@@ -51,14 +51,16 @@ requirements. Want another coding agent? [Help build an integration](#contribute
 With `curl` and `sha256sum` or `shasum`, run:
 
 ```sh
-curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
+curl -fsSL --connect-timeout 10 --max-time 120 --proto '=https' \
+  https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
 For releases with standalone binaries, the installer checks SHA-256 but does not
 authenticate the publisher; it needs no sudo, Go, Python, or GitHub CLI. See the
 [installation guide](docs/usage.md#installation) for provenance, pinning, or
-reviewing the script.
+reviewing the script. The installer handles download retries and shows progress
+on interactive terminals.
 
 ### Windows
 
@@ -96,6 +98,21 @@ does not change certificate trust or editor settings; see the
 [source installation guide](docs/usage.md#build-from-source) for details.
 
 ## Try it locally
+
+Scan local files or directories without setup:
+
+```sh
+withhold scan .env
+withhold scan . --pii email,phone
+```
+
+Findings show rules and locations, never values; scanning does not change files.
+Hidden and Git-ignored text is included, while common dependency/generated paths
+are skipped by default. See
+[local scanning](docs/usage.md#scan-local-text) for stdin/text input, exclusions,
+PII-only scans, JSON output, and incomplete-scan limits.
+
+To demonstrate the local proxy pipeline:
 
 ```sh
 withhold demo

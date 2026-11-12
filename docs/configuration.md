@@ -51,6 +51,9 @@ pii = ["email"] # Optional; secrets always stay enabled.
 port = 8080
 max_bytes = "32m"
 scan_timeout = "10s"
+
+[scan]
+confidence = "medium" # Optional minimum for offline secrets only; default is "".
 ```
 
 Precedence is **explicit flags → environment → file → defaults**. Extra hosts
@@ -74,6 +77,7 @@ use strings for durations and paths. Omitted fields use defaults.
 | `protection.inline` | `"block"`; also `"redact"`, which can insert placeholders into code. |
 | `protection.observe` | `false`; `true` forwards original sensitive content. |
 | `protection.pii` | `[]` (off); categories below, `["all"]`, or `["off"]`. |
+| `scan.confidence` | `""` (no minimum); `"low"`, `"medium"`, or `"high"`. Offline secrets only, not proxy protection or PII. |
 | `proxy.port` | `8080`; loopback port from 1 to 65535. |
 | `proxy.max_bytes` | `"32m"`; positive bytes or binary `k`/`m`/`g` suffix, at most `"128m"`. |
 | `proxy.scan_timeout` | `"10s"`; positive Go duration, including queue/worker startup. |
@@ -97,6 +101,13 @@ PII categories are `aadhaar`, `credit-card`, `email`, `ip-address`, `phone`, and
 `us-ssn`; read their [format limits](../CONTRACTS.md#pii-coverage).
 Invalid selections fail rather than silently disabling protection.
 
+`scan` uses the selected config; flags override its PII, confidence, size, and
+timeout settings. Only `WITHHOLD_PII` and `WITHHOLD_MAX_BYTES` are additional scan
+environment overrides. Other editor/proxy overrides are ignored, and scan does
+not discover applications or write state. `--confidence=` clears the configured
+minimum; confidence affects offline secrets only, not PII or proxy detection. See
+[local text inspection](usage.md#scan-local-text) for usage and limits.
+
 Prefer absolute paths for logs, config, and upstream roots: relative paths use
 the invoking working directory. Application resource paths follow the selected
 integration's documented rules.
@@ -106,6 +117,8 @@ integration's documented rules.
 Use `withhold help COMMAND` for applicable flags. `--integration NAME` selects
 an adapter for `setup`, `on`, `serve`, `doctor`, `config`, and optional `launch`.
 `off` restores the recorded session, not a newly selected integration.
+`scan` accepts `--dir`, `--config`, `--pii`, `--confidence`, `--max-bytes`, and
+`--scan-timeout`, but not integration, routing, trust, or redact/block options.
 `--debug` is session-only on `on`/`serve`, not a file field.
 
 | Variable | Setting |

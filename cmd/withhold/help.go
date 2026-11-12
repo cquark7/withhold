@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-var commandOrder = []string{"setup", "on", "off", "status", "doctor", "demo", "integrations", "uninstall", "install", "launch", "serve", "init-ca", "config", "completion", "version"}
+var commandOrder = []string{"setup", "on", "off", "status", "doctor", "scan", "demo", "integrations", "uninstall", "install", "launch", "serve", "init-ca", "config", "completion", "version"}
 var commands = map[string]string{
 	"setup":        "Create the private CA and configure user-scope certificate trust.",
 	"on":           "Configure application routing and start an authenticated background proxy.",
@@ -15,6 +15,7 @@ var commands = map[string]string{
 	"status":       "Report session, traffic inspection evidence, and recovery state.",
 	"doctor":       "Check the bundled scanner, configuration, settings, and trust.",
 	"demo":         "Demonstrate redaction and blocking locally, without a provider or setup.",
+	"scan":         "Find secrets and selected PII in local text, files, or directories without rewriting.",
 	"launch":       "Launch the selected application, if its integration supports it.",
 	"uninstall":    "Restore settings and remove verified certificate trust.",
 	"install":      "Copy this standalone executable into a per-user binary directory.",
@@ -33,6 +34,7 @@ var examples = map[string]string{
 	"status":       "withhold status\n  withhold status --json",
 	"doctor":       "withhold doctor\n  withhold doctor --json\n  withhold doctor --max-bytes 16m --chat-mode block",
 	"demo":         "withhold demo\n  withhold demo --json",
+	"scan":         "withhold scan .env\n  withhold scan . --pii email,phone\n  withhold scan . --secrets=false --pii all\n  withhold scan - < message.txt\n  withhold scan --text 'dev@example.com' --pii email\n  withhold scan . --exclude ./generated --json\n  withhold scan . --no-default-excludes",
 	"launch":       "withhold launch -- .\n  withhold launch -- /path/to/project",
 	"uninstall":    "withhold uninstall\n  withhold uninstall --keep-files",
 	"install":      "withhold install\n  withhold install --bin-dir /path/to/bin",
@@ -50,7 +52,7 @@ func help(w io.Writer, command string) int {
 		for _, group := range []struct {
 			title string
 			names []string
-		}{{"Everyday commands", commandOrder[:5]}, {"Installation and advanced commands", commandOrder[5:]}} {
+		}{{"Everyday commands", commandOrder[:6]}, {"Installation and advanced commands", commandOrder[6:]}} {
 			fmt.Fprintln(w, "\n"+group.title+":")
 			for _, name := range group.names {
 				fmt.Fprintf(w, "  %-12s %s\n", name, commands[name])
@@ -74,6 +76,8 @@ func help(w io.Writer, command string) int {
 		usage += " [-- APPLICATION-ARGS...]"
 	case "on", "serve":
 		usage += " [PORT]"
+	case "scan":
+		usage += " [PATH...]"
 	}
 	fmt.Fprintf(w, "Usage: withhold %s\n\n%s\n", strings.TrimSpace(command+" "+usage), description)
 	fmt.Fprintln(w, "\nOptions:\n  -h, --help                 Show help without changing local state")
@@ -95,6 +99,9 @@ func help(w io.Writer, command string) int {
 	})
 	fmt.Fprintln(w, "\nExamples:\n  "+examples[command])
 	switch command {
+	case "scan":
+		fmt.Fprintln(w, "\nPaths may be files or recursive directories; - reads stdin once. Without a path\nor --text, redirected stdin is read; interactive use requires a target. Options\nmay follow paths; -- makes subsequent paths literal. --text selects only its\nliteral value, ignores implicit stdin, and cannot be combined with path arguments.\nPrefer files/stdin for sensitive data: literal arguments can enter shell history.\n\nUses configured PII (off by default); secrets default on. Both cannot be off.\nThe bundled Betterleaks path prefilter skips dependency/generated paths such as\nnode_modules and common lockfiles, including explicit targets and PII-only scans.\n--no-default-excludes disables that prefilter, not .git pruning or --exclude.\nOther hidden/gitignored text is included; symlinks, nonregular files, and\nunsupported binary/document/archive content are skipped during traversal.\nExplicit unsupported inputs and read/size/timeout/scanner failures are errors.\nExclusions are literal paths, not globs. Skips count entries/subtree roots.\n\nOutput contains rule IDs and original line/byte-column locations, not values\nor source excerpts. --json streams one schema-1 object with a final complete\nsummary. This scans literal UTF-8 text, not the proxy's JSON extraction or routing.\nNo setup, active session, certificate trust, editor, or placeholder key is needed.")
+		fmt.Fprintln(w, "\n--confidence low|medium|high sets Betterleaks' minimum for offline secrets only.\nIt overrides [scan].confidence; --confidence= clears the minimum (the default).\nUnclassified findings and components of accepted findings remain included.\nPII and proxy protection are unchanged. Higher thresholds can hide real secrets.")
 	case "demo":
 		fmt.Fprintln(w, "\nUses synthetic values, ephemeral IPv4 loopback ports, a temporary CA, and the\nbundled scanner. TLS verification stays enabled. No provider, editor settings,\ntrust stores, or existing configuration are used. Temporary files are removed.\nThis demonstrates the local pipeline, not application routing or live compatibility.")
 	case "config":
@@ -114,9 +121,17 @@ func help(w io.Writer, command string) int {
 		fmt.Fprintln(w, "\nPolicy, cap, integration, and upstream TLS options are the same as 'withhold on'.\nPass the intended startup options when checking a nondefault configuration.")
 	}
 	if allowedFlag(command, "config") {
-		fmt.Fprintln(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nPrecedence: flags > environment > file > defaults; extra hosts/patterns merge.\nView settings with 'withhold config'. Reference:\nhttps://github.com/cquark7/withhold/blob/main/docs/configuration.md")
+		if command == "scan" {
+			fmt.Fprintln(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nPrecedence: flags > WITHHOLD_PII / WITHHOLD_MAX_BYTES > file > defaults.\nOnly detection settings and scan limits apply; editor/proxy environment is ignored.\nReference: https://github.com/cquark7/withhold/blob/main/docs/usage.md#scan-local-text")
+		} else {
+			fmt.Fprintln(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nPrecedence: flags > environment > file > defaults; extra hosts/patterns merge.\nView settings with 'withhold config'. Reference:\nhttps://github.com/cquark7/withhold/blob/main/docs/configuration.md")
+		}
 	}
-	fmt.Fprintln(w, "\nExit codes: 0 success; 1 operation/check failed; 2 invalid usage/configuration.\nDoctor --preflight returns 2 for failed checks. Launch preserves application exit codes.")
+	if command == "scan" {
+		fmt.Fprintln(w, "\nExit codes: 0 complete without findings; 1 complete with findings;\n2 invalid usage/configuration or incomplete/failed scan. Errors take precedence.")
+	} else {
+		fmt.Fprintln(w, "\nExit codes: 0 success; 1 operation/check failed; 2 invalid usage/configuration.\nDoctor --preflight returns 2 for failed checks. Launch preserves application exit codes.")
+	}
 	return 0
 }
 
@@ -140,12 +155,25 @@ func flagValueName(name string) string {
 		return "NAME"
 	case "pii":
 		return "TYPES"
+	case "confidence":
+		return "LEVEL"
+	case "text":
+		return "TEXT"
+	case "exclude":
+		return "PATH"
 	default:
 		return "FILE"
 	}
 }
 
 func allowedFlag(command, name string) bool {
+	if command == "scan" {
+		switch name {
+		case "dir", "config", "pii", "json", "text", "secrets", "confidence", "exclude", "no-default-excludes", "max-bytes", "scan-timeout":
+			return true
+		}
+		return false
+	}
 	if command == "integrations" || command == "demo" {
 		return name == "json"
 	}
@@ -153,6 +181,8 @@ func allowedFlag(command, name string) bool {
 		return false
 	}
 	switch name {
+	case "text", "secrets", "confidence", "exclude", "no-default-excludes":
+		return false
 	case "example", "init":
 		return command == "config"
 	case "dir":

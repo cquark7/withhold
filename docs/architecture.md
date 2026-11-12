@@ -21,6 +21,7 @@ request → transport intake → scanner pool → policy → upstream or local e
 | `internal/policy` | Traffic contracts and shared enforcement decisions. |
 | `internal/scanner` | JSON extraction, rewriting, placeholders, residue verification. |
 | `internal/detector`, `internal/pii` | Offline secret and selected PII recognizers. |
+| `internal/inspect` | Bounded local text/file traversal and value-free human/JSON inspection reports. |
 | `internal/worker`, `internal/scanpool` | Private process protocol, key resolution, admission/deadlines. |
 | `internal/session`, `internal/control` | Harness-independent sessions, authenticated ownership, trust/recovery. |
 | `internal/integration` | Reversible application-setup and optional-launch contracts. |
@@ -111,3 +112,9 @@ invalid counters/statuses, and unsafe diagnostics before policy uses them.
 UTF-8 text and returns private `RuleID`/`Secret`/`Match` findings. Raw findings
 must never enter ordinary diagnostics. Scanner statuses and runtime guarantees
 are covered by the [behavior contract](../CONTRACTS.md).
+
+`scan` uses `_scanner --text` and the existing isolated worker pool, deadlines,
+and cleanup. It sends literal UTF-8 and returns value-free locations or fixed error
+codes; it does not use proxy JSON extraction or initialize placeholder rewriting.
+The CLI owns configuration, `internal/inspect` handles bounded file intake and
+ordered output, and detector adapters map findings to original locations.

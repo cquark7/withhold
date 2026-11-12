@@ -80,8 +80,8 @@ func run(args []string) int {
 			args = append(args, "--debug")
 		}
 	}
-	if len(args) == 2 && args[0] == "_scanner" && args[1] == "--body" {
-		if worker.Run("--body") != nil {
+	if len(args) == 2 && args[0] == "_scanner" && (args[1] == "--body" || args[1] == "--text") {
+		if worker.Run(args[1]) != nil {
 			return 1
 		}
 		return 0
@@ -104,6 +104,9 @@ func run(args []string) int {
 	}
 	if args[0] == "demo" {
 		return demo(os.Stdout, args[1:])
+	}
+	if args[0] == "scan" {
+		return scan(os.Stdout, os.Stderr, os.Stdin, args[1:])
 	}
 	if _, ok := commands[args[0]]; !ok {
 		fmt.Fprintf(os.Stderr, "withhold: unknown command %q\nRun 'withhold --help' for available commands.\n", args[0])

@@ -31,8 +31,9 @@ func TestSelectedRecognizersReturnCompletePrivateValues(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			findings := d.Scan("用户 🚀 value: " + c.canary + " end")
-			if len(findings) != 1 || findings[0] != (Finding{"pii-" + c.name, c.canary, c.canary}) {
+			const prefix = "用户 🚀 value: "
+			findings := d.Scan(prefix + c.canary + " end")
+			if len(findings) != 1 || findings[0] != (Finding{RuleID: "pii-" + c.name, Secret: c.canary, Match: c.canary, Start: len(prefix), End: len(prefix) + len(c.canary)}) {
 				t.Fatal("expected complete value and category-specific rule")
 			}
 			if c.name != "email" && len(d.Scan("dev@example.com")) != 0 {

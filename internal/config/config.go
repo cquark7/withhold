@@ -15,6 +15,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
+	"github.com/cquark7/withhold/internal/detector"
 	"github.com/cquark7/withhold/internal/localstate"
 	"github.com/cquark7/withhold/internal/pii"
 	"github.com/cquark7/withhold/internal/policy"
@@ -37,6 +38,11 @@ type Proxy struct {
 	UpstreamCA       string   `json:"upstream_ca,omitempty"`
 }
 
+// Scan settings affect offline inspection only, never proxy protection.
+type Scan struct {
+	Confidence string `json:"confidence"`
+}
+
 // Config contains no credentials or placeholder key. It can be recorded with a
 // private session so children never reread a changing configuration file.
 type Config struct {
@@ -44,6 +50,7 @@ type Config struct {
 	Integration string     `json:"integration"`
 	Protection  Protection `json:"protection"`
 	Proxy       Proxy      `json:"proxy"`
+	Scan        Scan       `json:"scan"`
 	// Application is decoded and validated by the selected integration. Shared
 	// configuration never accumulates fields for individual harnesses.
 	Application    json.RawMessage `json:"application"`
@@ -249,6 +256,11 @@ func (c *Config) Validate() error {
 	if c.Schema != 1 || c.Integration == "" {
 		return errors.New("config requires schema 1 and an integration")
 	}
+	confidence, err := detector.ParseConfidence(c.Scan.Confidence)
+	if err != nil {
+		return err
+	}
+	c.Scan.Confidence = confidence
 	if !policy.ValidMode(c.Protection.Chat) || !policy.ValidMode(c.Protection.Inline) {
 		return errors.New("chat and inline must be redact or block")
 	}

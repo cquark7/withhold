@@ -17,25 +17,35 @@ The installer needs `curl` and a SHA-256 utility (`shasum` or `sha256sum`). Go,
 Python, GitHub CLI, and archive extraction tools are not required.
 
 ```sh
-curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
+curl -fsSL --connect-timeout 10 --max-time 120 --proto '=https' \
+  https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 withhold version
 withhold demo
 ```
 
+The script is not retried when piped to the shell. Download it first if you want
+to review it before running. The installer uses bounded HTTPS downloads, respects
+curl's proxy and CA settings, and shows progress in interactive terminals.
+
 To download and review the script before running it:
 
 ```sh
-curl -fsSL https://github.com/cquark7/withhold/releases/latest/download/install.sh -o install.sh
-less install.sh
-sh install.sh --help
+curl --fail --show-error --location --proto '=https' --proto-redir '=https' \
+  --connect-timeout 10 --max-time 120 --output install.sh \
+  https://github.com/cquark7/withhold/releases/latest/download/install.sh &&
+less install.sh &&
+sh install.sh --help &&
 sh install.sh
 ```
 
 To install a specific release that includes standalone binaries, choose its tag:
 
 ```sh
-curl -fsSL https://github.com/cquark7/withhold/releases/download/VERSION/install.sh | sh -s -- --version VERSION
+curl --fail --show-error --location --proto '=https' --proto-redir '=https' \
+  --connect-timeout 10 --max-time 120 --output install.sh \
+  https://github.com/cquark7/withhold/releases/download/VERSION/install.sh &&
+sh install.sh --version VERSION
 ```
 
 Replace `VERSION` in both places with the same tag, such as `v1.2.3`. Without
@@ -137,6 +147,67 @@ Windows PowerShell: `go build -trimpath -o withhold.exe ./cmd/withhold`, then
 `.\withhold.exe install`. Add the printed directory to your user PATH.
 Installation copies the executable and creates an absent default configuration;
 it does not overwrite existing config or change trust or editor settings.
+
+## Scan local text
+
+`scan` finds secrets and optional PII locally without rewriting input, starting a
+proxy, or requiring setup. Output identifies the rule and original location,
+not detected values or source excerpts.
+
+```sh
+withhold scan .env
+withhold scan src config
+withhold scan . --pii email,phone
+withhold scan . --confidence medium
+withhold scan . --secrets=false --pii all
+withhold scan - < message.txt
+withhold scan --text 'dev@example.com' --pii email
+withhold scan . --exclude ./generated --json
+withhold scan ./vendor --no-default-excludes
+```
+
+Paths may be files or directories; options may appear before or after them. Use
+`--` for paths beginning with `-`. Without a path or `--text`, redirected stdin
+is read; interactive use needs a target. `-` reads stdin once and can accompany
+path arguments; `--text` selects only its literal value, ignores implicit stdin,
+and cannot be combined with path arguments. Prefer files or stdin for sensitive
+text because arguments may be saved in shell history or shown in process listings.
+
+Secrets are on by default; PII is off unless selected in
+[configuration](configuration.md) or with `--pii`. `--secrets=false` enables a
+PII-only scan. The selected TOML file is validated without editor discovery; scans
+write no state, logs, keys, settings, or trust.
+
+`--confidence low|medium|high` sets a minimum for offline secret findings,
+overriding `[scan].confidence`; the default is no minimum and `--confidence=`
+clears the configured value. `medium` keeps medium and high findings; `high` keeps
+high findings. Unclassified findings remain included. Confidence does not affect
+PII or proxy protection and is heuristic, so higher thresholds can hide real secrets.
+
+Scans include hidden and Git-ignored text, but skip common dependencies and
+generated files (such as `node_modules` and lockfiles) by default. This applies
+to explicit paths and PII-only scans; `--no-default-excludes` disables these
+defaults. `.git` is always skipped. Repeat `--exclude PATH` to skip literal paths
+or directories relative to the working directory, including explicit targets.
+Discovered symlinks and unsupported files are skipped; explicitly naming one is
+an error. Documents, archives, binary files, and invalid UTF-8 are not scanned.
+Skip counts refer to entries or subtree roots, not every file beneath them.
+
+Findings show rules and locations, never values or source excerpts. Filepaths may
+be private. The scan reads literal text, including `.json` files; it does not
+apply the proxy's JSON extraction or routing policy.
+
+`--json` streams a schema-1 report. Check `summary.complete` before treating it
+as finished; truncated output is incomplete. See the
+[inspection contract](../CONTRACTS.md#offline-text-inspection) for report fields
+and location conventions.
+
+Exit **0** means complete with no findings; **1** means findings; **2** means
+invalid usage/configuration or an incomplete scan. Read failures, timeouts, and
+size or finding limits are incomplete, not clean. Defaults are 32 MiB per input
+(128 MiB maximum) and a 10-second timeout, also settable in proxy configuration.
+Scan accepts `WITHHOLD_PII` and `WITHHOLD_MAX_BYTES`; other proxy/editor
+environment overrides do not apply.
 
 ## Start and stop
 

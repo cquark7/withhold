@@ -66,7 +66,10 @@ func ConfigurationFor(value string) (*Metadata, error) {
 	return &Metadata{Engine: "alcatraz", Version: Version, Categories: selected}, nil
 }
 
-type Finding struct{ RuleID, Secret, Match string }
+type Finding struct {
+	RuleID, Secret, Match string
+	Start, End            int
+}
 
 type Detector struct {
 	engine *analyzer.Engine
@@ -124,7 +127,7 @@ func (d *Detector) Scan(text string) []Finding {
 	results := d.engine.Analyze(text, analyzer.Options{})
 	findings := make([]Finding, 0, len(results))
 	for _, hit := range results {
-		findings = append(findings, Finding{d.rules[hit.EntityType], hit.Text, hit.Text})
+		findings = append(findings, Finding{RuleID: d.rules[hit.EntityType], Secret: hit.Text, Match: hit.Text, Start: hit.Start, End: hit.End})
 	}
 	return findings
 }

@@ -87,6 +87,7 @@ func (o *cliOptions) use(c config.Config) {
 	o.max, o.audit, o.hint, o.upstreamCA = c.Proxy.MaxBytes, c.Audit, c.Hint, c.Proxy.UpstreamCA
 	o.timeout, _ = time.ParseDuration(c.Proxy.ScanTimeout)
 	o.trust, o.integration = c.Trust, c.Integration
+	o.confidence = c.Scan.Confidence
 	o.hosts, o.patterns = c.Proxy.ExtraHosts, c.Proxy.ExtraHostRegex
 }
 

@@ -34,6 +34,46 @@ bodyless: no transfer encoding and no positive, malformed, or unknown body
 length. Any format, method, or inspection-failure exception must be explicit in
 the integration contract. Observe mode does not enforce these format/method policies.
 
+## Offline text inspection
+
+- **Input:** Reads literal UTF-8 from `--text`, files, directories, or stdin.
+  Arguments are paths; `--text` selects only its literal value, ignores implicit
+  stdin, and cannot be combined with path arguments. Otherwise stdin is read once
+  when selected explicitly with `-` or when neither `--text` nor a path is
+  supplied and stdin is redirected. Inputs are never changed or joined, and
+  proxy JSON extraction is not applied.
+- **Detection and config:** Secrets are on by default; PII is optional, and both
+  cannot be disabled. TOML is validated without application discovery. Precedence
+  is flags, `WITHHOLD_PII`/`WITHHOLD_MAX_BYTES`, file, then defaults; other
+  editor/proxy environment overrides do not apply. Scans need no setup, session,
+  trust, editor, or placeholder key and write no state or logs.
+- **Confidence:** `--confidence` overrides `[scan].confidence`; values are `low`,
+  `medium`, `high`, or empty (no minimum), trimmed and lowercased. `--confidence=`
+  clears the config value. Betterleaks keeps unclassified findings and components
+  of accepted multipart findings. Higher thresholds can hide real secrets; PII
+  and proxy detection are unaffected.
+- **Discovery:** Hidden and Git-ignored text is included, subject to Betterleaks'
+  bundled exclusions. They apply to explicit targets and PII-only scans;
+  `--no-default-excludes` disables them. `.git` is always pruned. Discovered
+  symlinks are not followed; explicit symlinks/nonregular inputs are errors.
+  Repeatable `--exclude PATH` skips literal paths relative to the working
+  directory, including explicit targets. Project ignore files and local detector
+  config are not loaded. Binary, invalid UTF-8, document, and archive content is
+  skipped. Skip counts cover entries or pruned subtree roots, not descendants.
+- **Limits:** Each input defaults to 32 MiB (128 MiB maximum), a 10-second
+  deadline, and 10,000 findings. Read/walk failures, timeouts, overflow, worker
+  failures, explicit unsupported inputs, or hitting a limit make the run
+  incomplete. Intentional exclusions and discovered unsupported entries are
+  summarized but do not make it incomplete.
+- **Reports:** Findings identify source, rule/category, and location, never values
+  or excerpts. Full-match locations may include context; encoded findings refer
+  to source containers. Byte ranges are zero-based/half-open; lines and byte
+  columns are one-based with exclusive end positions. Output is deterministic.
+  JSON streams one schema-1 report; only 128 error details are included and
+  `errors_omitted` counts the rest. Missing/truncated output is incomplete. Exit
+  codes are **0** for complete without findings, **1** with findings, and **2**
+  for invalid usage/config or incomplete scans; errors take precedence.
+
 ## Scanning and redaction
 
 The scanner walks JSON string leaves and object keys, including tool schemas,
@@ -181,6 +221,12 @@ GitHub CLI and verifies signed provenance for both files and the manifest;
 `--commit` implies that verification and pins the source commit. Requested
 provenance failures never fall back to checksum-only installation.
 
+The quickstart fetches the installer over HTTPS with a 10-second connection and
+120-second total limit; it does not retry a script piped to the shell. Release
+downloads also use HTTPS, with bounded timeouts and retries; a failed download
+stops before verification or installation. curl uses the normal proxy and CA
+settings, and shows progress only on interactive stderr.
+
 ## Diagnostics and interfaces
 
 Project environment variables use `WITHHOLD_*`; test-only overrides use
@@ -196,9 +242,11 @@ configured routing, not verified inspection coverage. Policy terms remain
 Help, version, completion, and integration discovery do not read runtime
 configuration, initialize trust, change settings, or start
 workers. Usage/configuration errors return 2, operation/check failures 1, and
-success 0. `doctor --preflight` is silent on success and returns 2 on failure.
+success 0, except for the documented `scan` exit codes above. `doctor --preflight`
+is silent on success and returns 2 on failure.
 JSON commands write one object: configuration schema 1, status schema 4, doctor
-schema 2, integration catalog schema 1, demo schema 1. Schema changes must be explicit.
+schema 2, integration catalog schema 1, demo schema 1, and scan schema 1.
+Schema changes must be explicit.
 `config` prints a reloadable TOML snapshot of the effective public configuration,
 including adapter-owned defaults; `config --json` prints the same settings as
 JSON. Neither includes placeholder keys, but local paths/provider names may be

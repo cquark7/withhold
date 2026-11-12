@@ -31,6 +31,9 @@ scan_timeout = %q
 # Extra hosts do not establish support for another coding agent.
 # extra_hosts = ["your-reviewed-provider.example"]
 
+[scan]
+confidence = "" # Offline secrets only: low, medium, high; empty keeps all levels.
+
 `, c.Integration, c.Trust, c.StartupTimeout, c.Proxy.Port, c.Proxy.MaxBytes, c.Proxy.ScanTimeout) + application
 }
 
