@@ -1,4 +1,4 @@
-package copilot
+package editorsettings
 
 import (
 	"bytes"
@@ -125,7 +125,7 @@ func TestApplicationNetworkSettingsEnableOrdinaryLaunchesAndRestore(t *testing.T
 
 func TestApplyUsesSharedApplicationSettingsWithoutEditingProfilesOrProjects(t *testing.T) {
 	home := t.TempDir()
-	a := Application{Options: integration.ApplicationOptions{Home: home, Platform: "linux"}}
+	a := Application{Options: integration.ApplicationOptions{Home: home, Platform: "linux"}, SettingsDir: "Code"}
 	target, err := a.Resolve()
 	if err != nil {
 		t.Fatal(err)
