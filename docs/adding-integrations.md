@@ -32,6 +32,7 @@ Create `internal/integrations/<name>/` with files by responsibility:
 | --- | --- |
 | `config.go` | Typed application settings and `Configure(raw, getenv)` normalization. |
 | `traffic.go` | `policy.Profile`: host/path classification, streaming detection, error framing. |
+| `codec.go` (optional) | Route-owned `policy.RPCCodec`: bounded protobuf decoding, scanner projection, verified write-back, content/control classification. |
 | `settings.go` | `integration.Application`: resolve/read/apply/restore application resources. |
 | `launch.go` | Optional `integration.Launcher`, only when supported. |
 | `*_test.go` | Adapter-specific regression tests using synthetic data. |
@@ -40,6 +41,16 @@ Use `config.DecodeObject` for strict typed application decoding; do not accept
 unknown fields, nulls, duplicates, or case-insensitive aliases. Resolve defaults
 and environment once in `Configure`; a nil getter must use only supplied values.
 Never put credentials in public config, catalog metadata, or diagnostics.
+
+Keep Connect framing out of adapters: `internal/connectrpc` and the shared proxy
+own complete-envelope admission and scan-before-release. A codec must honor
+`policy.DecodeLimits.Context`, per-representation size bounds, and `Reserve`
+before retaining decoded input, propagating capacity errors unchanged. Project
+all supported model/context text into the existing scanner; preserve structural
+identifiers, reject unresolved references/integrity, and verify write-back.
+`Message.HasContent` must not claim model inspection for a handshake/control-only
+message. `policy.RequestBlocker` can frame errors before a body is decodable;
+late failures abort the response rather than forge a successful end of stream.
 
 `Application.Resolve` returns an absolute recovery anchor and optional binary.
 `Apply` receives the loopback port and CA directory. Record backups/ownership
@@ -50,6 +61,9 @@ anchor. Do not make the core rediscover paths or understand a harness's format.
 
 Implement `Launcher` only if useful. Preserve argument boundaries and exit codes,
 avoid a shell, and never disable TLS. Launch is not evidence of interception.
+VS Code-family adapters can reuse `internal/editorsettings`; keep each editor's
+settings directory, additional managed keys, and Windows executable metadata in
+its adapter. Other harnesses need not implement editor settings at all.
 
 ## 3. Register once
 

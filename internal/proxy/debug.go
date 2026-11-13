@@ -146,7 +146,7 @@ func debugEvent(r *http.Request, event, reason string, status int) {
 		if event == "upstream_error" || event == "write_error" || event == "body_not_written" || event == "aborted" {
 			t.record.Reason = reason
 		}
-		terminal := event == "blocked" || event == "aborted" || event == "upstream_error"
+		terminal := event == "blocked" || event == "aborted" || event == "upstream_error" || event == "message_released"
 		if t.record.Transport == "websocket-message" {
 			terminal = terminal || event == "upstream_written" || event == "write_error"
 		} else {

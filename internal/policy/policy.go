@@ -21,6 +21,7 @@ type Route struct {
 	Provisional                           bool
 	AllowNonJSON                          bool
 	HTTPFailureAction, NonPostRule        string
+	Codec                                 *RPCCodec
 }
 
 type Response struct {

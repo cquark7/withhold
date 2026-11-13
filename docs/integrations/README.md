@@ -12,6 +12,9 @@ Only this integration is currently shipped. Codex, Cursor, OpenCode, remote
 extension hosts, WSL, containers, and browser editors are not established
 integrations. No dynamic plugins are loaded.
 
+For the request-boundary investigation, see
+[Cursor integration research](../research/cursor.md); it is not runtime support.
+
 ```sh
 withhold integrations             # Available in this build; no setup required.
 withhold integrations --json      # Versioned machine-readable catalog.

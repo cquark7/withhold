@@ -18,6 +18,7 @@ request → transport intake → scanner pool → policy → upstream or local e
 | --- | --- |
 | `cmd/withhold`, `internal/config` | CLI composition, strict TOML config and precedence. |
 | `internal/proxy` | Bounded HTTP/TLS/WebSocket transport, forwarding, audit/findings. |
+| `internal/connectrpc` | Application-independent Connect header/envelope validation and bounded frame I/O. |
 | `internal/policy` | Traffic contracts and shared enforcement decisions. |
 | `internal/scanner` | JSON extraction, rewriting, placeholders, residue verification. |
 | `internal/detector`, `internal/pii` | Offline secret and selected PII recognizers. |
@@ -25,7 +26,9 @@ request → transport intake → scanner pool → policy → upstream or local e
 | `internal/worker`, `internal/scanpool` | Private process protocol, key resolution, admission/deadlines. |
 | `internal/session`, `internal/control` | Harness-independent sessions, authenticated ownership, trust/recovery. |
 | `internal/integration` | Reversible application-setup and optional-launch contracts. |
+| `internal/editorsettings` | Shared VS Code-family JSONC backup/managed-key restoration, platform settings roots, and shell-free editor launching. |
 | `internal/integrations/copilot` | Copilot routes/errors, typed VS Code config, settings, and optional launch. |
+| `internal/integrations/cursor` | Unregistered Cursor request codecs, prototype routes, and application adapter; not established product support. |
 | `internal/integrations` | Single explicit registry: factories, settings normalization, catalog metadata. |
 | `internal/certstore`, `internal/localstate`, `internal/jsonmeta` | CA issuance, private files, bounded metadata extraction. |
 
@@ -47,6 +50,16 @@ Import-boundary tests protect this separation.
   protocol-compatible errors, typed application settings, and reversible setup.
   Core transport owns admission/TLS/forwarding; policy owns decisions; scanners
   see bytes and injected detector options, never a harness ID.
+- **Explicit message codecs.** A route's optional `policy.RPCCodec` selects unary,
+  streaming, or duplex Connect transport. The adapter supplies bounded decode,
+  scanner projection, verified write-back, and content-vs-control classification.
+  Shared transport owns framing, admission, compression, deadlines, cancellation,
+  backpressure, and scan-before-release. No Cursor RPC names or schema parsing
+  enter the proxy, scanner, or session manager. Existing JSON routes need no codec.
+- **Reuse at actual boundaries.** Copilot and Cursor share editor-settings and
+  launch mechanics, not traffic schemas or setup discovery. Each adapter owns its
+  store, additional managed keys, executable metadata, and normalized options.
+  A CLI harness need not depend on editor machinery to reuse proxy/scanner policy.
 - **One registry, one CLI.** New integrations register once in
   `internal/integrations/registry.go`. The catalog and completion consume it;
   help points to it. Keep the lifecycle commands and `--integration` selector

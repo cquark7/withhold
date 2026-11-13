@@ -14,6 +14,7 @@ require (
 	github.com/rs/zerolog v1.35.1
 	golang.org/x/net v0.62.0
 	golang.org/x/text v0.43.0
+	google.golang.org/protobuf v1.36.12
 )
 
 require (

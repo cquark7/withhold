@@ -158,6 +158,33 @@ digest, and trailer headers removed; clean/observe bodies retain wire bytes.
 Upload admission is released when transport closes the request body, not when
 its response stream ends.
 
+Integrations may opt individual routes into a typed Connect/protobuf codec.
+Unary bodies are inspected before opening upstream; streaming bodies are
+reassembled into complete envelopes and inspected before releasing any of that
+message's payload. Duplex routes require HTTP/2 on both sides. Responses still
+stream uninspected. Connect GET/query payloads, JSON/gRPC alternates, request
+trailers, and HTTP-compressed envelope streams are not supported by this
+capability. Audit-only unsupported transports remain finite, admitted uploads;
+they never use an unbounded raw duplex fallback.
+
+Connect streams are bounded by `max_bytes` for cumulative inbound **and**
+released wire bytes, 10,000 messages, a 30-minute lifetime, and a five-minute
+message-read deadline. Envelope lengths/flags, outer decompression caps, and
+aggregate admission remain unconditional in observe mode. Codec/projection and
+scanner inspection use the configured scan deadline; adapters must reserve
+retained decoded input before allocation. Intake jobs are held while a complete
+message is decoded/scanned/released, not while waiting for the next envelope.
+Only approved original bytes or verified protobuf rewrites are released;
+unsupported schemas never authorize an enforcing-mode fallback.
+
+A failure before response headers uses a local error (HTTP 413 for upload
+admission failures). After response headers, a failed stream is aborted/reset,
+not ended successfully or spliced with an error inside a partial upstream
+envelope. Streaming finding summaries report release as send-unconfirmed:
+reading an upload buffer is not evidence of a completed network write. Scanned
+control identifiers/handshakes alone do not establish inspected-content coverage.
+No currently registered integration opts into this capability.
+
 Client WebSocket messages are bounded, reassembled, and decompressed before
 inspection; server messages pass through. Redact mode forwards verified rewrites;
 block mode stops on findings. Non-JSON text is dropped without closing the

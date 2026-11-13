@@ -1,0 +1,337 @@
+{
+  "cursor_version": "3.30.8",
+  "bundle": "Contents/Resources/app/out/vs/workbench/workbench.desktop.main.js",
+  "bundle_sha256": "4792e018b1e65ca4d6e44cf3224384325d2bf703996734aee02447efc6919399",
+  "root": "aiserver.v1.RunInferenceClientMessage",
+  "enums": {"aiserver.v1.InferenceAssistantPartKind": [0, 1, 2, 3], "aiserver.v1.InferenceMessageRole": [0, 1, 2, 3, 4], "aiserver.v1.InferenceReason": [0, 1, 2, 3], "aiserver.v1.RunInferenceAgentModuleSource": [0, 1, 2, 3], "aiserver.v1.RunInferenceInvocationPurpose": [0, 1, 2, 3], "aiserver.v1.RunInferenceRequestEncoding": [0, 1, 2], "aiserver.v1.RunInferenceRequestEncodingArm": [0, 1, 2], "aiserver.v1.RunInferenceRoutingRole": [0, 1, 2], "google.protobuf.NullValue": [0]},
+  "messages": {
+    "aiserver.v1.InferenceAgentTool": [
+      {"number": 1, "name": "name", "type": "string"},
+      {"number": 2, "name": "description", "type": "string"},
+      {"number": 3, "name": "parameters", "type": "google.protobuf.Struct"},
+      {"number": 4, "name": "custom_tool_format", "type": "aiserver.v1.InferenceCustomToolFormat", "opt": true}
+    ],
+    "aiserver.v1.InferenceAnthropicOptions": [
+      {"number": 1, "name": "cache_control", "type": "aiserver.v1.InferenceCacheControl", "opt": true}
+    ],
+    "aiserver.v1.InferenceCacheControl": [
+      {"number": 1, "name": "type", "type": "string"}
+    ],
+    "aiserver.v1.InferenceCompactionTrigger": [
+      {"number": 1, "name": "used_tokens", "type": "int32", "opt": true},
+      {"number": 2, "name": "reserved_tokens", "type": "int32", "opt": true},
+      {"number": 3, "name": "window_fraction", "type": "double", "opt": true}
+    ],
+    "aiserver.v1.InferenceContentPart": [
+      {"number": 1, "name": "text", "type": "aiserver.v1.InferenceTextPart", "oneof": "part"},
+      {"number": 2, "name": "image", "type": "aiserver.v1.InferenceImagePart", "oneof": "part"},
+      {"number": 3, "name": "file", "type": "aiserver.v1.InferenceFilePart", "oneof": "part"}
+    ],
+    "aiserver.v1.InferenceContentParts": [
+      {"number": 1, "name": "parts", "type": "aiserver.v1.InferenceContentPart", "repeated": true}
+    ],
+    "aiserver.v1.InferenceCoreMessage": [
+      {"number": 1, "name": "role", "type": "aiserver.v1.InferenceMessageRole"},
+      {"number": 2, "name": "text", "type": "string", "oneof": "content"},
+      {"number": 3, "name": "parts", "type": "aiserver.v1.InferenceContentParts", "oneof": "content"},
+      {"number": 6, "name": "tool_content", "type": "aiserver.v1.InferenceToolResultContent", "oneof": "content"},
+      {"number": 4, "name": "tool_calls", "type": "aiserver.v1.InferenceToolCall", "repeated": true},
+      {"number": 7, "name": "reasoning_parts", "type": "aiserver.v1.InferenceReasoningPart", "repeated": true},
+      {"number": 8, "name": "model_provider_message_id", "type": "string", "opt": true},
+      {"number": 9, "name": "openai_phase", "type": "string", "opt": true},
+      {"number": 10, "name": "openai_phase_null", "type": "bool", "opt": true},
+      {"number": 11, "name": "cursor_inference_reason", "type": "string", "opt": true},
+      {"number": 12, "name": "cursor_feature_type", "type": "string", "opt": true},
+      {"number": 13, "name": "cursor_is_summary", "type": "bool", "opt": true},
+      {"number": 21, "name": "cursor_skip_prompt_cache", "type": "bool", "opt": true},
+      {"number": 14, "name": "cursor_clear_at", "type": "string", "opt": true},
+      {"number": 15, "name": "cursor_fallback_insert_before", "type": "string", "opt": true},
+      {"number": 16, "name": "assistant_part_order", "type": "aiserver.v1.InferenceAssistantPartKind", "repeated": true},
+      {"number": 17, "name": "assistant_text_parts", "type": "string", "repeated": true},
+      {"number": 18, "name": "anthropic_native_content", "type": "string", "opt": true},
+      {"number": 19, "name": "lineage_tag", "type": "string", "opt": true},
+      {"number": 20, "name": "cursor_request_id", "type": "string", "opt": true},
+      {"number": 22, "name": "cursor_output_effort", "type": "string", "opt": true}
+    ],
+    "aiserver.v1.InferenceCursorOptions": [
+      {"number": 1, "name": "image_description", "type": "string", "opt": true},
+      {"number": 2, "name": "image_descriptions", "type": "string", "map_key": "int32"},
+      {"number": 3, "name": "image_content_sha256", "type": "string", "opt": true},
+      {"number": 4, "name": "tool_call_refused", "type": "bool", "opt": true}
+    ],
+    "aiserver.v1.InferenceCustomToolFormat": [
+      {"number": 1, "name": "type", "type": "string"},
+      {"number": 2, "name": "definition", "type": "string"},
+      {"number": 3, "name": "syntax", "type": "string"}
+    ],
+    "aiserver.v1.InferenceFilePart": [
+      {"number": 1, "name": "data", "type": "string"},
+      {"number": 2, "name": "media_type", "type": "string"},
+      {"number": 3, "name": "filename", "type": "string", "opt": true},
+      {"number": 4, "name": "provider_options", "type": "aiserver.v1.InferenceProviderOptions", "opt": true}
+    ],
+    "aiserver.v1.InferenceImagePart": [
+      {"number": 1, "name": "data", "type": "string"},
+      {"number": 2, "name": "mime_type", "type": "string", "opt": true},
+      {"number": 3, "name": "provider_options", "type": "aiserver.v1.InferenceProviderOptions", "opt": true}
+    ],
+    "aiserver.v1.InferenceModelConfig": [
+      {"number": 1, "name": "max_tokens", "type": "int32", "opt": true},
+      {"number": 2, "name": "temperature", "type": "float", "opt": true},
+      {"number": 3, "name": "top_p", "type": "float", "opt": true},
+      {"number": 4, "name": "stop_sequences", "type": "string", "repeated": true},
+      {"number": 5, "name": "top_k", "type": "int32", "opt": true},
+      {"number": 6, "name": "chat_template_kwargs", "type": "google.protobuf.Struct", "opt": true},
+      {"number": 7, "name": "continue_final_message", "type": "bool", "opt": true}
+    ],
+    "aiserver.v1.InferenceModelParameterValue": [
+      {"number": 1, "name": "id", "type": "string"},
+      {"number": 2, "name": "value", "type": "string"}
+    ],
+    "aiserver.v1.InferenceNamedProviderDefinedTool": [
+      {"number": 1, "name": "name", "type": "string"},
+      {"number": 2, "name": "id", "type": "string"},
+      {"number": 3, "name": "type", "type": "string"},
+      {"number": 4, "name": "options", "type": "google.protobuf.Struct"}
+    ],
+    "aiserver.v1.InferenceProviderOptions": [
+      {"number": 1, "name": "anthropic", "type": "aiserver.v1.InferenceAnthropicOptions", "opt": true},
+      {"number": 2, "name": "cursor", "type": "aiserver.v1.InferenceCursorOptions", "opt": true}
+    ],
+    "aiserver.v1.InferenceReasoningPart": [
+      {"number": 1, "name": "is_redacted", "type": "bool"},
+      {"number": 2, "name": "text", "type": "string"},
+      {"number": 3, "name": "signature", "type": "string", "opt": true},
+      {"number": 4, "name": "redacted_data", "type": "string", "opt": true},
+      {"number": 5, "name": "model_name", "type": "string", "opt": true},
+      {"number": 6, "name": "lineage_tag", "type": "string", "opt": true}
+    ],
+    "aiserver.v1.InferenceRequestedModel": [
+      {"number": 1, "name": "model_id", "type": "string"},
+      {"number": 2, "name": "max_mode", "type": "bool"},
+      {"number": 3, "name": "parameters", "type": "aiserver.v1.InferenceModelParameterValue", "repeated": true},
+      {"number": 4, "name": "built_in_model", "type": "bool"}
+    ],
+    "aiserver.v1.InferenceStreamRequest": [
+      {"number": 1, "name": "messages", "type": "aiserver.v1.InferenceCoreMessage", "repeated": true},
+      {"number": 2, "name": "tools", "type": "aiserver.v1.InferenceAgentTool", "repeated": true},
+      {"number": 3, "name": "provider_defined_tools", "type": "aiserver.v1.InferenceNamedProviderDefinedTool", "repeated": true},
+      {"number": 4, "name": "model_config", "type": "aiserver.v1.InferenceModelConfig", "opt": true},
+      {"number": 5, "name": "model_id", "type": "string", "opt": true},
+      {"number": 6, "name": "invocation_id", "type": "string", "opt": true},
+      {"number": 7, "name": "requested_model", "type": "aiserver.v1.InferenceRequestedModel", "opt": true},
+      {"number": 8, "name": "conversation_id", "type": "string", "opt": true},
+      {"number": 9, "name": "accepted_unadvertised_tool_names", "type": "string", "repeated": true},
+      {"number": 10, "name": "automation_id", "type": "string", "opt": true},
+      {"number": 11, "name": "inference_reason", "type": "aiserver.v1.InferenceReason", "opt": true},
+      {"number": 12, "name": "conversation_group_id", "type": "string", "opt": true},
+      {"number": 13, "name": "parent_request_id", "type": "string", "opt": true},
+      {"number": 14, "name": "root_parent_request_id", "type": "string", "opt": true},
+      {"number": 15, "name": "parent_agent_tool_call_id", "type": "string", "opt": true},
+      {"number": 16, "name": "subagent_type", "type": "string", "opt": true},
+      {"number": 17, "name": "compaction_epoch", "type": "int32", "opt": true},
+      {"number": 18, "name": "turn_unit_id", "type": "string", "opt": true},
+      {"number": 19, "name": "turn_unit_type", "type": "string", "opt": true},
+      {"number": 20, "name": "originating_flow", "type": "string", "opt": true},
+      {"number": 21, "name": "routing_reason", "type": "string", "opt": true},
+      {"number": 22, "name": "summarized_message_count", "type": "int32", "opt": true},
+      {"number": 23, "name": "is_simulated_msg", "type": "bool", "opt": true},
+      {"number": 24, "name": "simulated_msg_reason", "type": "int32", "opt": true},
+      {"number": 25, "name": "parent_conversation_call", "type": "bool", "opt": true},
+      {"number": 26, "name": "system_static_prefix_length", "type": "int32", "opt": true},
+      {"number": 27, "name": "compaction_trigger", "type": "aiserver.v1.InferenceCompactionTrigger", "opt": true},
+      {"number": 28, "name": "automation_next_run_within_hour", "type": "bool", "opt": true},
+      {"number": 29, "name": "automation_previous_run_within_hour", "type": "bool", "opt": true},
+      {"number": 30, "name": "automation_conversation_call", "type": "bool", "opt": true}
+    ],
+    "aiserver.v1.InferenceTextPart": [
+      {"number": 1, "name": "text", "type": "string"},
+      {"number": 2, "name": "provider_options", "type": "aiserver.v1.InferenceProviderOptions", "opt": true}
+    ],
+    "aiserver.v1.InferenceToolCall": [
+      {"number": 1, "name": "tool_call_id", "type": "string"},
+      {"number": 2, "name": "tool_name", "type": "string"},
+      {"number": 3, "name": "args", "type": "google.protobuf.Struct"},
+      {"number": 4, "name": "raw_tool_call_args", "type": "string", "opt": true}
+    ],
+    "aiserver.v1.InferenceToolResultContent": [
+      {"number": 1, "name": "parts", "type": "aiserver.v1.InferenceToolResultPart", "repeated": true}
+    ],
+    "aiserver.v1.InferenceToolResultPart": [
+      {"number": 1, "name": "tool_call_id", "type": "string"},
+      {"number": 2, "name": "tool_name", "type": "string"},
+      {"number": 3, "name": "result", "type": "google.protobuf.Value"},
+      {"number": 4, "name": "is_error", "type": "bool"},
+      {"number": 5, "name": "experimental_content", "type": "aiserver.v1.InferenceContentPart", "repeated": true},
+      {"number": 6, "name": "provider_options", "type": "aiserver.v1.InferenceProviderOptions", "opt": true},
+      {"number": 7, "name": "cursor_tool_call_is_error", "type": "bool", "opt": true}
+    ],
+    "aiserver.v1.RunInferenceAgentEvent": [
+      {"number": 1, "name": "method_name", "type": "string"},
+      {"number": 2, "name": "options_json", "type": "string"},
+      {"number": 3, "name": "client_reported_at_ms", "type": "int64", "opt": true}
+    ],
+    "aiserver.v1.RunInferenceAgentModule": [
+      {"number": 1, "name": "generation", "type": "string"},
+      {"number": 2, "name": "source", "type": "aiserver.v1.RunInferenceAgentModuleSource"},
+      {"number": 3, "name": "channel", "type": "string"},
+      {"number": 4, "name": "commit", "type": "string", "opt": true},
+      {"number": 5, "name": "interface_revision", "type": "uint32"},
+      {"number": 6, "name": "prompt_versions", "type": "string", "repeated": true}
+    ],
+    "aiserver.v1.RunInferenceCancelInvocation": [
+      {"number": 1, "name": "invocation_id", "type": "string"}
+    ],
+    "aiserver.v1.RunInferenceClientFirstCallTimings": [
+      {"number": 1, "name": "invocation_id", "type": "string"},
+      {"number": 2, "name": "attempt_start_to_stream_open_ms", "type": "double", "opt": true},
+      {"number": 3, "name": "stream_open_to_first_server_byte_ms", "type": "double", "opt": true},
+      {"number": 4, "name": "stream_open_to_run_ready_ms", "type": "double", "opt": true},
+      {"number": 5, "name": "run_ready_to_agent_config_ms", "type": "double", "opt": true},
+      {"number": 6, "name": "agent_config_to_run_stream_ms", "type": "double", "opt": true},
+      {"number": 7, "name": "run_stream_to_first_invocation_ms", "type": "double", "opt": true},
+      {"number": 8, "name": "first_invocation_to_frame_handed_ms", "type": "double", "opt": true},
+      {"number": 9, "name": "frame_handed_to_write_settled_ms", "type": "double", "opt": true},
+      {"number": 10, "name": "run_ready_to_frame_handed_ms", "type": "double", "opt": true},
+      {"number": 11, "name": "experiment_arm", "type": "string", "opt": true},
+      {"number": 12, "name": "frame_handed_to_encode_start_ms", "type": "double", "opt": true},
+      {"number": 13, "name": "frame_encode_ms", "type": "double", "opt": true},
+      {"number": 14, "name": "frame_encoded_to_write_settled_ms", "type": "double", "opt": true},
+      {"number": 15, "name": "frame_bytes", "type": "uint32", "opt": true},
+      {"number": 16, "name": "prewarm_skip_reason", "type": "string", "opt": true},
+      {"number": 17, "name": "prep_state_restore_ms", "type": "double", "opt": true},
+      {"number": 18, "name": "prep_root_prompt_restore_ms", "type": "double", "opt": true},
+      {"number": 19, "name": "prep_request_context_ms", "type": "double", "opt": true},
+      {"number": 20, "name": "prep_system_prompt_ms", "type": "double", "opt": true},
+      {"number": 21, "name": "prep_pre_turn_snapshot_ms", "type": "double", "opt": true},
+      {"number": 22, "name": "prep_pre_turn_snapshot_wait_ms", "type": "double", "opt": true},
+      {"number": 23, "name": "prep_pre_turn_snapshot_blob_writes_ms", "type": "double", "opt": true},
+      {"number": 24, "name": "prep_pre_turn_snapshot_serialize_ms", "type": "double", "opt": true},
+      {"number": 25, "name": "prep_first_step_to_first_invocation_ms", "type": "double", "opt": true},
+      {"number": 26, "name": "prep_prompt_message_count", "type": "uint32", "opt": true},
+      {"number": 27, "name": "prep_turn_count", "type": "uint32", "opt": true}
+    ],
+    "aiserver.v1.RunInferenceClientHeartbeat": [
+      {"number": 1, "name": "first_call_timings", "type": "aiserver.v1.RunInferenceClientFirstCallTimings"}
+    ],
+    "aiserver.v1.RunInferenceClientMessage": [
+      {"number": 1, "name": "run_request", "type": "aiserver.v1.RunInferenceRunRequest", "oneof": "message"},
+      {"number": 2, "name": "invoke_model", "type": "aiserver.v1.RunInferenceInvokeModel", "oneof": "message"},
+      {"number": 3, "name": "cancel_invocation", "type": "aiserver.v1.RunInferenceCancelInvocation", "oneof": "message"},
+      {"number": 4, "name": "finish_run", "type": "aiserver.v1.RunInferenceFinishRun", "oneof": "message"},
+      {"number": 5, "name": "client_heartbeat", "type": "aiserver.v1.RunInferenceClientHeartbeat", "oneof": "message"},
+      {"number": 6, "name": "agent_event", "type": "aiserver.v1.RunInferenceAgentEvent", "oneof": "message"},
+      {"number": 7, "name": "run_request_log", "type": "aiserver.v1.RunInferenceRunRequestLog", "oneof": "message"},
+      {"number": 9, "name": "resolve_subagent_models", "type": "aiserver.v1.RunInferenceResolveSubagentModels", "oneof": "message"},
+      {"number": 10, "name": "client_first_call_timings", "type": "aiserver.v1.RunInferenceClientFirstCallTimings", "oneof": "message"},
+      {"number": 11, "name": "delta_base_seed", "type": "aiserver.v1.RunInferenceDeltaBaseSeed", "oneof": "message"}
+    ],
+    "aiserver.v1.RunInferenceCompressedRequest": [
+      {"number": 1, "name": "encoding", "type": "aiserver.v1.RunInferenceRequestEncoding"},
+      {"number": 2, "name": "decoded_size", "type": "uint32"},
+      {"number": 3, "name": "data", "type": "bytes"}
+    ],
+    "aiserver.v1.RunInferenceDeltaBase": [
+      {"number": 1, "name": "invocation_id", "type": "string"},
+      {"number": 2, "name": "message_count", "type": "uint32"},
+      {"number": 3, "name": "prefix_sha256", "type": "bytes"},
+      {"number": 4, "name": "reuse_tools", "type": "bool"},
+      {"number": 5, "name": "request_sha256", "type": "bytes"}
+    ],
+    "aiserver.v1.RunInferenceDeltaBaseSeed": [
+      {"number": 1, "name": "invocation_id", "type": "string"},
+      {"number": 2, "name": "request", "type": "aiserver.v1.InferenceStreamRequest"},
+      {"number": 3, "name": "compressed_request", "type": "aiserver.v1.RunInferenceCompressedRequest"}
+    ],
+    "aiserver.v1.RunInferenceExecutePlan": [
+      {"number": 1, "name": "plan_file_uri", "type": "string", "opt": true},
+      {"number": 2, "name": "plan_file_content", "type": "string", "opt": true}
+    ],
+    "aiserver.v1.RunInferenceFinishRun": [
+      {"number": 1, "name": "aborted", "type": "bool"},
+      {"number": 2, "name": "turn_completed", "type": "bool", "opt": true},
+      {"number": 3, "name": "tool_call_batches", "type": "aiserver.v1.RunInferenceToolCallBatch", "repeated": true}
+    ],
+    "aiserver.v1.RunInferenceInvokeModel": [
+      {"number": 1, "name": "invocation_id", "type": "string"},
+      {"number": 2, "name": "request", "type": "aiserver.v1.InferenceStreamRequest"},
+      {"number": 3, "name": "purpose", "type": "aiserver.v1.RunInferenceInvocationPurpose"},
+      {"number": 4, "name": "tool_call_batches", "type": "aiserver.v1.RunInferenceToolCallBatch", "repeated": true},
+      {"number": 5, "name": "delta_base", "type": "aiserver.v1.RunInferenceDeltaBase", "opt": true},
+      {"number": 6, "name": "config_fingerprint", "type": "bytes", "opt": true},
+      {"number": 7, "name": "compressed_request", "type": "aiserver.v1.RunInferenceCompressedRequest"},
+      {"number": 8, "name": "request_encoding_arm", "type": "aiserver.v1.RunInferenceRequestEncodingArm"}
+    ],
+    "aiserver.v1.RunInferenceResolveSubagentModels": [
+      {"number": 1, "name": "resolution_id", "type": "string"},
+      {"number": 2, "name": "requested_models", "type": "string", "repeated": true}
+    ],
+    "aiserver.v1.RunInferenceRoutingMessage": [
+      {"number": 1, "name": "role", "type": "aiserver.v1.RunInferenceRoutingRole"},
+      {"number": 2, "name": "text", "type": "string"}
+    ],
+    "aiserver.v1.RunInferenceRunRequest": [
+      {"number": 1, "name": "conversation_id", "type": "string"},
+      {"number": 2, "name": "conversation_group_id", "type": "string", "opt": true},
+      {"number": 3, "name": "requested_model", "type": "aiserver.v1.InferenceRequestedModel"},
+      {"number": 4, "name": "routing_conversation", "type": "aiserver.v1.RunInferenceRoutingMessage", "repeated": true},
+      {"number": 5, "name": "agent_mode", "type": "string", "opt": true},
+      {"number": 6, "name": "subagent_type_name", "type": "string", "opt": true},
+      {"number": 7, "name": "selected_subagent_models", "type": "aiserver.v1.InferenceRequestedModel", "repeated": true},
+      {"number": 8, "name": "subagent_model_overrides", "type": "aiserver.v1.RunInferenceSubagentModelOverride", "repeated": true},
+      {"number": 9, "name": "is_summarize_action", "type": "bool", "opt": true},
+      {"number": 10, "name": "supports_long_reasoning_reminder", "type": "bool"},
+      {"number": 11, "name": "agent_module", "type": "aiserver.v1.RunInferenceAgentModule", "opt": true},
+      {"number": 12, "name": "previous_request_id", "type": "string", "opt": true},
+      {"number": 15, "name": "execute_plan", "type": "aiserver.v1.RunInferenceExecutePlan", "opt": true},
+      {"number": 16, "name": "turn_agent_mode", "type": "string", "opt": true},
+      {"number": 17, "name": "supports_agent_loop_error", "type": "bool"},
+      {"number": 18, "name": "supports_delta_invocations", "type": "bool"},
+      {"number": 19, "name": "cached_config_fingerprint", "type": "bytes", "opt": true},
+      {"number": 20, "name": "speculative_invocations", "type": "bool"},
+      {"number": 21, "name": "sends_client_first_call_timings", "type": "bool"},
+      {"number": 22, "name": "prewarm", "type": "bool"},
+      {"number": 25, "name": "supports_model_handles", "type": "bool", "opt": true},
+      {"number": 26, "name": "compresses_speculative_invocations", "type": "bool"},
+      {"number": 27, "name": "supports_delta_base_seeds", "type": "bool"}
+    ],
+    "aiserver.v1.RunInferenceRunRequestLog": [
+      {"number": 1, "name": "agent_run_request", "type": "bytes"}
+    ],
+    "aiserver.v1.RunInferenceSubagentModelOverride": [
+      {"number": 1, "name": "subagent_type", "type": "string"},
+      {"number": 2, "name": "model", "type": "aiserver.v1.InferenceRequestedModel", "oneof": "selection"},
+      {"number": 3, "name": "inherit", "type": "bool", "oneof": "selection"},
+      {"number": 4, "name": "disabled", "type": "bool", "oneof": "selection"}
+    ],
+    "aiserver.v1.RunInferenceToolCallBatch": [
+      {"number": 1, "name": "invocation_id", "type": "string", "opt": true},
+      {"number": 2, "name": "tool_calls", "type": "aiserver.v1.RunInferenceToolCallEvent", "repeated": true}
+    ],
+    "aiserver.v1.RunInferenceToolCallEvent": [
+      {"number": 1, "name": "tool_call_id", "type": "string"},
+      {"number": 2, "name": "tool_identifier", "type": "string"},
+      {"number": 3, "name": "started_at_ms", "type": "int64"},
+      {"number": 4, "name": "ended_at_ms", "type": "int64"},
+      {"number": 5, "name": "success", "type": "bool"},
+      {"number": 6, "name": "error_class", "type": "string", "opt": true},
+      {"number": 7, "name": "error_classification", "type": "string", "opt": true},
+      {"number": 8, "name": "result_chars", "type": "uint32", "opt": true},
+      {"number": 9, "name": "result_images", "type": "uint32", "opt": true}
+    ],
+    "google.protobuf.ListValue": [
+      {"number": 1, "name": "values", "type": "google.protobuf.Value", "repeated": true}
+    ],
+    "google.protobuf.Struct": [
+      {"number": 1, "name": "fields", "type": "google.protobuf.Value", "map_key": "string"}
+    ],
+    "google.protobuf.Value": [
+      {"number": 1, "name": "null_value", "type": "google.protobuf.NullValue", "oneof": "kind"},
+      {"number": 2, "name": "number_value", "type": "double", "oneof": "kind"},
+      {"number": 3, "name": "string_value", "type": "string", "oneof": "kind"},
+      {"number": 4, "name": "bool_value", "type": "bool", "oneof": "kind"},
+      {"number": 5, "name": "struct_value", "type": "google.protobuf.Struct", "oneof": "kind"},
+      {"number": 6, "name": "list_value", "type": "google.protobuf.ListValue", "oneof": "kind"}
+    ]
+  }
+}
