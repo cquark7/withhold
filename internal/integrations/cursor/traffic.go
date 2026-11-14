@@ -70,6 +70,7 @@ var rpcRoutes = map[string]struct {
 	message                string
 	stream, duplex, inline bool
 }{
+	"/agent.v1.AgentService/Run":                        {agentClientMessage, true, true, false},
 	"/aiserver.v1.InferenceService/RunInference":        {clientMessage, true, true, false},
 	"/aiserver.v1.AiService/NameTab":                    {"aiserver.v1.NameTabRequest", false, false, false},
 	"/agent.v1.AgentService/UpdateConversationMetadata": {"agent.v1.UpdateConversationMetadataRequest", false, false, false},

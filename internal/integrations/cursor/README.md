@@ -23,6 +23,10 @@ that diff before expanding supported content. No application code is executed.
 `--auxiliary --check` checks `auxiliary-schema.json`, including older releases
 without newer auxiliary RPCs. Its transitive descriptors are provenance only:
 `auxiliaryFields` explicitly limits which fields are accepted at runtime.
+`--agent --check` checks `agent-schema.json`. This snapshot contains complete
+descriptors only for explicitly selected message types, without transitive
+extraction. `agentFields` separately admits reviewed fields; missing child
+descriptors never authorize opaque forwarding.
 
 There is no claim that arbitrary future versions work. Unknown content cannot be
 silently passed through just because the editor's major version is unchanged.
@@ -33,12 +37,14 @@ live compatibility evidence for that or other editor versions.
 
 `DecodeRunInference` accepts one unframed protobuf `RunInferenceClientMessage`
 containing a full `invoke_model` request (inline or nested gzip/Zstandard), or
-reviewed run/control messages. Text-only content parts are projected as one
+reviewed run/control messages. Adjacent text content parts are projected as one
 logical string so a secret split across segment boundaries is still scanned;
-rewrites collapse changed text into the first populated part. Per-part provider
-options and image/file variants remain rejected. Logs, delta bases/seeds, and
-cached fingerprints remain rejected. The codec never guesses the contents of
-arbitrary byte fields.
+rewrites collapse changed text into the first populated part. Image and file
+parts retain their positions; their string data and metadata use the shared
+scanner, including UTF-8 base64 inspection and opaque media-signature exclusions.
+There is no OCR, document extraction, or fetching of referenced URLs.
+Per-text-part provider options, logs, delta bases/seeds, and cached fingerprints
+remain rejected. The codec never guesses the contents of arbitrary byte fields.
 Connect envelopes/compression and duplex forwarding are handled by shared
 transport, dispatched through `policy.RPCCodec`, not through Cursor branches.
 
@@ -59,10 +65,11 @@ Prototype route coverage:
 | RPC | Supported request subset |
 | --- | --- |
 | `InferenceService/RunInference` | Full invocations and reviewed run/control messages; native duplex HTTP/2. |
-| `AiService/NameTab` | Inline/rich conversation text and selected metadata; not attached context, tool-result trees, BYOK credentials, or blob references. |
+| `AgentService/Run` | Self-contained inline user messages, selected file/selection/terminal/rule/command context, reviewed request-context fields and MCP definitions, completed shell/read/write/delete/text-MCP results, and control messages; native duplex HTTP/2. All Agent text and map keys are immutable: findings block even in `redact` mode. Blob state/references, KV exchange, chunked shell output, prewarming, and other tool/interaction variants remain unsupported. |
+| `AiService/NameTab` | Inline/rich conversation text, attached code-chunk lines, tool argument/content strings, and reviewed terminal/MCP result fields. Recognized PNG/JPEG/GIF/WebP image bytes are opaque and preserved; their text descriptions are inspected. Other context trees, BYOK credentials, and blob references remain unsupported. |
 | `AgentService/UpdateConversationMetadata` | Name/workspace paths are inspected and rewritable; conversation ID is immutable. |
 | `AiService/ClassifyAgentAutoReview` | Reviewed classifier args, inline conversation/file context, structured tool arguments. |
-| `AiService/StreamCpp` | Limited fully inline file/context-free variants; existing file state, updates, and hashes are rejected. Content is inspected but not rewritten, so offsets cannot be corrupted. |
+| `AiService/StreamCpp` | Inline file windows and selections, context items, additional visible file ranges, versions, and hash metadata. Existing file-sync state and updates are rejected. Content is inspected but not rewritten, so positions and hashes cannot be invalidated. |
 
 All these paths reject Connect GET/query payloads and unreviewed wire shapes.
 Unknown paths on Cursor service domains block even for bodyless GETs. There is
@@ -71,19 +78,29 @@ no fallback to an uninspected alternate format.
 Still rejected:
 
 - Deltas, delta seeds, cached/config fingerprints, and byte-valued run logs.
+- Agent prefetched blobs, serialized conversation state/references, blob-backed
+  prompts/context/results, and `KvClientMessage`. Blob IDs are content addresses;
+  they cannot be changed without establishing graph and replay semantics.
+- `ExecClientMessage.shell_stream`, including clean-looking fragments. Scanning
+  each chunk independently would miss secrets crossing message boundaries.
+- Agent SSE/polling and separate append/write channels.
 - Unknown fields/enums, duplicate singular fields/oneofs/map keys, and defaulted
   map entries. The codec rejects these rather than changing their semantics.
-- Text parts with per-part provider options, image/file content, assistant text
-  parts, reasoning, native provider content, and lineage tags.
+- Text parts with per-part provider options, assistant text parts, reasoning,
+  native provider content, and lineage tags.
 - Static-prefix lengths, content digests, and byte fields other than the decoded
-  compressed request.
+  compressed request and recognized opaque `ImageProto.data`.
 
 Per-message wire, decoded, projection, and rewritten representations are capped
 at the supplied limit (at most 128 MiB), with 64 nesting levels and 100,000 fields.
 The shared transport additionally enforces cumulative inbound/released caps,
 aggregate input admission, cancellation, inspection deadlines, backpressure, and
 stream lifetime/message limits. Scanned handshakes do not establish model-content
-coverage. A codec error never authorizes enforcing-mode fallback forwarding.
+coverage; opaque images alone do not establish inspected-text coverage either.
+A codec error never authorizes enforcing-mode fallback forwarding.
+Completed MCP text items are also inspected together so boundaries cannot hide
+a secret. Agent clean bytes, including read-result sizes/hashes, are preserved;
+this does not establish support for prior server-side state or a normal session.
 
 ## Application lifecycle
 

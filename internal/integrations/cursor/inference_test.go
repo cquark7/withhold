@@ -326,11 +326,11 @@ func TestInferenceSegmentedTextCleanPreservationAndUnsupportedParts(t *testing.T
 		byteField(1, []byte("safe text")),
 		byteField(2, nil),
 	))
-	image := byteField(2, byteField(1, []byte("opaque image bytes")))
+	image := byteField(2, byteField(99, []byte("unreviewed image content")))
 	empty := []byte(nil)
 	for name, part := range map[string][]byte{
 		"provider-options": providerOptions,
-		"image":            image,
+		"unknown-image":    image,
 		"unset-oneof":      empty,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -532,7 +532,9 @@ func TestEmbeddedSchemaReferences(t *testing.T) {
 			if number != field.Number || !number.IsValid() || field.Name == "" {
 				t.Fatalf("invalid field in %s", name)
 			}
-			if scalarWire(field.Type) == protowire.BytesType && field.Type != "string" && field.Type != "bytes" && pinned.fields[field.Type] == nil {
+			// Shallow snapshots may name unreviewed children, but no admitted
+			// field may enter the decoder without its child descriptor.
+			if supportedField(name, field) && scalarWire(field.Type) == protowire.BytesType && field.Type != "string" && field.Type != "bytes" && pinned.fields[field.Type] == nil {
 				t.Fatalf("unresolved message type in %s", name)
 			}
 		}

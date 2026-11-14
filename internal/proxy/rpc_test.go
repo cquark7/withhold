@@ -751,3 +751,266 @@ func TestCursorDuplexWithScannerWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCursorContentCompatibilityWithScannerWorker(t *testing.T) {
+	binary := os.Getenv("WITHHOLD_TEST_SCANNER_WORKER")
+	if binary == "" {
+		t.Skip("set WITHHOLD_TEST_SCANNER_WORKER to run process scanning")
+	}
+	pool := scanpool.NewWithEnvironment(binary, []string{
+		"HOME=" + t.TempDir(), "WITHHOLD_PLACEHOLDER_KEY=isolated-cursor-content-test",
+	}, "--body")
+	defer pool.Close()
+	field := func(n protowire.Number, data []byte) []byte {
+		return protowire.AppendBytes(protowire.AppendTag(nil, n, protowire.BytesType), data)
+	}
+	const sentinel = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
+	encodedFile := base64.StdEncoding.EncodeToString([]byte(`token = "` + sentinel + `" with ordinary padding for base64 inspection`))
+	fileMessage := field(2, field(2, field(1, field(3, field(1, field(3, bytes.Join([][]byte{
+		field(1, []byte(encodedFile)), field(2, []byte("text/plain")), field(3, []byte("fixture.txt")),
+	}, nil)))))))
+	inline := func(text string) []byte {
+		return bytes.Join([][]byte{
+			field(1, bytes.Join([][]byte{
+				field(2, []byte("ordinary file window")),
+				field(17, []byte("full-file-hash-for-the-original-window")),
+			}, nil)),
+			field(13, field(1, []byte(text))),
+		}, nil)
+	}
+	for _, test := range []struct {
+		name, path, media, inlineMode string
+		body                          []byte
+		stream, h2, blocked, redact   bool
+	}{
+		{"name-tab-code-h1", "/aiserver.v1.AiService/NameTab", "application/proto", "",
+			field(1, field(3, field(3, []byte(sentinel)))), false, false, false, true},
+		{"name-tab-tool-h2", "/aiserver.v1.AiService/NameTab", "application/proto", "",
+			field(1, field(18, field(8, field(24, field(12, []byte(sentinel)))))), false, true, false, true},
+		{"file-attachment", "/aiserver.v1.InferenceService/RunInference", "application/connect+proto", "",
+			fileMessage, true, true, false, true},
+		{"inline-clean", "/aiserver.v1.AiService/StreamCpp", "application/connect+proto", "",
+			inline("ordinary nearby symbol"), true, true, false, false},
+		{"inline-findings", "/aiserver.v1.AiService/StreamCpp", "application/connect+proto", "",
+			inline(sentinel), true, true, true, false},
+		{"inline-redact-preserves-integrity", "/aiserver.v1.AiService/StreamCpp", "application/connect+proto", "redact",
+			inline(sentinel), true, true, true, false},
+		{"agent-prompt-clean", "/agent.v1.AgentService/Run", "application/connect+proto", "",
+			field(1, field(2, field(1, field(1, field(1, []byte("ordinary prompt")))))), true, true, false, false},
+		{"agent-prompt-findings", "/agent.v1.AgentService/Run", "application/connect+proto", "",
+			field(1, field(2, field(1, field(1, field(1, []byte(sentinel)))))), true, true, true, false},
+		{"agent-prefetched-blob", "/agent.v1.AgentService/Run", "application/connect+proto", "",
+			field(1, field(17, field(2, []byte("uninspected blob")))), true, true, true, false},
+		{"agent-shell-stream-fragment", "/agent.v1.AgentService/Run", "application/connect+proto", "",
+			field(2, field(14, field(1, field(1, []byte(sentinel[:12]))))), true, true, true, false},
+		{"agent-heartbeat", "/agent.v1.AgentService/Run", "application/connect+proto", "",
+			field(7, nil), true, true, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			scope, err := cursor.NewTraffic(policy.ScopeOptions{AllowHosts: []string{"127.0.0.1"}, InlineMode: test.inlineMode})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var calls atomic.Int32
+			received := make(chan []byte, 1)
+			f := newRPCFixture(t, scope, pool, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					return
+				}
+				received <- body
+				_, _ = w.Write([]byte("ok"))
+			}, test.h2)
+			f.proxy.config.ScanTimeout = 5 * time.Second
+			wire := test.body
+			if test.stream {
+				wire = rpcFrame(t, wire)
+			}
+			request := f.request(t, bytes.NewReader(wire), test.media)
+			request.URL.Path = test.path
+			response, err := f.client.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reply, err := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.blocked {
+				if calls.Load() != 0 || !bytes.Contains(reply, []byte("permission_denied")) {
+					t.Fatal("rejected content reached upstream or lacked a local Connect error")
+				}
+				return
+			}
+			if string(reply) != "ok" {
+				t.Fatal("ordinary supported request did not reach the fixture")
+			}
+			got := receiveRPC(t, received)
+			if !test.redact {
+				if !bytes.Equal(got, wire) {
+					t.Fatal("clean content, positions, or metadata bytes changed")
+				}
+				return
+			}
+			if bytes.Contains(got, []byte(sentinel)) || bytes.Equal(got, wire) {
+				t.Fatal("content was not rewritten before upstream received it")
+			}
+			if test.name == "file-attachment" {
+				frame, err := connectrpc.ReadFrame(bytes.NewReader(got), 1<<20, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// Follow the wire fields independently of the adapter's projection.
+				payload := frame.Data
+				for _, number := range []protowire.Number{2, 2, 1, 3, 1, 3, 1} {
+					payload = cursorFixtureBytes(t, payload, number)
+				}
+				decoded, err := base64.StdEncoding.DecodeString(string(payload))
+				if err != nil || bytes.Contains(decoded, []byte(sentinel)) || !bytes.Contains(decoded, []byte("<WITHHELD_")) {
+					t.Fatal("upstream file attachment did not contain sanitized text")
+				}
+			} else if !bytes.Contains(got, []byte("<WITHHELD_")) {
+				t.Fatal("upstream code/tool content did not contain a placeholder")
+			}
+		})
+	}
+}
+
+func TestCursorAgentDuplexLaterResultsWithScannerWorker(t *testing.T) {
+	binary := os.Getenv("WITHHOLD_TEST_SCANNER_WORKER")
+	if binary == "" {
+		t.Skip("set WITHHOLD_TEST_SCANNER_WORKER to run process scanning")
+	}
+	pool := scanpool.NewWithEnvironment(binary, []string{
+		"HOME=" + t.TempDir(), "WITHHOLD_PLACEHOLDER_KEY=isolated-cursor-agent-test",
+	}, "--body")
+	defer pool.Close()
+	scope, err := cursor.NewTraffic(policy.ScopeOptions{AllowHosts: []string{"127.0.0.1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	field := func(n protowire.Number, data []byte) []byte {
+		return protowire.AppendBytes(protowire.AppendTag(nil, n, protowire.BytesType), data)
+	}
+	first := field(1, field(2, field(1, field(1, field(1, []byte("ordinary initial prompt"))))))
+	const secret = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
+	for _, test := range []struct {
+		name    string
+		later   []byte
+		blocked bool
+	}{
+		{"clean-read", field(2, field(7, field(1, field(2, []byte("ordinary file contents"))))), false},
+		{"read-finding", field(2, field(7, field(1, field(2, []byte(secret))))), true},
+		{"shell-finding", field(2, field(2, field(1, field(5, []byte(secret))))), true},
+		{"kv-blob", field(3, field(2, field(1, []byte("uninspected blob")))), true},
+		{"shell-chunk", field(2, field(14, field(1, field(1, []byte(secret[:12]))))), true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			received := make(chan connectrpc.Frame, 2)
+			upDone := make(chan struct{})
+			f := newRPCFixture(t, scope, pool, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+				defer close(upDone)
+				for range 2 {
+					frame, err := connectrpc.ReadFrame(r.Body, 1<<20, nil)
+					if err != nil {
+						<-r.Context().Done()
+						return
+					}
+					received <- frame
+					_, _ = w.Write([]byte("ack\n"))
+					w.(http.Flusher).Flush()
+				}
+			}, true)
+			f.proxy.config.ScanTimeout = 5 * time.Second
+			reader, writer := io.Pipe()
+			defer reader.Close()
+			defer writer.Close()
+			request := f.request(t, reader, "application/connect+proto")
+			request.URL.Path = "/agent.v1.AgentService/Run"
+			request.Header.Set("Connect-Content-Encoding", "gzip")
+			result := rpcStart(f, request)
+			var compressed bytes.Buffer
+			z := gzip.NewWriter(&compressed)
+			if _, err := z.Write(first); err != nil {
+				t.Fatal(err)
+			}
+			if err := z.Close(); err != nil {
+				t.Fatal(err)
+			}
+			initial, err := connectrpc.Envelope(1, compressed.Bytes(), 1<<20)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := writer.Write(initial); err != nil {
+				t.Fatal(err)
+			}
+			got := receiveRPC(t, received)
+			if got.Flags != 1 || !bytes.Equal(got.Data, compressed.Bytes()) {
+				t.Fatal("clean compressed Agent envelope changed")
+			}
+			response := receiveRPC(t, result)
+			if response.err != nil {
+				t.Fatal(response.err)
+			}
+			defer response.response.Body.Close()
+			ack := make([]byte, 4)
+			if _, err := io.ReadFull(response.response.Body, ack); err != nil || string(ack) != "ack\n" {
+				t.Fatal("Agent response waited for upload EOF")
+			}
+			later := rpcFrame(t, test.later)
+			go func() {
+				for start := 0; start < len(later); start += 2 {
+					if _, err := writer.Write(later[start:min(start+2, len(later))]); err != nil {
+						return
+					}
+				}
+				_ = writer.Close()
+			}()
+			_, readErr := io.ReadAll(response.response.Body)
+			if test.blocked {
+				if readErr == nil {
+					t.Fatal("rejected later Agent message looked like successful stream EOF")
+				}
+				receiveRPC(t, upDone)
+				select {
+				case <-received:
+					t.Fatal("rejected Agent payload reached upstream")
+				default:
+				}
+			} else {
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				got := receiveRPC(t, received)
+				if got.Flags != 0 || !bytes.Equal(got.Data, test.later) {
+					t.Fatal("clean later Agent result changed")
+				}
+				receiveRPC(t, upDone)
+			}
+			assertRPCAdmissionReleased(t, f.proxy)
+		})
+	}
+}
+
+func cursorFixtureBytes(t *testing.T, body []byte, want protowire.Number) []byte {
+	t.Helper()
+	for len(body) != 0 {
+		number, wire, tag := protowire.ConsumeTag(body)
+		if tag < 0 {
+			t.Fatal("invalid fixture protobuf tag")
+		}
+		size := protowire.ConsumeFieldValue(number, wire, body[tag:])
+		if size < 0 {
+			t.Fatal("invalid fixture protobuf value")
+		}
+		if number == want && wire == protowire.BytesType {
+			value, _ := protowire.ConsumeBytes(body[tag:])
+			return value
+		}
+		body = body[tag+size:]
+	}
+	t.Fatal("missing fixture protobuf field")
+	return nil
+}

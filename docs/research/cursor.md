@@ -183,6 +183,81 @@ diagnostic adapter passed unsupported traffic through, so it did not establish
 complete enforcement. Temporary settings were restored byte-for-byte; no trust
 store changes or raw captures were made.
 
+## Offline compatibility review
+
+Review date: **2026-11-14**. The product remains unregistered. No live editor or
+provider sessions were run for this review, and no editor settings or trust
+stores were changed.
+
+Compatibility and privacy are separate requirements: rejecting an ordinary
+request is not evidence of a usable integration. Read-only installed-source
+inspection and isolated regressions establish the following narrower findings:
+
+| Concern | Assessment and current boundary |
+| --- | --- |
+| Product selection | Confirmed: Cursor is not selectable. Registration remains gated rather than advertising incomplete normal-session support. |
+| Agent RPC | `AgentService/Run` now decodes a self-contained subset: inline prompts/context, reviewed tool definitions, completed shell/read/write/delete/text-MCP results, and controls. Agent findings block rather than rewriting identifiers, hashes, or text whose replay semantics are not established. Blob/KV state, chunked shell output, other tool/interaction variants, and alternate write channels remain unsupported. `RunInference` is a separate supported route; neither subset establishes full ordinary-session coverage. |
+| NameTab context | Confirmed compatibility gap: known attached code and tool-result fields were rejected. Code-chunk lines, argument/content strings, and reviewed terminal/MCP result fields now use the shared scanner and verified protobuf rewriting. Other nested tool/context variants remain unsupported. |
+| Attachments | Confirmed text-file compatibility gap: inference file parts were rejected. Supported file/image string parts now retain order and use shared base64 inspection/media exclusions. NameTab's recognized image bytes are preserved as opaque media. OCR, document extraction, and fetching remote references are not part of the shared privacy contract. Blob uploads/references still require separate integrity handling. |
+| Selection and inline completion | Selection coordinates already decode; blocking inline findings is the intended default, not a missing feature. Known inline context items, additional visible file ranges, versions, and hashes now decode without changing any bytes. Hashes are preserved, not recomputed or treated as evidence that prior file-sync content was scanned. Findings cannot rewrite position/hash-bound context. |
+| File synchronization and edit history | Confirmed gaps: file-sync uploads/updates and `CppAppend` are unsupported. Static source shows that `CppAppend.changes` contains serialized edit-history protobuf, not ordinary UTF-8 text. Incremental updates need an established baseline and ordering; scanning isolated replacement strings would miss secrets assembled across edits. These routes are not enabled through guessed schemas or uninspected passthrough. |
+
+Clean supported bodies must retain exact bytes, including opaque images,
+selection coordinates, hashes, part order, and unrelated metadata. Isolated
+HTTPS/HTTP2 fixtures inspect actual upstream bytes for attached code, tool
+results, file attachments, and inline policy decisions. Fixture success does
+not establish that a normal Cursor session works; registration still requires
+the remaining protocol/lifecycle work and ordinary-session compatibility
+evidence.
+
+## Completion gates
+
+The first target is local Cursor desktop coding: fresh and continued chats,
+selected context, file reads and edits, terminal commands, and Tab. This does
+not promise cloud agents, arbitrary server-side state, OCR, or document parsing.
+The integration stays unregistered until the following gates have evidence:
+
+1. **Agent message coverage.** Extend the typed decoder to the actual local
+   Agent workflow, including request context, interactions, tool failures, and
+   prewarming. Self-contained messages already use shared scanning and preserve
+   clean bytes. This is a first slice, not a usable-session claim.
+2. **Blob graph and replay.** Installed `blob-store.ts` computes SHA-256
+   addresses; request-context encoding also stages typed protobuf blobs at those
+   addresses. Establish each referenced blob's serialization and expected type,
+   then inspect content before releasing its upload. Missing, ambiguous,
+   conflicting, or stale references must reject. Start with immutable,
+   block-on-findings handling rather than inventing new IDs. Test resumed
+   conversations, retries, duplicate IDs, and graphs spanning messages/requests;
+   do not assume one decoded Connect message contains the entire graph.
+3. **Logical shell output.** Installed `ShellStream` describes separate stdout,
+   stderr, start, and exit events. Add bounded, per-execution logical-output
+   inspection before allowing these chunks. Prove the chosen buffering/release
+   boundary does not deadlock ordinary tools; test split secrets, interleaved
+   executions, cancellation, truncation, and capacity/time limits. Complete
+   `ShellResult` support alone does not cover this path.
+4. **Tab state and edit history.** Establish file/version baselines before
+   admitting incremental sync or serialized `CppAppend` edits. Inspect the
+   reconstructed content, not only inserted text. Preserve original positions,
+   hashes, and edit records on clean traffic; findings can block when rewriting
+   would invalidate them. Test missing baselines, version gaps, Unicode offsets,
+   retries, and bounded state cleanup.
+5. **Route and lifecycle compatibility.** Inventory required auth/config/model,
+   auxiliary, indexing, retry, and SSE/poll/append traffic. Typed inspection is
+   required for content-bearing routes; any body passthrough needs evidence that
+   it cannot carry protected content. Test reversible setup/recovery and failure
+   framing without adding harness branches to shared transport.
+6. **Controlled real-session validation and registration.** After offline gates,
+   obtain explicit authorization to use a synthetic workspace and bounded
+   provider requests. Verify both ordinary clean sessions and blocked/redacted
+   synthetic findings, including actual outbound bytes, routing, cancellation,
+   and recovery. Record tested version/platform and limits before adding the
+   product registry entry and public setup guide.
+
+Offline verification needs no user credentials, private repository, editor
+settings changes, or trust-store changes. Later validation needs the user's
+consent and access to an authenticated Cursor instance; raw private captures
+must not be requested as a shortcut.
+
 ## Sources
 
 - [Cursor hooks and schemas](https://cursor.com/docs/hooks)

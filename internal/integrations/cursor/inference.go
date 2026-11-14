@@ -8,6 +8,7 @@ import (
 	"io"
 	"slices"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/cquark7/withhold/internal/policy"
@@ -62,6 +63,7 @@ type textSlot struct {
 	targets  []*wireField
 	key      *wireField
 	writable bool
+	content  bool
 }
 
 // InferenceMessage owns one reviewed, already-unframed protobuf request.
@@ -145,8 +147,7 @@ func (m *InferenceMessage) ScanInput() []byte { return bytes.Clone(m.projection)
 
 func (m *InferenceMessage) HasContent() bool {
 	for _, slot := range m.slots {
-		if len(slot.text()) > 0 && (slot.writable ||
-			m.messageType == "aiserver.v1.StreamCppRequest" && slot.targets[0].def.Name == "contents") {
+		if len(slot.text()) > 0 && slot.content {
 			return true
 		}
 	}
@@ -228,24 +229,36 @@ func (d *decoder) message(name string, body []byte, depth int) (*wireMessage, er
 			if !utf8.Valid(field.payload) {
 				return nil, ErrMalformed
 			}
+		case def.Type == "bytes" && name == "aiserver.v1.ImageProto":
+			if !opaqueImage(field.payload) {
+				return nil, ErrUnsupported
+			}
+		case def.Type == "bytes":
+			// Only byte fields explicitly admitted by supportedField reach here.
 		case pinned.fields[def.Type] != nil:
 			var err error
 			field.child, err = d.message(def.Type, field.payload, depth+1)
 			if err != nil {
 				return nil, err
 			}
+		default:
+			return nil, ErrUnsupported // A named message without a reviewed descriptor.
 		}
 		m.fields = append(m.fields, field)
 		rest = rest[tagSize+size:]
 	}
 	switch name {
-	case clientMessage:
+	case clientMessage, agentClientMessage:
 		if len(m.fields) != 1 {
 			return nil, ErrUnsupported
 		}
 	case "aiserver.v1.CurrentFileInfo":
 		if field := m.field(18); field != nil && field.uint() != 0 {
 			return nil, ErrUnsupported // Server-side file state was not inspected.
+		}
+	case "agent.v1.CursorRule":
+		if field := m.field(17); field != nil && field.uint() != 0 {
+			return nil, ErrUnsupported // An omitted rule body is not self-contained.
 		}
 	case invokeModel:
 		if (m.field(2) == nil) == (m.field(7) == nil) {
@@ -323,6 +336,11 @@ func (m *InferenceMessage) collect(message *wireMessage, key *wireField) error {
 	if message.name == inferenceContentParts {
 		return m.collectTextParts(message, key)
 	}
+	if m.messageType == agentClientMessage && message.name == "agent.v1.McpSuccess" {
+		if err := m.collectAgentMcpText(message, key); err != nil {
+			return err
+		}
+	}
 	for _, field := range message.fields {
 		if field.def.MapKey != "" {
 			entryKey := field.child.field(1)
@@ -352,6 +370,26 @@ func (m *InferenceMessage) collect(message *wireMessage, key *wireField) error {
 			}
 			m.jsonBytes += size
 			slot := textSlot{name: string(label), targets: []*wireField{field}, writable: writableText(message.name, field.def.Name)}
+			slot.content = slot.writable || m.messageType == "aiserver.v1.StreamCppRequest" &&
+				(message.name == "aiserver.v1.CurrentFileInfo" && field.def.Name == "contents" ||
+					message.name == "aiserver.v1.CppContextItem" && field.def.Name == "contents" ||
+					message.name == "aiserver.v1.AdditionalFile" && field.def.Name == "visible_range_content")
+			if m.messageType == agentClientMessage {
+				slot.content = agentContent(message.name, field.def.Name) ||
+					message.name == "google.protobuf.Value" && field.def.Name == "string_value" ||
+					strings.HasSuffix(message.name, ".file_contentsEntry") && field.def.Name == "value"
+				// Until reference replay is established, Agent text is inspected
+				// but not rewritten, including map keys and structured tool data.
+				slot.writable = false
+			}
+			if message.name == "aiserver.v1.InferenceImagePart" {
+				slot.content = false
+			}
+			if message.name == "aiserver.v1.InferenceFilePart" {
+				kind := message.field(2)
+				slot.content = field.def.Name == "data" && kind != nil &&
+					(strings.HasPrefix(string(kind.payload), "text/") || string(kind.payload) == "application/json")
+			}
 			if key != nil && field != key {
 				slot.key = key
 			}
@@ -365,20 +403,55 @@ func (m *InferenceMessage) collect(message *wireMessage, key *wireField) error {
 	return nil
 }
 
-// Segmented text is scanned as one logical string so a secret cannot evade
-// detection by crossing a part boundary. Rewrites collapse that text into the
-// first populated text field; parts with provider options or non-text variants
-// remain unsupported because their per-part semantics are not established.
+// Adjacent text parts are one logical string. Media parts retain their position
+// and are inspected separately; rewriting never moves text across an attachment.
+// Per-text-part provider options remain unsupported.
 func (m *InferenceMessage) collectTextParts(message *wireMessage, key *wireField) error {
 	var targets []*wireField
 	var text []byte
+	flush := func() error {
+		if len(targets) == 0 {
+			return nil
+		}
+		label := []byte("text")
+		if key != nil {
+			label = key.payload
+		}
+		size := int64(3) + jsonStringSize(label) + jsonStringSize(text)
+		if len(m.slots) != 0 {
+			size++
+		}
+		if m.jsonBytes+size > m.maxBytes {
+			return ErrLimit
+		}
+		m.jsonBytes += size
+		slot := textSlot{name: string(label), targets: targets, writable: true, content: true}
+		if key != nil {
+			slot.key = key
+		}
+		m.slots = append(m.slots, slot)
+		targets, text = nil, nil
+		return nil
+	}
 	for _, field := range message.fields {
 		part := field.child
 		if part == nil {
 			return ErrUnsupported
 		}
 		selected := part.field(1)
-		if selected == nil || selected.child == nil {
+		if selected == nil {
+			if len(part.fields) != 1 || part.field(2) == nil && part.field(3) == nil {
+				return ErrUnsupported
+			}
+			if err := flush(); err != nil {
+				return err
+			}
+			if err := m.collect(part, key); err != nil {
+				return err
+			}
+			continue
+		}
+		if selected.child == nil {
 			return ErrUnsupported
 		}
 		textPart := selected.child
@@ -395,27 +468,16 @@ func (m *InferenceMessage) collectTextParts(message *wireMessage, key *wireField
 		text = append(text, content.payload...)
 		targets = append(targets, content)
 	}
-	if len(targets) == 0 {
-		return nil
-	}
-	label := []byte("text")
-	if key != nil {
-		label = key.payload
-	}
-	size := int64(3) + jsonStringSize(label) + jsonStringSize(text)
-	if len(m.slots) != 0 {
-		size++
-	}
-	if m.jsonBytes+size > m.maxBytes {
-		return ErrLimit
-	}
-	m.jsonBytes += size
-	slot := textSlot{name: string(label), targets: targets, writable: true}
-	if key != nil {
-		slot.key = key
-	}
-	m.slots = append(m.slots, slot)
-	return nil
+	return flush()
+}
+
+// ImageProto has no MIME field. Only recognized image signatures authorize
+// opaque bytes; arbitrary protobuf, documents, and UTF-8 data are not images.
+func opaqueImage(data []byte) bool {
+	return bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")) ||
+		bytes.HasPrefix(data, []byte("\xff\xd8\xff")) ||
+		bytes.HasPrefix(data, []byte("GIF87a")) || bytes.HasPrefix(data, []byte("GIF89a")) ||
+		len(data) >= 12 && string(data[:4]) == "RIFF" && string(data[8:12]) == "WEBP"
 }
 
 // Count encoding/json's string quoting without allocating its escaped output.
@@ -471,7 +533,7 @@ func (m *InferenceMessage) Rewrite(scanned []byte) ([]byte, error) {
 	for i, pair := range pairs {
 		slot := m.slots[i]
 		if slot.key != nil {
-			if err := set(slot.key, pair[0], true); err != nil {
+			if err := set(slot.key, pair[0], m.messageType != agentClientMessage); err != nil {
 				return nil, err
 			}
 		} else if pair[0] != slot.name {

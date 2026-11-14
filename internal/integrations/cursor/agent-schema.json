@@ -1,0 +1,713 @@
+{
+  "cursor_version": "3.30.8",
+  "bundle": "Contents/Resources/app/out/vs/workbench/workbench.desktop.main.js",
+  "bundle_sha256": "4792e018b1e65ca4d6e44cf3224384325d2bf703996734aee02447efc6919399",
+  "root": "agent.v1.AgentClientMessage",
+  "enums": {"agent.v1.AgentMode": [0, 1, 2, 3, 4, 5, 7, 8], "agent.v1.CursorRuleSource": [0, 1, 2], "agent.v1.McpPolicyBlockedReason": [0, 1, 2, 3, 4, 5, 6], "agent.v1.ReplyAudience": [0, 1, 2], "agent.v1.ShellAbortReason": [0, 1, 2], "agent.v1.ShellBackgroundReason": [0, 1, 2], "agent.v1.SimulatedMsgReason": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]},
+  "messages": {
+    "agent.v1.AgentClientMessage": [
+      {"number": 1, "name": "run_request", "type": "agent.v1.AgentRunRequest", "oneof": "message"},
+      {"number": 2, "name": "exec_client_message", "type": "agent.v1.ExecClientMessage", "oneof": "message"},
+      {"number": 5, "name": "exec_client_control_message", "type": "agent.v1.ExecClientControlMessage", "oneof": "message"},
+      {"number": 3, "name": "kv_client_message", "type": "agent.v1.KvClientMessage", "oneof": "message"},
+      {"number": 4, "name": "conversation_action", "type": "agent.v1.ConversationAction", "oneof": "message"},
+      {"number": 6, "name": "interaction_response", "type": "agent.v1.InteractionResponse", "oneof": "message"},
+      {"number": 7, "name": "client_heartbeat", "type": "agent.v1.ClientHeartbeat", "oneof": "message"},
+      {"number": 8, "name": "prewarm_request", "type": "agent.v1.PrewarmRequest", "oneof": "message"}
+    ],
+    "agent.v1.AgentRunRequest": [
+      {"number": 1, "name": "conversation_state", "type": "agent.v1.ConversationStateStructure"},
+      {"number": 2, "name": "action", "type": "agent.v1.ConversationAction"},
+      {"number": 3, "name": "model_details", "type": "agent.v1.ModelDetails"},
+      {"number": 9, "name": "requested_model", "type": "agent.v1.RequestedModel", "opt": true},
+      {"number": 4, "name": "mcp_tools", "type": "agent.v1.McpTools"},
+      {"number": 5, "name": "conversation_id", "type": "string", "opt": true},
+      {"number": 6, "name": "mcp_file_system_options", "type": "agent.v1.McpFileSystemOptions", "opt": true},
+      {"number": 7, "name": "skill_options", "type": "agent.v1.SkillOptions", "opt": true},
+      {"number": 8, "name": "custom_system_prompt", "type": "string", "opt": true},
+      {"number": 11, "name": "subagent_type_name", "type": "string", "opt": true},
+      {"number": 12, "name": "exclude_workspace_context", "type": "bool", "opt": true},
+      {"number": 13, "name": "harness", "type": "string", "opt": true},
+      {"number": 14, "name": "selected_subagent_models", "type": "agent.v1.RequestedModel", "repeated": true},
+      {"number": 15, "name": "selected_subagent_model_details", "type": "agent.v1.ModelDetails", "repeated": true},
+      {"number": 16, "name": "conversation_group_id", "type": "string", "opt": true},
+      {"number": 17, "name": "pre_fetched_blobs", "type": "agent.v1.PreFetchedBlob", "repeated": true},
+      {"number": 18, "name": "dev_raw_model_slug", "type": "string", "opt": true},
+      {"number": 19, "name": "client_supports_inline_images", "type": "bool", "opt": true},
+      {"number": 20, "name": "subagent_model_overrides", "type": "agent.v1.SubagentModelOverride", "repeated": true},
+      {"number": 21, "name": "can_create_cloud_subagents", "type": "bool", "opt": true},
+      {"number": 22, "name": "suppress_subagent_progress_update_tool", "type": "bool", "opt": true},
+      {"number": 23, "name": "client_supports_send_to_user", "type": "bool", "opt": true},
+      {"number": 24, "name": "computer_use_coordinate_mode", "type": "string", "opt": true},
+      {"number": 25, "name": "run_id", "type": "string", "opt": true},
+      {"number": 26, "name": "agent_session_id", "type": "string", "opt": true},
+      {"number": 28, "name": "client_supports_routed_model_update", "type": "bool", "opt": true},
+      {"number": 29, "name": "system_prompt_spec", "type": "agent.v1.SystemPromptSpec", "opt": true},
+      {"number": 30, "name": "client_llm_gateway_credential", "type": "agent.v1.ClientLlmGatewayCredential", "opt": true},
+      {"number": 31, "name": "client_supports_preview_card", "type": "bool", "opt": true},
+      {"number": 32, "name": "started_as_new_project", "type": "bool", "opt": true},
+      {"number": 33, "name": "first_project_onboarding", "type": "bool", "opt": true},
+      {"number": 34, "name": "next_interaction_query_id", "type": "uint32", "opt": true},
+      {"number": 35, "name": "voice_call_notes", "type": "agent.v1.VoiceCallNotes", "opt": true},
+      {"number": 36, "name": "transcript_parent_conversation_id", "type": "string", "opt": true},
+      {"number": 37, "name": "emit_model_call_usage", "type": "bool", "opt": true}
+    ],
+    "agent.v1.CancelAction": [
+      {"number": 1, "name": "reason", "type": "string"},
+      {"number": 3, "name": "interrupted_pending_tool_call_resolutions", "type": "agent.v1.InterruptedPendingToolCallResolutions", "opt": true}
+    ],
+    "agent.v1.ClientHeartbeat": [
+    ],
+    "agent.v1.ConversationAction": [
+      {"number": 1, "name": "user_message_action", "type": "agent.v1.UserMessageAction", "oneof": "action"},
+      {"number": 2, "name": "resume_action", "type": "agent.v1.ResumeAction", "oneof": "action"},
+      {"number": 3, "name": "cancel_action", "type": "agent.v1.CancelAction", "oneof": "action"},
+      {"number": 4, "name": "summarize_action", "type": "agent.v1.SummarizeAction", "oneof": "action"},
+      {"number": 5, "name": "shell_command_action", "type": "agent.v1.ShellCommandAction", "oneof": "action"},
+      {"number": 6, "name": "start_plan_action", "type": "agent.v1.StartPlanAction", "oneof": "action"},
+      {"number": 7, "name": "execute_plan_action", "type": "agent.v1.ExecutePlanAction", "oneof": "action"},
+      {"number": 8, "name": "async_ask_question_completion_action", "type": "agent.v1.AsyncAskQuestionCompletionAction", "oneof": "action"},
+      {"number": 10, "name": "cancel_subagent_action", "type": "agent.v1.CancelSubagentAction", "oneof": "action"},
+      {"number": 12, "name": "background_task_completion_action", "type": "agent.v1.BackgroundTaskCompletionAction", "oneof": "action"},
+      {"number": 13, "name": "background_shell_action", "type": "agent.v1.BackgroundShellAction", "oneof": "action"},
+      {"number": 14, "name": "background_subagent_action", "type": "agent.v1.BackgroundSubagentAction", "oneof": "action"},
+      {"number": 16, "name": "subscription_notification_action", "type": "agent.v1.SubscriptionNotificationAction", "oneof": "action"},
+      {"number": 18, "name": "goal_continuation_action", "type": "agent.v1.GoalContinuationAction", "oneof": "action"},
+      {"number": 19, "name": "inject_context_action", "type": "agent.v1.InjectContextAction", "oneof": "action"},
+      {"number": 11, "name": "triggering_auth_id", "type": "string", "opt": true},
+      {"number": 15, "name": "triggering_user_info", "type": "agent.v1.TriggeringUserInfo", "opt": true},
+      {"number": 17, "name": "request_context_parts", "type": "agent.v1.RequestContextPartReferences", "opt": true}
+    ],
+    "agent.v1.ConversationStateStructure": [
+      {"number": 1, "name": "root_prompt_messages_json", "type": "bytes", "repeated": true},
+      {"number": 8, "name": "turns", "type": "bytes", "repeated": true},
+      {"number": 3, "name": "todos", "type": "bytes", "repeated": true},
+      {"number": 4, "name": "pending_tool_calls", "type": "string", "repeated": true},
+      {"number": 5, "name": "token_details", "type": "agent.v1.ConversationTokenDetails"},
+      {"number": 6, "name": "summary", "type": "bytes", "opt": true},
+      {"number": 7, "name": "plan", "type": "bytes", "opt": true},
+      {"number": 9, "name": "previous_workspace_uris", "type": "string", "repeated": true},
+      {"number": 10, "name": "mode", "type": "agent.v1.AgentMode", "opt": true},
+      {"number": 11, "name": "summary_archive", "type": "bytes", "opt": true},
+      {"number": 12, "name": "file_states", "type": "bytes", "map_key": "string"},
+      {"number": 15, "name": "file_states_v2", "type": "agent.v1.FileStateStructure", "map_key": "string"},
+      {"number": 13, "name": "summary_archives", "type": "bytes", "repeated": true},
+      {"number": 14, "name": "turn_timings", "type": "agent.v1.StepTiming", "repeated": true},
+      {"number": 16, "name": "subagent_states", "type": "agent.v1.SubagentPersistedState", "map_key": "string"},
+      {"number": 17, "name": "self_summary_count", "type": "uint32"},
+      {"number": 18, "name": "read_paths", "type": "string", "repeated": true},
+      {"number": 19, "name": "active_branch_name", "type": "string", "opt": true},
+      {"number": 20, "name": "plans", "type": "agent.v1.PlanRegistryEntry", "map_key": "string"},
+      {"number": 21, "name": "tracked_git_repo_branches", "type": "agent.v1.TrackedGitRepo", "repeated": true},
+      {"number": 22, "name": "agent_type", "type": "string", "opt": true},
+      {"number": 23, "name": "communicate_update_history", "type": "agent.v1.CommunicateUpdateHistoryEntry", "repeated": true},
+      {"number": 24, "name": "subagent_threads", "type": "string", "map_key": "string"},
+      {"number": 25, "name": "communicate_update_final_summary", "type": "string", "opt": true},
+      {"number": 28, "name": "communicate_update_completed_subtitle", "type": "string", "opt": true},
+      {"number": 29, "name": "communicate_update_states_by_parent_tool_call_id", "type": "agent.v1.CommunicateUpdateTurnState", "map_key": "string"},
+      {"number": 30, "name": "subagent_runs_by_parent_tool_call_id", "type": "agent.v1.SubagentRunState", "map_key": "string"},
+      {"number": 26, "name": "conversation_started_timestamp_ms", "type": "uint64", "opt": true},
+      {"number": 27, "name": "conversation_started_time_zone", "type": "string", "opt": true},
+      {"number": 31, "name": "subagent_state_refs", "type": "bytes", "map_key": "string"},
+      {"number": 32, "name": "goal_state", "type": "agent.v1.GoalState", "opt": true},
+      {"number": 33, "name": "is_root_project_conversation", "type": "bool", "opt": true},
+      {"number": 34, "name": "completed_ask_question_tool_call_ids", "type": "string", "repeated": true},
+      {"number": 35, "name": "durable_skill_blocks", "type": "string", "repeated": true},
+      {"number": 36, "name": "durable_custom_mode_id", "type": "string", "opt": true},
+      {"number": 37, "name": "message_count_at_last_compaction", "type": "uint32", "opt": true},
+      {"number": 38, "name": "recent_user_message_ids", "type": "string", "repeated": true},
+      {"number": 39, "name": "recent_user_message_ids_older_turn_count", "type": "uint32", "opt": true},
+      {"number": 40, "name": "turn_telemetry", "type": "agent.v1.TurnTelemetryState", "opt": true},
+      {"number": 42, "name": "mentioned_agent_ids", "type": "string", "repeated": true},
+      {"number": 43, "name": "voice_call_utterances", "type": "agent.v1.VoiceCallUtterance", "repeated": true},
+      {"number": 44, "name": "voice_call_pending_answer", "type": "agent.v1.VoiceCallPendingAnswer", "opt": true},
+      {"number": 45, "name": "voice_call_time_task_ids", "type": "string", "repeated": true},
+      {"number": 46, "name": "writes_voice_call_utterances", "type": "bool"},
+      {"number": 47, "name": "voice_calls_read_utterances", "type": "bool", "opt": true},
+      {"number": 49, "name": "user_time_zone", "type": "string", "opt": true},
+      {"number": 50, "name": "project_coordinator_system_section", "type": "string", "opt": true},
+      {"number": 51, "name": "project_coordinator_system_section_communication_rules", "type": "bool", "opt": true},
+      {"number": 52, "name": "last_run", "type": "agent.v1.TurnRunRecord", "opt": true}
+    ],
+    "agent.v1.CursorRule": [
+      {"number": 1, "name": "full_path", "type": "string"},
+      {"number": 2, "name": "content", "type": "string"},
+      {"number": 3, "name": "type", "type": "agent.v1.CursorRuleType"},
+      {"number": 4, "name": "source", "type": "agent.v1.CursorRuleSource"},
+      {"number": 5, "name": "git_remote_origin", "type": "string", "opt": true},
+      {"number": 6, "name": "parse_error", "type": "string", "opt": true},
+      {"number": 7, "name": "environments", "type": "string", "repeated": true},
+      {"number": 8, "name": "disabled_environments", "type": "string", "repeated": true},
+      {"number": 9, "name": "plugin", "type": "string", "opt": true},
+      {"number": 10, "name": "marketplace", "type": "string", "opt": true},
+      {"number": 11, "name": "plugin_id", "type": "string", "opt": true},
+      {"number": 12, "name": "marketplace_id", "type": "string", "opt": true},
+      {"number": 13, "name": "scoped_to", "type": "string", "repeated": true},
+      {"number": 14, "name": "frontmatter", "type": "string"},
+      {"number": 15, "name": "is_required", "type": "bool", "opt": true},
+      {"number": 16, "name": "warnings", "type": "string", "repeated": true},
+      {"number": 17, "name": "body_omitted", "type": "bool", "opt": true}
+    ],
+    "agent.v1.CursorRuleType": [
+      {"number": 1, "name": "global", "type": "agent.v1.CursorRuleTypeGlobal", "oneof": "type"},
+      {"number": 2, "name": "file_globbed", "type": "agent.v1.CursorRuleTypeFileGlobs", "oneof": "type"},
+      {"number": 3, "name": "agent_fetched", "type": "agent.v1.CursorRuleTypeAgentFetched", "oneof": "type"},
+      {"number": 4, "name": "manually_attached", "type": "agent.v1.CursorRuleTypeManuallyAttached", "oneof": "type"}
+    ],
+    "agent.v1.CursorRuleTypeAgentFetched": [
+      {"number": 1, "name": "description", "type": "string"}
+    ],
+    "agent.v1.CursorRuleTypeFileGlobs": [
+      {"number": 1, "name": "globs", "type": "string", "repeated": true}
+    ],
+    "agent.v1.CursorRuleTypeGlobal": [
+    ],
+    "agent.v1.CursorRuleTypeManuallyAttached": [
+    ],
+    "agent.v1.DeleteError": [
+      {"number": 1, "name": "path", "type": "string"},
+      {"number": 2, "name": "error", "type": "string"}
+    ],
+    "agent.v1.DeleteFileBusy": [
+      {"number": 1, "name": "path", "type": "string"}
+    ],
+    "agent.v1.DeleteFileNotFound": [
+      {"number": 1, "name": "path", "type": "string"}
+    ],
+    "agent.v1.DeleteNotFile": [
+      {"number": 1, "name": "path", "type": "string"},
+      {"number": 2, "name": "actual_type", "type": "string"}
+    ],
+    "agent.v1.DeletePermissionDenied": [
+      {"number": 1, "name": "path", "type": "string"},
+      {"number": 2, "name": "client_visible_error", "type": "string"},
+      {"number": 3, "name": "is_readonly", "type": "bool"}
+    ],
+    "agent.v1.DeleteRejected": [
+      {"number": 1, "name": "path", "type": "string"},
+      {"number": 2, "name": "reason", "type": "string"}
+    ],
+    "agent.v1.DeleteResult": [
+      {"number": 1, "name": "success", "type": "agent.v1.DeleteSuccess", "oneof": "result"},
+      {"number": 2, "name": "file_not_found", "type": "agent.v1.DeleteFileNotFound", "oneof": "result"},
+      {"number": 3, "name": "not_file", "type": "agent.v1.DeleteNotFile", "oneof": "result"},
+      {"number": 4, "name": "permission_denied", "type": "agent.v1.DeletePermissionDenied", "oneof": "result"},
+      {"number": 5, "name": "file_busy", "type": "agent.v1.DeleteFileBusy", "oneof": "result"},
+      {"number": 6, "name": "rejected", "type": "agent.v1.DeleteRejected", "oneof": "result"},
+      {"number": 7, "name": "error", "type": "agent.v1.DeleteError", "oneof": "result"}
+    ],
+    "agent.v1.DeleteSuccess": [
+      {"number": 1, "name": "path", "type": "string"},
+      {"number": 2, "name": "deleted_file", "type": "string"},
+      {"number": 3, "name": "file_size", "type": "int64"},
+      {"number": 4, "name": "prev_content", "type": "string"}
+    ],
+    "agent.v1.ExecClientControlMessage": [
+      {"number": 1, "name": "stream_close", "type": "agent.v1.ExecClientStreamClose", "oneof": "message"},
+      {"number": 2, "name": "throw", "type": "agent.v1.ExecClientThrow", "oneof": "message"},
+      {"number": 3, "name": "heartbeat", "type": "agent.v1.ExecClientHeartbeat", "oneof": "message"}
+    ],
+    "agent.v1.ExecClientHeartbeat": [
+      {"number": 1, "name": "id", "type": "uint32"}
+    ],
+    "agent.v1.ExecClientMessage": [
+      {"number": 1, "name": "id", "type": "uint32"},
+      {"number": 15, "name": "exec_id", "type": "string"},
+      {"number": 39, "name": "local_execution_time_ms", "type": "int32", "opt": true},
+      {"number": 45, "name": "hook_additional_contexts", "type": "agent.v1.HookAdditionalContext", "repeated": true},
+      {"number": 2, "name": "shell_result", "type": "agent.v1.ShellResult", "oneof": "message"},
+      {"number": 3, "name": "write_result", "type": "agent.v1.WriteResult", "oneof": "message"},
+      {"number": 4, "name": "delete_result", "type": "agent.v1.DeleteResult", "oneof": "message"},
+      {"number": 5, "name": "grep_result", "type": "agent.v1.GrepResult", "oneof": "message"},
+      {"number": 7, "name": "read_result", "type": "agent.v1.ReadResult", "oneof": "message"},
+      {"number": 29, "name": "redacted_read_result", "type": "agent.v1.ReadResult", "oneof": "message"},
+      {"number": 8, "name": "ls_result", "type": "agent.v1.LsResult", "oneof": "message"},
+      {"number": 9, "name": "diagnostics_result", "type": "agent.v1.DiagnosticsResult", "oneof": "message"},
+      {"number": 10, "name": "request_context_result", "type": "agent.v1.RequestContextResult", "oneof": "message"},
+      {"number": 11, "name": "mcp_result", "type": "agent.v1.McpResult", "oneof": "message"},
+      {"number": 14, "name": "shell_stream", "type": "agent.v1.ShellStream", "oneof": "message"},
+      {"number": 16, "name": "background_shell_spawn_result", "type": "agent.v1.BackgroundShellSpawnResult", "oneof": "message"},
+      {"number": 17, "name": "list_mcp_resources_exec_result", "type": "agent.v1.ListMcpResourcesExecResult", "oneof": "message"},
+      {"number": 18, "name": "read_mcp_resource_exec_result", "type": "agent.v1.ReadMcpResourceExecResult", "oneof": "message"},
+      {"number": 36, "name": "mcp_state_exec_result", "type": "agent.v1.McpStateExecResult", "oneof": "message"},
+      {"number": 20, "name": "fetch_result", "type": "agent.v1.FetchResult", "oneof": "message"},
+      {"number": 21, "name": "record_screen_result", "type": "agent.v1.RecordScreenResult", "oneof": "message"},
+      {"number": 22, "name": "computer_use_result", "type": "agent.v1.ComputerUseResult", "oneof": "message"},
+      {"number": 23, "name": "write_shell_stdin_result", "type": "agent.v1.WriteShellStdinResult", "oneof": "message"},
+      {"number": 27, "name": "execute_hook_result", "type": "agent.v1.ExecuteHookResult", "oneof": "message"},
+      {"number": 28, "name": "subagent_result", "type": "agent.v1.SubagentResult", "oneof": "message"},
+      {"number": 30, "name": "force_background_shell_result", "type": "agent.v1.ForceBackgroundShellResult", "oneof": "message"},
+      {"number": 31, "name": "force_background_subagent_result", "type": "agent.v1.ForceBackgroundSubagentResult", "oneof": "message"},
+      {"number": 37, "name": "subagent_await_result", "type": "agent.v1.SubagentAwaitResult", "oneof": "message"},
+      {"number": 38, "name": "smart_mode_classifier_result", "type": "agent.v1.SmartModeClassifierResult", "oneof": "message"},
+      {"number": 40, "name": "canvas_diagnostics_result", "type": "agent.v1.CanvasDiagnosticsResult", "oneof": "message"},
+      {"number": 41, "name": "shell_allowlist_precheck_result", "type": "agent.v1.ShellAllowlistPrecheckResult", "oneof": "message"},
+      {"number": 42, "name": "mcp_allowlist_precheck_result", "type": "agent.v1.McpAllowlistPrecheckResult", "oneof": "message"},
+      {"number": 43, "name": "web_fetch_allowlist_precheck_result", "type": "agent.v1.WebFetchAllowlistPrecheckResult", "oneof": "message"},
+      {"number": 44, "name": "git_diff_response", "type": "aiserver.v1.GetDiffResponse", "oneof": "message"},
+      {"number": 53, "name": "conversation_search_result", "type": "agent.v1.ConversationSearchResult", "oneof": "message"},
+      {"number": 54, "name": "agent_store_conflict_result", "type": "agent.v1.AgentStoreConflictResult", "oneof": "message"},
+      {"number": 55, "name": "mini_swe_agent_bash_result", "type": "agent.v1.ShellResult", "oneof": "message"}
+    ],
+    "agent.v1.ExecClientStreamClose": [
+      {"number": 1, "name": "id", "type": "uint32"}
+    ],
+    "agent.v1.ExecClientThrow": [
+      {"number": 1, "name": "id", "type": "uint32"},
+      {"number": 2, "name": "error", "type": "string"},
+      {"number": 3, "name": "stack_trace", "type": "string", "opt": true},
+      {"number": 4, "name": "error_code", "type": "string", "opt": true}
+    ],
+    "agent.v1.ExtraContextEntry": [
+      {"number": 1, "name": "data", "type": "string", "oneof": "data_or_blob_id"},
+      {"number": 2, "name": "blob_id", "type": "bytes", "oneof": "data_or_blob_id"}
+    ],
+    "agent.v1.HookAdditionalContext": [
+      {"number": 1, "name": "hook_event_name", "type": "string"},
+      {"number": 2, "name": "content", "type": "string"}
+    ],
+    "agent.v1.McpApproved": [
+    ],
+    "agent.v1.McpError": [
+      {"number": 1, "name": "error", "type": "string"},
+      {"number": 2, "name": "needs_auth", "type": "bool", "opt": true},
+      {"number": 3, "name": "recovery", "type": "agent.v1.McpRecovery", "opt": true},
+      {"number": 4, "name": "http_status", "type": "int32", "opt": true},
+      {"number": 5, "name": "retry_after_ms", "type": "uint32", "opt": true},
+      {"number": 6, "name": "not_dialed", "type": "bool", "opt": true},
+      {"number": 7, "name": "bearer_error", "type": "string", "opt": true},
+      {"number": 8, "name": "policy_blocked_reason", "type": "agent.v1.McpPolicyBlockedReason", "opt": true}
+    ],
+    "agent.v1.McpPermissionDenied": [
+      {"number": 1, "name": "error", "type": "string"},
+      {"number": 2, "name": "is_readonly", "type": "bool"}
+    ],
+    "agent.v1.McpRejected": [
+      {"number": 1, "name": "reason", "type": "string"},
+      {"number": 2, "name": "is_readonly", "type": "bool"}
+    ],
+    "agent.v1.McpResult": [
+      {"number": 1, "name": "success", "type": "agent.v1.McpSuccess", "oneof": "result"},
+      {"number": 2, "name": "error", "type": "agent.v1.McpError", "oneof": "result"},
+      {"number": 3, "name": "rejected", "type": "agent.v1.McpRejected", "oneof": "result"},
+      {"number": 4, "name": "permission_denied", "type": "agent.v1.McpPermissionDenied", "oneof": "result"},
+      {"number": 5, "name": "tool_not_found", "type": "agent.v1.McpToolNotFound", "oneof": "result"},
+      {"number": 6, "name": "server_not_found", "type": "agent.v1.McpServerNotFound", "oneof": "result"},
+      {"number": 7, "name": "approved", "type": "agent.v1.McpApproved", "oneof": "result"}
+    ],
+    "agent.v1.McpServerNotFound": [
+      {"number": 1, "name": "name", "type": "string"},
+      {"number": 2, "name": "available_servers", "type": "string", "repeated": true}
+    ],
+    "agent.v1.McpSuccess": [
+      {"number": 1, "name": "content", "type": "agent.v1.McpToolResultContentItem", "repeated": true},
+      {"number": 2, "name": "is_error", "type": "bool"},
+      {"number": 3, "name": "structured_content", "type": "google.protobuf.Struct"},
+      {"number": 4, "name": "system_reminders", "type": "agent.v1.SystemReminder", "repeated": true},
+      {"number": 5, "name": "result_meta", "type": "google.protobuf.Struct"},
+      {"number": 6, "name": "mcp_app_document", "type": "agent.v1.McpAppDocument"}
+    ],
+    "agent.v1.McpTextContent": [
+      {"number": 1, "name": "text", "type": "string"},
+      {"number": 2, "name": "output_location", "type": "agent.v1.OutputLocation", "opt": true}
+    ],
+    "agent.v1.McpToolDefinition": [
+      {"number": 1, "name": "name", "type": "string"},
+      {"number": 4, "name": "provider_identifier", "type": "string"},
+      {"number": 5, "name": "tool_name", "type": "string"},
+      {"number": 2, "name": "description", "type": "string"},
+      {"number": 3, "name": "input_schema", "type": "google.protobuf.Value"},
+      {"number": 6, "name": "input_schema_json", "type": "string", "opt": true},
+      {"number": 7, "name": "output_schema_json", "type": "string", "opt": true},
+      {"number": 8, "name": "annotations_json", "type": "string", "opt": true},
+      {"number": 9, "name": "meta_json", "type": "string", "opt": true}
+    ],
+    "agent.v1.McpToolNotFound": [
+      {"number": 1, "name": "name", "type": "string"},
+      {"number": 2, "name": "available_tools", "type": "string", "repeated": true},
+      {"number": 3, "name": "recovery", "type": "agent.v1.McpRecovery", "opt": true}
+    ],
+    "agent.v1.McpToolResultContentItem": [
+      {"number": 1, "name": "text", "type": "agent.v1.McpTextContent", "oneof": "content"},
+      {"number": 2, "name": "image", "type": "agent.v1.McpImageContent", "oneof": "content"}
+    ],
+    "agent.v1.McpTools": [
+      {"number": 1, "name": "mcp_tools", "type": "agent.v1.McpToolDefinition", "repeated": true}
+    ],
+    "agent.v1.ModelDetails": [
+      {"number": 1, "name": "model_id", "type": "string"},
+      {"number": 3, "name": "display_model_id", "type": "string"},
+      {"number": 4, "name": "display_name", "type": "string"},
+      {"number": 5, "name": "display_name_short", "type": "string"},
+      {"number": 6, "name": "aliases", "type": "string", "repeated": true},
+      {"number": 2, "name": "thinking_details", "type": "agent.v1.ThinkingDetails", "opt": true},
+      {"number": 7, "name": "max_mode", "type": "bool", "opt": true},
+      {"number": 8, "name": "api_key_credentials", "type": "agent.v1.ApiKeyCredentials", "oneof": "credentials"},
+      {"number": 9, "name": "azure_credentials", "type": "agent.v1.AzureCredentials", "oneof": "credentials"},
+      {"number": 10, "name": "bedrock_credentials", "type": "agent.v1.BedrockCredentials", "oneof": "credentials"}
+    ],
+    "agent.v1.OutputLocation": [
+      {"number": 1, "name": "file_path", "type": "string"},
+      {"number": 2, "name": "size_bytes", "type": "int64"},
+      {"number": 3, "name": "line_count", "type": "int64"}
+    ],
+    "agent.v1.Position": [
+      {"number": 1, "name": "line", "type": "uint32"},
+      {"number": 2, "name": "column", "type": "uint32"}
+    ],
+    "agent.v1.Range": [
+      {"number": 1, "name": "start", "type": "agent.v1.Position"},
+      {"number": 2, "name": "end", "type": "agent.v1.Position"}
+    ],
+    "agent.v1.ReadError": [
+      {"number": 1, "name": "path", "type": "string"},
+      {"number": 2, "name": "error", "type": "string"}
+    ],
+    "agent.v1.ReadFileNotFound": [
+      {"number": 1, "name": "path", "type": "string"}
+    ],
+    "agent.v1.ReadInvalidFile": [
+      {"number": 1, "name": "path", "type": "string"},
+      {"number": 2, "name": "reason", "type": "string"}
+    ],
+    "agent.v1.ReadPermissionDenied": [
+      {"number": 1, "name": "path", "type": "string"}
+    ],
+    "agent.v1.ReadRejected": [
+      {"number": 1, "name": "path", "type": "string"},
+      {"number": 2, "name": "reason", "type": "string"}
+    ],
+    "agent.v1.ReadResult": [
+      {"number": 1, "name": "success", "type": "agent.v1.ReadSuccess", "oneof": "result"},
+      {"number": 2, "name": "error", "type": "agent.v1.ReadError", "oneof": "result"},
+      {"number": 3, "name": "rejected", "type": "agent.v1.ReadRejected", "oneof": "result"},
+      {"number": 4, "name": "file_not_found", "type": "agent.v1.ReadFileNotFound", "oneof": "result"},
+      {"number": 5, "name": "permission_denied", "type": "agent.v1.ReadPermissionDenied", "oneof": "result"},
+      {"number": 6, "name": "invalid_file", "type": "agent.v1.ReadInvalidFile", "oneof": "result"}
+    ],
+    "agent.v1.ReadSuccess": [
+      {"number": 1, "name": "path", "type": "string"},
+      {"number": 2, "name": "content", "type": "string", "oneof": "output"},
+      {"number": 5, "name": "data", "type": "bytes", "oneof": "output"},
+      {"number": 3, "name": "total_lines", "type": "int32"},
+      {"number": 4, "name": "file_size", "type": "int64"},
+      {"number": 6, "name": "truncated", "type": "bool"},
+      {"number": 7, "name": "output_blob_id", "type": "bytes", "opt": true},
+      {"number": 8, "name": "range_applied", "type": "bool"},
+      {"number": 9, "name": "sha256", "type": "string", "opt": true},
+      {"number": 10, "name": "size_bytes", "type": "int64", "opt": true}
+    ],
+    "agent.v1.RequestContext": [
+      {"number": 2, "name": "rules", "type": "agent.v1.CursorRule", "repeated": true},
+      {"number": 4, "name": "env", "type": "agent.v1.RequestContextEnv"},
+      {"number": 6, "name": "repository_info", "type": "agent.v1.RepositoryIndexingInfo", "repeated": true},
+      {"number": 7, "name": "tools", "type": "agent.v1.McpToolDefinition", "repeated": true},
+      {"number": 8, "name": "conversation_notes_listing", "type": "string", "opt": true},
+      {"number": 9, "name": "shared_notes_listing", "type": "string", "opt": true},
+      {"number": 11, "name": "git_repos", "type": "agent.v1.GitRepoInfo", "repeated": true},
+      {"number": 13, "name": "project_layouts", "type": "agent.v1.LsDirectoryTreeNode", "repeated": true},
+      {"number": 14, "name": "mcp_instructions", "type": "agent.v1.McpInstructions", "repeated": true},
+      {"number": 15, "name": "debug_mode_config", "type": "agent.v1.DebugModeConfig", "opt": true},
+      {"number": 16, "name": "cloud_rule", "type": "string", "opt": true},
+      {"number": 17, "name": "web_search_enabled", "type": "bool", "opt": true},
+      {"number": 18, "name": "skill_options", "type": "agent.v1.SkillOptions", "opt": true},
+      {"number": 19, "name": "repository_info_should_query_prod", "type": "bool", "opt": true},
+      {"number": 20, "name": "file_contents", "type": "string", "map_key": "string"},
+      {"number": 21, "name": "user_intent_summary", "type": "string", "opt": true},
+      {"number": 22, "name": "custom_subagents", "type": "agent.v1.CustomSubagent", "repeated": true},
+      {"number": 23, "name": "mcp_file_system_options", "type": "agent.v1.McpFileSystemOptions", "opt": true},
+      {"number": 24, "name": "web_fetch_enabled", "type": "bool", "opt": true},
+      {"number": 25, "name": "hooks_additional_context", "type": "string", "opt": true},
+      {"number": 26, "name": "commit_attribution_message", "type": "string", "opt": true},
+      {"number": 27, "name": "pr_attribution_message", "type": "string", "opt": true},
+      {"number": 28, "name": "hooks_config", "type": "agent.v1.HooksConfigInfo", "opt": true},
+      {"number": 29, "name": "agent_skills", "type": "agent.v1.AgentSkill", "repeated": true},
+      {"number": 30, "name": "precomputed_human_changes", "type": "agent.v1.PrecomputedHumanChange", "repeated": true},
+      {"number": 31, "name": "recently_added_plugin", "type": "agent.v1.RecentlyAddedPlugin", "opt": true},
+      {"number": 32, "name": "supports_mcp_auth", "type": "bool", "opt": true},
+      {"number": 33, "name": "git_repo_info_complete", "type": "bool", "opt": true},
+      {"number": 34, "name": "mcp_meta_tool_options", "type": "agent.v1.McpMetaToolOptions", "opt": true},
+      {"number": 35, "name": "read_lints_enabled", "type": "bool", "opt": true},
+      {"number": 36, "name": "mcp_info_complete", "type": "bool", "opt": true},
+      {"number": 37, "name": "non_file_rules", "type": "agent.v1.CursorRule", "repeated": true},
+      {"number": 38, "name": "matched_installed_plugin", "type": "agent.v1.MatchedInstalledPlugin", "opt": true},
+      {"number": 39, "name": "rules_info_complete", "type": "bool", "opt": true},
+      {"number": 40, "name": "env_info_complete", "type": "bool", "opt": true},
+      {"number": 41, "name": "repository_info_complete", "type": "bool", "opt": true},
+      {"number": 42, "name": "custom_subagents_info_complete", "type": "bool", "opt": true},
+      {"number": 43, "name": "agent_skills_info_complete", "type": "bool", "opt": true},
+      {"number": 44, "name": "mcp_file_system_info_complete", "type": "bool", "opt": true},
+      {"number": 45, "name": "git_status_info_complete", "type": "bool", "opt": true},
+      {"number": 46, "name": "user_permissions_auto_run", "type": "agent.v1.PermissionsAutoRunInstructions", "opt": true},
+      {"number": 47, "name": "project_permissions_auto_run", "type": "agent.v1.PermissionsAutoRunInstructions", "opt": true},
+      {"number": 48, "name": "admin_permissions_auto_run", "type": "agent.v1.PermissionsAutoRunInstructions", "opt": true},
+      {"number": 49, "name": "disabled_team_rules", "type": "string", "repeated": true},
+      {"number": 50, "name": "search_conversations_enabled", "type": "bool", "opt": true},
+      {"number": 51, "name": "send_message_enabled", "type": "bool", "opt": true},
+      {"number": 52, "name": "admin_command_denylist", "type": "string", "repeated": true},
+      {"number": 53, "name": "system_prompt_override", "type": "agent.v1.SystemPromptSpec", "opt": true}
+    ],
+    "agent.v1.RequestContextEnv": [
+      {"number": 1, "name": "os_version", "type": "string"},
+      {"number": 2, "name": "workspace_paths", "type": "string", "repeated": true},
+      {"number": 3, "name": "shell", "type": "string"},
+      {"number": 5, "name": "sandbox_enabled", "type": "bool"},
+      {"number": 7, "name": "terminals_folder", "type": "string"},
+      {"number": 8, "name": "agent_shared_notes_folder", "type": "string"},
+      {"number": 9, "name": "agent_conversation_notes_folder", "type": "string"},
+      {"number": 10, "name": "time_zone", "type": "string"},
+      {"number": 11, "name": "project_folder", "type": "string"},
+      {"number": 12, "name": "agent_transcripts_folder", "type": "string"},
+      {"number": 13, "name": "artifacts_folder", "type": "string", "opt": true},
+      {"number": 14, "name": "sandbox_supported", "type": "bool", "opt": true},
+      {"number": 16, "name": "sandbox_network_has_defaults", "type": "bool", "opt": true},
+      {"number": 17, "name": "sandbox_network_explicit_allowlist", "type": "string", "repeated": true},
+      {"number": 18, "name": "secret_redaction_enabled", "type": "bool", "opt": true},
+      {"number": 19, "name": "computer_use_supported", "type": "bool", "opt": true},
+      {"number": 20, "name": "is_working_dir_home_dir", "type": "bool", "opt": true},
+      {"number": 21, "name": "process_working_directory", "type": "string", "opt": true},
+      {"number": 22, "name": "smart_mode_classifier_auto_mode_enabled", "type": "bool", "opt": true},
+      {"number": 23, "name": "dev_force_next_smart_mode_classifier_block_token", "type": "string", "opt": true},
+      {"number": 24, "name": "dev_delay_next_smart_mode_classifier_token", "type": "string", "opt": true},
+      {"number": 25, "name": "mounted_agent_stores", "type": "agent.v1.MountedAgentStore", "repeated": true},
+      {"number": 26, "name": "user_agent_store_web_context", "type": "agent.v1.UserAgentStoreWebContext", "opt": true},
+      {"number": 27, "name": "dev_mock_prompt_time", "type": "google.protobuf.Timestamp", "opt": true},
+      {"number": 28, "name": "agent_store_dynamic_mount_enabled", "type": "bool", "opt": true},
+      {"number": 29, "name": "computer_use_desktop", "type": "agent.v1.ComputerUseDesktop", "opt": true}
+    ],
+    "agent.v1.RequestedModel": [
+      {"number": 1, "name": "model_id", "type": "string"},
+      {"number": 2, "name": "max_mode", "type": "bool"},
+      {"number": 3, "name": "parameters", "type": "agent.v1.RequestedModel.ModelParameterValue", "repeated": true},
+      {"number": 4, "name": "api_key_credentials", "type": "agent.v1.ApiKeyCredentials", "oneof": "credentials"},
+      {"number": 5, "name": "azure_credentials", "type": "agent.v1.AzureCredentials", "oneof": "credentials"},
+      {"number": 6, "name": "bedrock_credentials", "type": "agent.v1.BedrockCredentials", "oneof": "credentials"},
+      {"number": 7, "name": "built_in_model", "type": "bool"}
+    ],
+    "agent.v1.RequestedModel.ModelParameterValue": [
+      {"number": 1, "name": "id", "type": "string"},
+      {"number": 2, "name": "value", "type": "string"}
+    ],
+    "agent.v1.ResumeAction": [
+      {"number": 2, "name": "request_context", "type": "agent.v1.RequestContext"}
+    ],
+    "agent.v1.SelectedCodeSelection": [
+      {"number": 1, "name": "content", "type": "string"},
+      {"number": 2, "name": "path", "type": "string"},
+      {"number": 3, "name": "relative_path", "type": "string", "opt": true},
+      {"number": 4, "name": "range", "type": "agent.v1.Range"}
+    ],
+    "agent.v1.SelectedContext": [
+      {"number": 1, "name": "selected_images", "type": "agent.v1.SelectedImage", "repeated": true},
+      {"number": 2, "name": "invocation_context", "type": "agent.v1.InvocationContext", "opt": true},
+      {"number": 3, "name": "extra_context", "type": "string", "repeated": true},
+      {"number": 16, "name": "extra_context_entries", "type": "agent.v1.ExtraContextEntry", "repeated": true},
+      {"number": 4, "name": "files", "type": "agent.v1.SelectedFile", "repeated": true},
+      {"number": 5, "name": "code_selections", "type": "agent.v1.SelectedCodeSelection", "repeated": true},
+      {"number": 6, "name": "terminals", "type": "agent.v1.SelectedTerminal", "repeated": true},
+      {"number": 7, "name": "terminal_selections", "type": "agent.v1.SelectedTerminalSelection", "repeated": true},
+      {"number": 8, "name": "folders", "type": "agent.v1.SelectedFolder", "repeated": true},
+      {"number": 9, "name": "external_links", "type": "agent.v1.SelectedExternalLink", "repeated": true},
+      {"number": 10, "name": "cursor_rules", "type": "agent.v1.SelectedCursorRule", "repeated": true},
+      {"number": 18, "name": "git_diff", "type": "agent.v1.SelectedGitDiff", "opt": true},
+      {"number": 11, "name": "git_diff_from_branch_to_main", "type": "agent.v1.SelectedGitDiffFromBranchToMain", "opt": true},
+      {"number": 12, "name": "cursor_commands", "type": "agent.v1.SelectedCursorCommand", "repeated": true},
+      {"number": 13, "name": "documentations", "type": "agent.v1.SelectedDocumentation", "repeated": true},
+      {"number": 14, "name": "ui_elements", "type": "agent.v1.SelectedUIElement", "repeated": true},
+      {"number": 15, "name": "console_logs", "type": "agent.v1.SelectedConsoleLog", "repeated": true},
+      {"number": 17, "name": "git_commits", "type": "agent.v1.SelectedGitCommit", "repeated": true},
+      {"number": 19, "name": "past_chats", "type": "agent.v1.SelectedPastChat", "repeated": true},
+      {"number": 20, "name": "git_pr_diff_selections", "type": "agent.v1.SelectedGitPRDiffSelection", "repeated": true},
+      {"number": 21, "name": "selected_pull_requests", "type": "agent.v1.SelectedPullRequest", "repeated": true},
+      {"number": 22, "name": "selected_subagents", "type": "agent.v1.SelectedSubagent", "repeated": true},
+      {"number": 23, "name": "selected_videos", "type": "agent.v1.SelectedVideo", "repeated": true},
+      {"number": 24, "name": "selected_browsers", "type": "agent.v1.SelectedBrowser", "repeated": true},
+      {"number": 25, "name": "selected_documents", "type": "agent.v1.SelectedDocument", "repeated": true},
+      {"number": 26, "name": "selected_skills", "type": "agent.v1.AgentSkill", "repeated": true},
+      {"number": 27, "name": "recent_agents_context", "type": "agent.v1.RecentAgentsContext", "opt": true},
+      {"number": 34, "name": "selected_agentic_git_action", "type": "agent.v1.SelectedAgenticGitAction", "opt": true},
+      {"number": 35, "name": "selected_repositories", "type": "agent.v1.SelectedRepository", "repeated": true},
+      {"number": 36, "name": "selected_environments", "type": "agent.v1.SelectedEnvironment", "repeated": true}
+    ],
+    "agent.v1.SelectedCursorCommand": [
+      {"number": 1, "name": "name", "type": "string"},
+      {"number": 2, "name": "content", "type": "string"},
+      {"number": 3, "name": "plugin_capability", "type": "agent.v1.SelectedPluginCapabilityRef", "opt": true},
+      {"number": 4, "name": "full_path", "type": "string", "opt": true},
+      {"number": 5, "name": "display_name", "type": "string", "opt": true}
+    ],
+    "agent.v1.SelectedCursorRule": [
+      {"number": 1, "name": "rule", "type": "agent.v1.CursorRule"}
+    ],
+    "agent.v1.SelectedFile": [
+      {"number": 1, "name": "content", "type": "string"},
+      {"number": 2, "name": "path", "type": "string"},
+      {"number": 3, "name": "relative_path", "type": "string", "opt": true}
+    ],
+    "agent.v1.SelectedTerminal": [
+      {"number": 1, "name": "content", "type": "string"},
+      {"number": 2, "name": "title", "type": "string", "opt": true},
+      {"number": 3, "name": "path", "type": "string", "opt": true}
+    ],
+    "agent.v1.SelectedTerminalSelection": [
+      {"number": 1, "name": "content", "type": "string"},
+      {"number": 2, "name": "title", "type": "string", "opt": true},
+      {"number": 3, "name": "path", "type": "string", "opt": true},
+      {"number": 4, "name": "range", "type": "agent.v1.Range"}
+    ],
+    "agent.v1.ShellFailure": [
+      {"number": 1, "name": "command", "type": "string"},
+      {"number": 2, "name": "working_directory", "type": "string"},
+      {"number": 3, "name": "exit_code", "type": "int32"},
+      {"number": 4, "name": "signal", "type": "string"},
+      {"number": 5, "name": "stdout", "type": "string"},
+      {"number": 6, "name": "stderr", "type": "string"},
+      {"number": 7, "name": "execution_time", "type": "int32"},
+      {"number": 8, "name": "output_location", "type": "agent.v1.OutputLocation", "opt": true},
+      {"number": 9, "name": "interleaved_output", "type": "string", "opt": true},
+      {"number": 10, "name": "abort_reason", "type": "agent.v1.ShellAbortReason", "opt": true},
+      {"number": 11, "name": "aborted", "type": "bool"},
+      {"number": 12, "name": "local_execution_time_ms", "type": "int32", "opt": true},
+      {"number": 13, "name": "output_head", "type": "string", "opt": true},
+      {"number": 14, "name": "output_tail", "type": "string", "opt": true},
+      {"number": 15, "name": "elided_chars", "type": "uint32", "opt": true},
+      {"number": 16, "name": "oom_kill", "type": "agent.v1.ShellOomKill", "opt": true}
+    ],
+    "agent.v1.ShellPermissionDenied": [
+      {"number": 1, "name": "command", "type": "string"},
+      {"number": 2, "name": "working_directory", "type": "string"},
+      {"number": 3, "name": "error", "type": "string"},
+      {"number": 4, "name": "is_readonly", "type": "bool"}
+    ],
+    "agent.v1.ShellRejected": [
+      {"number": 1, "name": "command", "type": "string"},
+      {"number": 2, "name": "working_directory", "type": "string"},
+      {"number": 3, "name": "reason", "type": "string"},
+      {"number": 4, "name": "is_readonly", "type": "bool"}
+    ],
+    "agent.v1.ShellResult": [
+      {"number": 1, "name": "success", "type": "agent.v1.ShellSuccess", "oneof": "result"},
+      {"number": 2, "name": "failure", "type": "agent.v1.ShellFailure", "oneof": "result"},
+      {"number": 3, "name": "timeout", "type": "agent.v1.ShellTimeout", "oneof": "result"},
+      {"number": 4, "name": "rejected", "type": "agent.v1.ShellRejected", "oneof": "result"},
+      {"number": 5, "name": "spawn_error", "type": "agent.v1.ShellSpawnError", "oneof": "result"},
+      {"number": 7, "name": "permission_denied", "type": "agent.v1.ShellPermissionDenied", "oneof": "result"},
+      {"number": 101, "name": "sandbox_policy", "type": "agent.v1.SandboxPolicy", "opt": true},
+      {"number": 102, "name": "is_background", "type": "bool", "opt": true},
+      {"number": 103, "name": "terminals_folder", "type": "string", "opt": true},
+      {"number": 104, "name": "pid", "type": "uint32", "opt": true}
+    ],
+    "agent.v1.ShellSpawnError": [
+      {"number": 1, "name": "command", "type": "string"},
+      {"number": 2, "name": "working_directory", "type": "string"},
+      {"number": 3, "name": "error", "type": "string"}
+    ],
+    "agent.v1.ShellSuccess": [
+      {"number": 1, "name": "command", "type": "string"},
+      {"number": 2, "name": "working_directory", "type": "string"},
+      {"number": 3, "name": "exit_code", "type": "int32"},
+      {"number": 4, "name": "signal", "type": "string"},
+      {"number": 5, "name": "stdout", "type": "string"},
+      {"number": 6, "name": "stderr", "type": "string"},
+      {"number": 7, "name": "execution_time", "type": "int32"},
+      {"number": 8, "name": "output_location", "type": "agent.v1.OutputLocation", "opt": true},
+      {"number": 9, "name": "shell_id", "type": "uint32", "opt": true},
+      {"number": 10, "name": "interleaved_output", "type": "string", "opt": true},
+      {"number": 11, "name": "pid", "type": "uint32", "opt": true},
+      {"number": 12, "name": "ms_to_wait", "type": "int32", "opt": true},
+      {"number": 13, "name": "local_execution_time_ms", "type": "int32", "opt": true},
+      {"number": 14, "name": "background_reason", "type": "agent.v1.ShellBackgroundReason", "opt": true},
+      {"number": 15, "name": "output_head", "type": "string", "opt": true},
+      {"number": 16, "name": "output_tail", "type": "string", "opt": true},
+      {"number": 17, "name": "elided_chars", "type": "uint32", "opt": true}
+    ],
+    "agent.v1.ShellTimeout": [
+      {"number": 1, "name": "command", "type": "string"},
+      {"number": 2, "name": "working_directory", "type": "string"},
+      {"number": 3, "name": "timeout_ms", "type": "int32"}
+    ],
+    "agent.v1.SystemReminder": [
+      {"number": 1, "name": "body", "type": "string"}
+    ],
+    "agent.v1.ThinkingDetails": [
+    ],
+    "agent.v1.UserMessage": [
+      {"number": 1, "name": "text", "type": "string"},
+      {"number": 2, "name": "message_id", "type": "string"},
+      {"number": 3, "name": "selected_context", "type": "agent.v1.SelectedContext", "opt": true},
+      {"number": 4, "name": "mode", "type": "agent.v1.AgentMode"},
+      {"number": 5, "name": "is_simulated_msg", "type": "bool", "opt": true},
+      {"number": 6, "name": "best_of_n_group_id", "type": "string", "opt": true},
+      {"number": 7, "name": "try_use_best_of_n_promotion", "type": "bool", "opt": true},
+      {"number": 8, "name": "rich_text", "type": "string", "opt": true},
+      {"number": 9, "name": "simulated_msg_reason", "type": "agent.v1.SimulatedMsgReason", "opt": true},
+      {"number": 10, "name": "conversation_state_blob_id", "type": "bytes"},
+      {"number": 11, "name": "subagent_system_reminder", "type": "string", "opt": true},
+      {"number": 13, "name": "triggering_user_info", "type": "agent.v1.TriggeringUserInfo", "opt": true},
+      {"number": 14, "name": "execute_plan_info", "type": "agent.v1.ExecutePlanInfo", "opt": true},
+      {"number": 15, "name": "simulated_message_metadata", "type": "agent.v1.UserMessage.SimulatedMessageMetadata", "opt": true},
+      {"number": 16, "name": "prompt_reference_id", "type": "string", "opt": true},
+      {"number": 17, "name": "thread_id", "type": "string", "opt": true},
+      {"number": 18, "name": "text_blob_id", "type": "bytes", "opt": true},
+      {"number": 19, "name": "rich_text_blob_id", "type": "bytes", "opt": true},
+      {"number": 21, "name": "hook_additional_contexts", "type": "agent.v1.HookAdditionalContext", "repeated": true},
+      {"number": 22, "name": "custom_mode_intent", "type": "agent.v1.CustomModeIntent", "opt": true},
+      {"number": 23, "name": "project_details", "type": "agent.v1.ProjectDetails", "opt": true},
+      {"number": 24, "name": "turn_steer", "type": "bool", "opt": true},
+      {"number": 25, "name": "started_at_ms", "type": "uint64", "opt": true},
+      {"number": 26, "name": "completed_at_ms", "type": "uint64", "opt": true},
+      {"number": 27, "name": "sent_by_agent_id", "type": "string", "opt": true},
+      {"number": 28, "name": "sent_by_voice_call", "type": "bool", "opt": true},
+      {"number": 29, "name": "sender", "type": "agent.v1.MessageSender", "opt": true},
+      {"number": 30, "name": "forked_context", "type": "string", "opt": true},
+      {"number": 31, "name": "reply_to", "type": "string", "opt": true},
+      {"number": 32, "name": "reply_audience", "type": "agent.v1.ReplyAudience", "opt": true},
+      {"number": 33, "name": "reply_to_tool_call_id", "type": "string", "opt": true},
+      {"number": 34, "name": "during_voice_call", "type": "bool", "opt": true},
+      {"number": 35, "name": "inherits_voice_call", "type": "bool", "opt": true},
+      {"number": 36, "name": "voice_calls_read_utterances", "type": "bool", "opt": true},
+      {"number": 37, "name": "summarized_tool_call_id", "type": "string", "opt": true},
+      {"number": 38, "name": "sender_time_zone", "type": "string", "opt": true}
+    ],
+    "agent.v1.UserMessageAction": [
+      {"number": 1, "name": "user_message", "type": "agent.v1.UserMessage"},
+      {"number": 2, "name": "request_context", "type": "agent.v1.RequestContext"},
+      {"number": 3, "name": "send_to_interaction_listener", "type": "bool", "opt": true},
+      {"number": 4, "name": "prepend_user_messages", "type": "agent.v1.UserMessage", "repeated": true},
+      {"number": 6, "name": "interrupted_pending_tool_call_resolutions", "type": "agent.v1.InterruptedPendingToolCallResolutions", "opt": true},
+      {"number": 7, "name": "conversation_history", "type": "agent.v1.ConversationHistory", "opt": true},
+      {"number": 8, "name": "trailing_conversation_history", "type": "agent.v1.ConversationHistory", "opt": true}
+    ],
+    "agent.v1.WriteError": [
+      {"number": 1, "name": "path", "type": "string"},
+      {"number": 2, "name": "error", "type": "string"}
+    ],
+    "agent.v1.WriteNoSpace": [
+      {"number": 1, "name": "path", "type": "string"}
+    ],
+    "agent.v1.WritePermissionDenied": [
+      {"number": 1, "name": "path", "type": "string"},
+      {"number": 2, "name": "directory", "type": "string"},
+      {"number": 3, "name": "operation", "type": "string"},
+      {"number": 4, "name": "error", "type": "string"},
+      {"number": 5, "name": "is_readonly", "type": "bool"}
+    ],
+    "agent.v1.WriteRejected": [
+      {"number": 1, "name": "path", "type": "string"},
+      {"number": 2, "name": "reason", "type": "string"}
+    ],
+    "agent.v1.WriteResult": [
+      {"number": 1, "name": "success", "type": "agent.v1.WriteSuccess", "oneof": "result"},
+      {"number": 3, "name": "permission_denied", "type": "agent.v1.WritePermissionDenied", "oneof": "result"},
+      {"number": 4, "name": "no_space", "type": "agent.v1.WriteNoSpace", "oneof": "result"},
+      {"number": 5, "name": "error", "type": "agent.v1.WriteError", "oneof": "result"},
+      {"number": 6, "name": "rejected", "type": "agent.v1.WriteRejected", "oneof": "result"}
+    ],
+    "agent.v1.WriteSuccess": [
+      {"number": 1, "name": "path", "type": "string"},
+      {"number": 2, "name": "lines_created", "type": "int32"},
+      {"number": 3, "name": "file_size", "type": "int32"},
+      {"number": 4, "name": "file_content_after_write", "type": "string", "opt": true}
+    ]
+  }
+}

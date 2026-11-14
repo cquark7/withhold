@@ -19,6 +19,93 @@ AUXILIARY_ROOTS = (
     "aiserver.v1.ClassifyAgentAutoReviewRequest",
     "aiserver.v1.StreamCppRequest",
 )
+AGENT_OUTPUT = ROOT / "internal/integrations/cursor/agent-schema.json"
+# Snapshot complete descriptors for reviewed message types, not the entire
+# transitive Agent protocol. Field permissions are separately owned by Go.
+AGENT_ROOTS = tuple(
+    "agent.v1." + name
+    for name in (
+        "AgentClientMessage",
+        "AgentRunRequest",
+        "ConversationStateStructure",
+        "ConversationAction",
+        "UserMessageAction",
+        "ResumeAction",
+        "CancelAction",
+        "UserMessage",
+        "SelectedContext",
+        "ExtraContextEntry",
+        "SelectedFile",
+        "SelectedCodeSelection",
+        "SelectedTerminal",
+        "SelectedTerminalSelection",
+        "SelectedCursorRule",
+        "SelectedCursorCommand",
+        "Range",
+        "Position",
+        "CursorRule",
+        "CursorRuleType",
+        "CursorRuleTypeGlobal",
+        "CursorRuleTypeFileGlobs",
+        "CursorRuleTypeAgentFetched",
+        "CursorRuleTypeManuallyAttached",
+        "RequestContext",
+        "RequestContextEnv",
+        "ModelDetails",
+        "ThinkingDetails",
+        "RequestedModel",
+        "RequestedModel.ModelParameterValue",
+        "McpTools",
+        "McpToolDefinition",
+        "ExecClientMessage",
+        "ExecClientControlMessage",
+        "ExecClientStreamClose",
+        "ExecClientHeartbeat",
+        "ExecClientThrow",
+        "ClientHeartbeat",
+        "HookAdditionalContext",
+        "ShellResult",
+        "ShellSuccess",
+        "ShellFailure",
+        "ShellTimeout",
+        "ShellRejected",
+        "ShellSpawnError",
+        "ShellPermissionDenied",
+        "OutputLocation",
+        "ReadResult",
+        "ReadSuccess",
+        "ReadError",
+        "ReadRejected",
+        "ReadFileNotFound",
+        "ReadPermissionDenied",
+        "ReadInvalidFile",
+        "WriteResult",
+        "WriteSuccess",
+        "WritePermissionDenied",
+        "WriteNoSpace",
+        "WriteError",
+        "WriteRejected",
+        "DeleteResult",
+        "DeleteSuccess",
+        "DeleteFileNotFound",
+        "DeleteNotFile",
+        "DeletePermissionDenied",
+        "DeleteFileBusy",
+        "DeleteRejected",
+        "DeleteError",
+        "McpResult",
+        "McpSuccess",
+        "McpToolResultContentItem",
+        "McpTextContent",
+        "McpError",
+        "McpRejected",
+        "McpPermissionDenied",
+        "McpToolNotFound",
+        "McpServerNotFound",
+        "McpApproved",
+        "SystemReminder",
+    )
+)
 SCALARS = {
     1: "double",
     2: "float",
@@ -74,7 +161,7 @@ def descriptor_array(source, start):
     raise ValueError("unterminated generated descriptor array")
 
 
-def extract(app, roots=(ROOT_TYPE,)):
+def extract(app, roots=(ROOT_TYPE,), *, transitive=True):
     version = plistlib.loads((app / "Contents/Info.plist").read_bytes())[
         "CFBundleShortVersionString"
     ]
@@ -137,7 +224,8 @@ def extract(app, roots=(ROOT_TYPE,)):
         if kind == "scalar":
             return SCALARS[value]
         if kind == "message":
-            visit(value)
+            if transitive:
+                visit(value)
             return definition(value)[0]
         if kind == "enum":
             name, raw = enums[value]
@@ -225,12 +313,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app", type=Path, default=Path("/Applications/Cursor.app"))
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--auxiliary", action="store_true")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--auxiliary", action="store_true")
+    group.add_argument("--agent", action="store_true")
     args = parser.parse_args()
     try:
         output = AUXILIARY_OUTPUT if args.auxiliary else OUTPUT
         roots = AUXILIARY_ROOTS if args.auxiliary else (ROOT_TYPE,)
-        content = extract(args.app, roots)
+        if args.agent:
+            output, roots = AGENT_OUTPUT, AGENT_ROOTS
+        content = extract(args.app, roots, transitive=not args.agent)
         metadata = json.loads(content)
         if args.check:
             baseline = json.loads(output.read_text(encoding="utf-8"))

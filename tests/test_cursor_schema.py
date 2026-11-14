@@ -102,6 +102,28 @@ class CursorSchemaTests(unittest.TestCase):
             result = json.loads(extract(app, (root, "agent.v1.NewerRPCRequest")))
         self.assertEqual(result["messages"], {root: []})
 
+    def test_shallow_snapshots_keep_field_types_without_enabling_children(self):
+        root = "agent.v1.AgentClientMessage"
+        child = "agent.v1.UnreviewedChild"
+        source = (
+            f'r=Z.makeMessageType("{root}",'
+            '()=>[{no:1,name:"child",kind:"message",T:c}]),'
+            f'c=Z.makeMessageType("{child}",'
+            '()=>[{no:1,name:"payload",kind:"scalar",T:12}])'
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary)
+            (app / BUNDLE).parent.mkdir(parents=True)
+            (app / BUNDLE).write_text(source, encoding="utf-8")
+            (app / "Contents/Info.plist").write_bytes(
+                plistlib.dumps({"CFBundleShortVersionString": "3.30.8"})
+            )
+            shallow = json.loads(extract(app, (root,), transitive=False))
+            complete = json.loads(extract(app, (root,)))
+        self.assertEqual(set(shallow["messages"]), {root})
+        self.assertEqual(shallow["messages"][root][0]["type"], child)
+        self.assertEqual(set(complete["messages"]), {root, child})
+
 
 if __name__ == "__main__":
     unittest.main()

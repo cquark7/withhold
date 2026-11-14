@@ -172,7 +172,7 @@ func TestTrafficRoutesAndConnectBlocks(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/new.Service/Method", "/agent.v1.AgentService/Run", "/aiserver.v1.FileSyncService/FSUploadFile", "/aiserver.v1.AiService/CppAppend", "/aiserver.v1.AiService/%4eameTab"} {
+	for _, path := range []string{"/new.Service/Method", "/agent.v1.AgentService/RunSSE", "/agent.v1.AgentService/RunPoll", "/aiserver.v1.BidiService/BidiAppend", "/aiserver.v1.FileSyncService/FSUploadFile", "/aiserver.v1.AiService/CppAppend", "/aiserver.v1.AiService/%4eameTab"} {
 		route := scope.Classify("api2.cursor.sh", path)
 		if !route.Unknown || route.Codec == nil {
 			t.Fatal("unknown/cache/blob path could bypass inspection")
@@ -338,10 +338,10 @@ func TestTabAndAuxiliaryUnreviewedStateFailsClosed(t *testing.T) {
 		body []byte
 	}{
 		{"aiserver.v1.StreamCppRequest", byteField(1, uintField(18, 1))},
-		{"aiserver.v1.StreamCppRequest", byteField(1, byteField(17, []byte("digest")))},
+		{"aiserver.v1.StreamCppRequest", byteField(1, byteField(99, []byte("unreviewed file state")))},
 		{"aiserver.v1.StreamCppRequest", byteField(22, nil)},
 		{"aiserver.v1.NameTabRequest", byteField(1, byteField(89, []byte("blob-reference")))},
-		{"aiserver.v1.NameTabRequest", byteField(1, byteField(18, nil))},
+		{"aiserver.v1.NameTabRequest", byteField(1, byteField(18, byteField(11, nil)))},
 	} {
 		if _, err := decodeMessage(test.name, test.body, policy.DecodeLimits{MaxBytes: testCap}); !errors.Is(err, ErrUnsupported) {
 			t.Fatalf("unreviewed context accepted: %v", err)

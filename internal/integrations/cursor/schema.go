@@ -17,6 +17,9 @@ var schemaData []byte
 //go:embed auxiliary-schema.json
 var auxiliarySchemaData []byte
 
+//go:embed agent-schema.json
+var agentSchemaData []byte
+
 type fieldDef struct {
 	Number   protowire.Number `json:"number"`
 	Name     string           `json:"name"`
@@ -49,21 +52,23 @@ func loadSchema() schema {
 	for name := range s.Messages {
 		s.inferenceTypes[name] = true
 	}
-	var auxiliary schema
-	if err := json.Unmarshal(auxiliarySchemaData, &auxiliary); err != nil {
-		panic("invalid embedded Cursor auxiliary schema")
-	}
-	for name, fields := range auxiliary.Messages {
-		if existing, ok := s.Messages[name]; ok && !slices.Equal(existing, fields) {
-			panic("conflicting embedded Cursor message schemas")
+	for _, data := range [][]byte{auxiliarySchemaData, agentSchemaData} {
+		var additional schema
+		if err := json.Unmarshal(data, &additional); err != nil {
+			panic("invalid embedded Cursor additional schema")
 		}
-		s.Messages[name] = fields
-	}
-	for name, values := range auxiliary.Enums {
-		if existing, ok := s.Enums[name]; ok && !slices.Equal(existing, values) {
-			panic("conflicting embedded Cursor enum schemas")
+		for name, fields := range additional.Messages {
+			if existing, ok := s.Messages[name]; ok && !slices.Equal(existing, fields) {
+				panic("conflicting embedded Cursor message schemas")
+			}
+			s.Messages[name] = fields
 		}
-		s.Enums[name] = values
+		for name, values := range additional.Enums {
+			if existing, ok := s.Enums[name]; ok && !slices.Equal(existing, values) {
+				panic("conflicting embedded Cursor enum schemas")
+			}
+			s.Enums[name] = values
+		}
 	}
 	s.fields = make(map[string]map[protowire.Number]fieldDef)
 	for name, fields := range s.Messages {
@@ -71,7 +76,7 @@ func loadSchema() schema {
 		for _, field := range fields {
 			if field.MapKey != "" {
 				entry := name + "." + field.Name + "Entry"
-				s.inferenceTypes[entry] = true
+				s.inferenceTypes[entry] = s.inferenceTypes[name]
 				s.fields[entry] = map[protowire.Number]fieldDef{
 					1: {Number: 1, Name: "key", Type: field.MapKey},
 					2: {Number: 2, Name: "value", Type: field.Type},
@@ -95,6 +100,9 @@ const (
 // Present fields with unresolved content, reference, or integrity semantics are
 // rejected even when their wire definitions are known.
 func supportedField(message string, field fieldDef) bool {
+	if fields, ok := agentFields[message]; ok {
+		return slices.Contains(fields, int(field.Number))
+	}
 	if !pinned.inferenceTypes[message] {
 		// Extraction records provenance, not permission. Only these separately
 		// reviewed auxiliary fields enter the runtime, even if their transitive
@@ -115,7 +123,7 @@ func supportedField(message string, field fieldDef) bool {
 			return false // Reasoning, alternate assistant parts, native content, or lineage.
 		}
 	case "aiserver.v1.InferenceContentPart":
-		return field.Number == 1
+		return field.Number == 1 || field.Number == 2 || field.Number == 3
 	case "aiserver.v1.InferenceCursorOptions":
 		return field.Number != 3 // Content digest.
 	}
@@ -124,7 +132,15 @@ func supportedField(message string, field fieldDef) bool {
 
 var auxiliaryFields = map[string][]int{
 	"aiserver.v1.NameTabRequest":                      {1, 2, 6, 7},
-	"aiserver.v1.ConversationMessage":                 {1, 2, 13, 32, 47, 57, 74, 77, 78, 79, 98},
+	"aiserver.v1.ConversationMessage":                 {1, 2, 3, 10, 13, 18, 32, 47, 57, 74, 77, 78, 79, 98},
+	"aiserver.v1.ConversationMessage.CodeChunk":       {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+	"aiserver.v1.ConversationMessage.ToolResult":      {1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14},
+	"aiserver.v1.ClientSideToolV2Result":              {1, 8, 24, 28, 35, 48, 49},
+	"aiserver.v1.RunTerminalCommandV2Result":          {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 17, 18},
+	"aiserver.v1.MCPResult":                           {1, 2},
+	"aiserver.v1.ToolResultError":                     {1, 2, 3},
+	"aiserver.v1.ImageProto":                          {1, 2, 3, 4},
+	"aiserver.v1.ImageProto.Dimension":                {1, 2},
 	"aiserver.v1.ModelInfo":                           {1},
 	"agent.v1.UpdateConversationMetadataRequest":      {1, 2, 3, 4},
 	"aiserver.v1.ClassifyAgentAutoReviewRequest":      {1, 2, 3, 4, 5},
@@ -132,10 +148,13 @@ var auxiliaryFields = map[string][]int{
 	"agent.v1.SmartModeClassifierConversationMessage": {1, 2, 3, 4},
 	"agent.v1.SmartModeClassifierInvokedFile":         {1, 2},
 	"agent.v1.SmartModeRiskTarget":                    {1, 2},
-	"aiserver.v1.StreamCppRequest":                    {1, 2, 3, 5, 6, 10, 11, 12, 17, 18, 20, 21, 23, 24, 25, 27, 28},
-	"aiserver.v1.CurrentFileInfo":                     {1, 2, 3, 5, 6, 8, 9, 18, 19, 20},
+	"aiserver.v1.StreamCppRequest":                    {1, 2, 3, 5, 6, 10, 11, 12, 13, 17, 18, 19, 20, 21, 23, 24, 25, 27, 28},
+	"aiserver.v1.CurrentFileInfo":                     {1, 2, 3, 5, 6, 8, 9, 11, 14, 17, 18, 19, 20},
+	"aiserver.v1.CppContextItem":                      {1, 2, 3, 4},
+	"aiserver.v1.AdditionalFile":                      {1, 2, 3, 4, 5, 6},
+	"aiserver.v1.LineRange":                           {1, 2},
 	"aiserver.v1.CursorPosition":                      {1, 2},
-	"aiserver.v1.CursorRange":                         {1, 2, 3, 4},
+	"aiserver.v1.CursorRange":                         {1, 2},
 }
 
 // Structural identifiers are inspected, but changing them is not a supported
@@ -162,6 +181,18 @@ func writableText(message, name string) bool {
 		return name == "plan_file_content"
 	case "aiserver.v1.ConversationMessage":
 		return name == "text" || name == "rich_text"
+	case "aiserver.v1.ConversationMessage.CodeChunk":
+		return name == "lines"
+	case "aiserver.v1.ConversationMessage.ToolResult":
+		return name == "args" || name == "raw_args" || name == "content"
+	case "aiserver.v1.RunTerminalCommandV2Result":
+		return name == "output" || name == "output_raw"
+	case "aiserver.v1.MCPResult":
+		return name == "result"
+	case "aiserver.v1.ImageProto":
+		return name == "task_specific_description"
+	case "aiserver.v1.InferenceImagePart", "aiserver.v1.InferenceFilePart":
+		return name == "data"
 	case "agent.v1.UpdateConversationMetadataRequest":
 		return name == "name" || name == "workspace_paths"
 	case "aiserver.v1.ClassifyAgentAutoReviewRequest":
