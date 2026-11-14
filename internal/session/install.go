@@ -68,8 +68,13 @@ func install(o Options) int {
 	fmt.Printf("Installed %s. Add %s to PATH.\n", target, dir)
 	return 0
 }
-func launch(o Options, e integration.Target, r Record, recordErr error) int {
-	launcher, ok := o.Application.(integration.Launcher)
+func launch(o Options, apps []application, r Record, recordErr error) int {
+	if len(apps) != 1 {
+		return fail(2, errors.New("launch requires one agent; use 'withhold launch AGENT -- ARGS...'"))
+	}
+	app := apps[0]
+	e := app.Target
+	launcher, ok := app.adapter.(integration.Launcher)
 	if !ok {
 		return fail(2, errors.New("selected integration does not support launch; follow its integration guide"))
 	}
@@ -79,7 +84,11 @@ func launch(o Options, e integration.Target, r Record, recordErr error) int {
 	if state, _ := ownership(o.Port, r); state != "ours" {
 		return fail(1, errors.New("application launch requires an authenticated guard listener"))
 	}
-	if e.Resource != r.Resource || o.Integration != r.Integration {
+	matched := false
+	for _, managed := range r.Applications {
+		matched = matched || managed.Agent == app.Agent && managed.Target.Resource == e.Resource
+	}
+	if !matched {
 		return fail(1, errors.New("application settings differ from the running session; run 'withhold off' before changing integrations or settings"))
 	}
 	if _, err := certstore.Load(o.Dir); err != nil {

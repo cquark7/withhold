@@ -3,19 +3,19 @@ package cursor
 const agentClientMessage = "agent.v1.AgentClientMessage"
 
 // Only reviewed Agent fields are admitted. Blob references additionally need
-// a complete typed graph in this envelope. A descriptor's presence does not
-// authorize cached context, credentials, or cross-message output streams.
+// a complete typed graph locally available in this stream. A descriptor's
+// presence does not authorize server caches, credentials, or output streams.
 var agentFields = map[string][]int{
 	agentClientMessage:                                                {1, 2, 4, 5, 7, 8},
 	"agent.v1.AgentRunRequest":                                        {1, 2, 3, 4, 5, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 26, 28, 31, 32, 33, 34, 36, 37},
 	"agent.v1.ConversationStateStructure":                             {3, 4, 6, 7, 8, 9, 10, 17, 18, 19, 22, 26, 27, 33, 34, 35, 36, 37, 38, 39, 42, 49, 50, 51},
-	"agent.v1.ConversationAction":                                     {1, 2, 3, 11},
+	"agent.v1.ConversationAction":                                     {1, 2, 3, 11, 17},
 	"agent.v1.UserMessageAction":                                      {1, 2, 3, 4},
 	"agent.v1.ResumeAction":                                           {2},
 	"agent.v1.CancelAction":                                           {1},
-	"agent.v1.UserMessage":                                            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 21, 24, 25, 26, 27, 28, 30, 31, 33, 34, 35, 36, 37, 38},
+	"agent.v1.UserMessage":                                            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 18, 19, 21, 24, 25, 26, 27, 28, 30, 31, 33, 34, 35, 36, 37, 38},
 	"agent.v1.SelectedContext":                                        {3, 4, 5, 6, 7, 10, 12, 16},
-	"agent.v1.ExtraContextEntry":                                      {1},
+	"agent.v1.ExtraContextEntry":                                      {1, 2},
 	"agent.v1.SelectedFile":                                           {1, 2, 3},
 	"agent.v1.SelectedCodeSelection":                                  {1, 2, 3, 4},
 	"agent.v1.SelectedTerminal":                                       {1, 2, 3},
@@ -158,7 +158,7 @@ var agentFields = map[string][]int{
 	"agent.v1.ReadToolCall":                                           {1, 2},
 	"agent.v1.ReadToolArgs":                                           {1, 2, 3, 5},
 	"agent.v1.ReadToolResult":                                         {1, 2},
-	"agent.v1.ReadToolSuccess":                                        {1, 2, 3, 4, 5, 7, 8, 11, 12, 13},
+	"agent.v1.ReadToolSuccess":                                        {1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13},
 	"agent.v1.ReadToolError":                                          {1},
 	"agent.v1.ReadRange":                                              {1, 2},
 	"agent.v1.EditToolCall":                                           {1, 2},
@@ -205,10 +205,17 @@ var agentFields = map[string][]int{
 	"agent.v1.FileDiagnostics":                                        {1, 2, 3},
 	"agent.v1.DiagnosticItem":                                         {1, 2, 3, 4, 5, 6},
 	"agent.v1.DiagnosticRange":                                        {1, 2},
+	"agent.v1.RequestContextPartReferences":                           {1, 2, 3, 4, 5, 6, 7, 8, 9},
+	"agent.v1.RequestContextRulesPart":                                {1, 2, 3},
+	"agent.v1.RequestContextSkillsPart":                               {1, 2},
+	"agent.v1.RequestContextSubagentsPart":                            {1},
+	"agent.v1.RequestContextMcpsPart":                                 {1, 2},
 }
 
 func agentContent(message, field string) bool {
 	switch message {
+	case agentBlobText:
+		return field == "text"
 	case "agent.v1.AgentRunRequest", "agent.v1.PrewarmRequest":
 		return field == "custom_system_prompt"
 	case "agent.v1.UserMessage":
@@ -228,6 +235,8 @@ func agentContent(message, field string) bool {
 	case "agent.v1.RequestContext":
 		return field == "cloud_rule" || field == "user_intent_summary" || field == "hooks_additional_context" ||
 			field == "conversation_notes_listing" || field == "shared_notes_listing"
+	case "agent.v1.RequestContextRulesPart":
+		return field == "cloud_rule"
 	case "agent.v1.ShellSuccess", "agent.v1.ShellFailure":
 		return field == "stdout" || field == "stderr" || field == "interleaved_output" || field == "output_head" || field == "output_tail"
 	case "agent.v1.ReadSuccess", "agent.v1.ReadToolSuccess":
@@ -273,6 +282,19 @@ func agentContent(message, field string) bool {
 		return field == "stream_content"
 	case "agent.v1.EditSuccess":
 		return field == "diff_string" || field == "before_full_file_content" || field == "after_full_file_content"
+	}
+	return false
+}
+
+// Inline prompts are independent text, not file edits or content-addressed
+// history. Identifiers, map keys, integrity-bound tool results, and blob
+// projections retain their immutable policy.
+func agentWritableText(message, field string) bool {
+	switch message {
+	case "agent.v1.UserMessage":
+		return field == "text" || field == "rich_text" || field == "subagent_system_reminder" || field == "forked_context"
+	case "agent.v1.AgentRunRequest", "agent.v1.PrewarmRequest":
+		return field == "custom_system_prompt"
 	}
 	return false
 }

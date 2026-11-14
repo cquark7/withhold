@@ -1,8 +1,7 @@
 # Adding an integration
 
-Every adapter must supply a commented TOML application example for
-`withhold config --example --integration NAME`, and a profile suspicion default
-for effective configuration. Make traffic customization adapter-owned and
+Every adapter must supply a namespaced TOML example under `[applications.ID]` for
+`withhold config NAME --example`. Make traffic customization adapter-owned and
 include normalized defaults in its settings where appropriate. Keep its support matrix explicit:
 record live-tested application versions and dates, or mark that validation as
 not recorded; never substitute fixture success for real application validation.
@@ -76,7 +75,7 @@ Add one explicit `definition` to `internal/integrations/registry.go` containing:
 Both factories receive the normalized settings, so adapter-specific provider or
 endpoint choices can drive routing and application setup without global fields.
 
-The CLI's `--integration`, catalog, and completion use that registry. Do not add
+The CLI's positional agent targets, `agents` catalog, and completion use that registry. Do not add
 agent-specific branches to CLI, shared config, session, proxy, policy, or scanner
 packages. Reuse traffic profiles independently of harness setup when justified;
 no general plugin framework is required.

@@ -26,9 +26,9 @@ before forwarding it to the provider.
   <br>
 </p>
 
-**Works with desktop VS Code + GitHub Copilot.** See the
-[integration guide](docs/integrations/vscode-copilot.md) for setup and platform
-requirements. Want another coding agent? [Help build an integration](#contribute).
+**Supports desktop VS Code + GitHub Copilot and bounded local Cursor Agent/Auto
+egress.** See the [agent catalog](docs/integrations/README.md) for exact scope and
+platform requirements. Want another agent? [Help build an integration](#contribute).
 
 ## Why withhold
 
@@ -120,9 +120,10 @@ uses manual trust. Review
 [integration guide](docs/integrations/vscode-copilot.md) first.
 
 ```sh
-withhold setup
+withhold agents
+withhold setup vscode-copilot
 withhold doctor
-withhold on --integration vscode-copilot
+withhold on
 # Open VS Code normally; restart it once after initial CA setup.
 withhold status
 ```
@@ -134,6 +135,10 @@ a running proxy alone does not prove the editor is routing supported traffic.
 ```sh
 withhold off       # Stop the session and restore managed settings.
 ```
+
+Use multiple agents with `withhold setup cursor vscode-copilot`, then `withhold on`.
+Setup saves the default set; `withhold on cursor` overrides it for one session
+without changing your defaults. `off` restores all applications in that session.
 
 See [recovery and removal](docs/usage.md#recovery-and-removal) for interrupted
 sessions and CA cleanup. withhold does not restart automatically at login/reboot.

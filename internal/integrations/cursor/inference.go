@@ -3,8 +3,10 @@ package cursor
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"strconv"
@@ -77,6 +79,7 @@ type InferenceMessage struct {
 	jsonBytes   int64
 	messageType string
 	ctx         context.Context
+	agentStream *agentStream
 }
 
 type decoder struct {
@@ -95,6 +98,10 @@ func DecodeRunInference(body []byte, maxBytes int64) (*InferenceMessage, error) 
 }
 
 func decodeMessage(name string, body []byte, limits policy.DecodeLimits) (*InferenceMessage, error) {
+	return decodeWithAgentBlobs(name, body, limits, nil)
+}
+
+func decodeWithAgentBlobs(name string, body []byte, limits policy.DecodeLimits, stream *agentStream) (*InferenceMessage, error) {
 	maxBytes := limits.MaxBytes
 	if maxBytes <= 0 || maxBytes > 128*1024*1024 || int64(len(body)) > maxBytes {
 		return nil, ErrLimit
@@ -118,20 +125,28 @@ func decodeMessage(name string, body []byte, limits policy.DecodeLimits) (*Infer
 	if err != nil {
 		return nil, err
 	}
-	result := &InferenceMessage{root: root, maxBytes: maxBytes, jsonBytes: int64(len(`{"fields":[]}`)), messageType: name, ctx: ctx}
+	result := &InferenceMessage{root: root, maxBytes: maxBytes, jsonBytes: int64(len(`{"fields":[]}`)), messageType: name, ctx: ctx, agentStream: stream}
 	if err := result.collect(root, nil); err != nil {
 		return nil, err
 	}
+	var uploads map[[sha256.Size]byte][]byte
 	if name == agentClientMessage {
-		blobs, err := d.agentBlobs(root)
+		blobs, uploaded, err := d.agentBlobs(root, stream)
 		if err != nil {
 			return nil, err
 		}
 		for _, blob := range blobs {
+			start := len(result.slots)
 			if err := result.collect(blob, nil); err != nil {
 				return nil, err
 			}
+			// Content-addressed uploads cannot be changed independently of
+			// their references. Direct prompt text has no such hash binding.
+			for i := start; i < len(result.slots); i++ {
+				result.slots[i].writable = false
+			}
 		}
+		uploads = uploaded
 	}
 	// Include the scanner-facing independent copy in retained-input admission.
 	if err := reserve(2 * int(result.jsonBytes)); err != nil {
@@ -149,6 +164,12 @@ func decodeMessage(name string, body []byte, limits policy.DecodeLimits) (*Infer
 	}
 	if int64(len(result.projection)) > maxBytes {
 		return nil, ErrLimit
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := stream.retain(uploads); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -204,7 +225,9 @@ func (d *decoder) message(name string, body []byte, depth int) (*wireMessage, er
 		}
 		def, ok := definitions[number]
 		if !ok || !supportedField(name, def) {
-			return nil, ErrUnsupported
+			// Descriptor names and field numbers are fixed protocol metadata,
+			// not request values. Keep unsupported-shape diagnostics value-free.
+			return nil, fmt.Errorf("%w: %s field %d", ErrUnsupported, name, number)
 		}
 		if seen[number] && !def.Repeated || def.Oneof != "" && oneofs[def.Oneof] {
 			return nil, ErrUnsupported
@@ -270,6 +293,12 @@ func (d *decoder) message(name string, body []byte, depth int) (*wireMessage, er
 	case "agent.v1.CursorRule":
 		if field := m.field(17); field != nil && field.uint() != 0 {
 			return nil, ErrUnsupported // An omitted rule body is not self-contained.
+		}
+	case "agent.v1.RequestContextPartReferences":
+		for _, number := range []protowire.Number{1, 3, 5, 7} {
+			if field := m.field(number); field == nil || len(field.payload) != sha256.Size {
+				return nil, ErrUnsupported
+			}
 		}
 	case invokeModel:
 		if (m.field(2) == nil) == (m.field(7) == nil) {
@@ -385,13 +414,15 @@ func (m *InferenceMessage) collect(message *wireMessage, key *wireField) error {
 				(message.name == "aiserver.v1.CurrentFileInfo" && field.def.Name == "contents" ||
 					message.name == "aiserver.v1.CppContextItem" && field.def.Name == "contents" ||
 					message.name == "aiserver.v1.AdditionalFile" && field.def.Name == "visible_range_content")
+			if message.name == "aiserver.v1.InferenceReasoningPart" && field.def.Name == "text" {
+				// Reasoning is inspected, but must retain its provider signature.
+				slot.content = true
+			}
 			if m.messageType == agentClientMessage {
 				slot.content = agentContent(message.name, field.def.Name) ||
 					message.name == "google.protobuf.Value" && field.def.Name == "string_value" ||
 					strings.HasSuffix(message.name, ".file_contentsEntry") && field.def.Name == "value"
-				// Until reference replay is established, Agent text is inspected
-				// but not rewritten, including map keys and structured tool data.
-				slot.writable = false
+				slot.writable = agentWritableText(message.name, field.def.Name)
 			}
 			if message.name == "aiserver.v1.InferenceImagePart" {
 				slot.content = false
@@ -538,7 +569,9 @@ func (m *InferenceMessage) Rewrite(scanned []byte) ([]byte, error) {
 		if string(field.payload) != text && !writable {
 			return ErrUnsupported
 		}
-		changes[field] = []byte(text)
+		if string(field.payload) != text {
+			changes[field] = []byte(text)
+		}
 		return nil
 	}
 	for i, pair := range pairs {
@@ -562,16 +595,25 @@ func (m *InferenceMessage) Rewrite(scanned []byte) ([]byte, error) {
 			}
 		}
 	}
-	if m.messageType == agentClientMessage {
-		// Blob projections are inspection-only trees, not children to encode
-		// into reference fields. All Agent slots and keys are immutable.
-		return bytes.Clone(m.root.raw), nil
+	if m.messageType == clientMessage {
+		if run := m.root.field(1); run != nil {
+			// Negotiate complete invocations instead of retaining delta bases.
+			// The server advertises its accepted capabilities back to Cursor.
+			for _, number := range []protowire.Number{18, 27} {
+				if field := run.child.field(number); field != nil && field.uint() != 0 {
+					changes[field] = protowire.AppendVarint(nil, 0)
+				}
+			}
+		}
+	}
+	if len(changes) == 0 {
+		return append([]byte{}, m.root.raw...), nil
 	}
 	body, err := m.root.encode(changes, m.maxBytes)
 	if err != nil {
 		return nil, err
 	}
-	verified, err := decodeMessage(m.messageType, body, policy.DecodeLimits{MaxBytes: m.maxBytes, Context: m.ctx})
+	verified, err := decodeWithAgentBlobs(m.messageType, body, policy.DecodeLimits{MaxBytes: m.maxBytes, Context: m.ctx}, m.agentStream)
 	if err != nil {
 		return nil, ErrRewrite
 	}

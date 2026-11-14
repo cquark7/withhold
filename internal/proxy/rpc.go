@@ -91,6 +91,39 @@ func (p *Proxy) rpc(w http.ResponseWriter, r *http.Request, route policy.Route) 
 	})
 	defer stop()
 	defer body.Close()
+	if route.Codec.OpenStream != nil {
+		body.stateTicket = &ticket{b: &p.budget}
+		stream, err := route.Codec.OpenStream(policy.DecodeLimits{
+			MaxBytes: p.config.MaxBytes, Reserve: func(n int) error {
+				if n < 0 || int64(n) > p.config.MaxBytes-body.stateTicket.used {
+					return errCap
+				}
+				return body.stateTicket.add(n)
+			}, Context: uploadContext,
+		})
+		// Keep a returned stream owned even if its initialization also failed.
+		body.stream = stream
+		if err != nil || stream == nil {
+			if err == nil {
+				err = &rpcFailure{reason: "rpc-inspection-failed"}
+			}
+			failure := rpcError(err)
+			if failure.transport || !p.config.Observe {
+				body.fail(err)
+				p.rpcReject(w, r, route, body.failure())
+				return
+			}
+			// Audit-only operation can still use the stateless decoder, with
+			// normal message admission and framing. Never use partial state or
+			// substitute an unbounded raw upload.
+			p.audit.emit(r, route, "block", "blocked", failureReport(failure), true, false)
+		} else {
+			codec := *route.Codec
+			codec.Decode = stream.Decode
+			route.Codec = &codec
+			body.route = route
+		}
+	}
 	// Inspect the first message before opening upstream. Later reads are driven
 	// by upstream backpressure, not an unbounded producer goroutine or queue.
 	if err := body.next(); err != nil {
@@ -243,21 +276,27 @@ func (p *Proxy) rpcMessage(r *http.Request, route policy.Route, data []byte, t *
 	status, _ := report["status"].(string)
 	decision := policy.Evaluate(route, status, residue(report) > 0, false)
 	var rewritten []byte
-	if decision.Action == "redact" && !p.config.Observe {
-		encoded, ok := report["body_base64"].(string)
-		projection, err := base64.StdEncoding.Strict().DecodeString(encoded)
-		if !ok || err != nil || int64(len(projection)) > p.config.MaxBytes {
-			return nil, &rpcFailure{reason: "invalid-rpc-rewrite"}
+	if (decision.Action == "forward" || decision.Action == "redact") && !p.config.Observe {
+		projection := input
+		if decision.Action == "redact" {
+			encoded, ok := report["body_base64"].(string)
+			projection, err = base64.StdEncoding.Strict().DecodeString(encoded)
+			if !ok || err != nil || int64(len(projection)) > p.config.MaxBytes {
+				return nil, &rpcFailure{reason: "invalid-rpc-rewrite"}
+			}
 		}
 		rewritten, err = message.Rewrite(projection)
 		if err != nil || rewritten == nil || int64(len(rewritten)) > p.config.MaxBytes {
 			return nil, &rpcFailure{reason: "invalid-rpc-rewrite", report: report}
 		}
+		if bytes.Equal(rewritten, data) {
+			rewritten = nil
+		}
 	}
 	debugDecision(r, status, decision.Action, decision.Reason, report, rewritten)
 	switch decision.Action {
 	case "forward":
-		return nil, nil
+		return rewritten, nil
 	case "redact":
 		p.audit.emit(r, route, "redact", "forwarded", report, p.config.Observe, true)
 		return rewritten, nil
@@ -272,23 +311,25 @@ func (p *Proxy) rpcMessage(r *http.Request, route policy.Route, data []byte, t *
 // rpcBody is read only by net/http's upload goroutine. Close can run
 // concurrently and never waits for that goroutine's blocked client read.
 type rpcBody struct {
-	proxy      *Proxy
-	request    *http.Request
-	route      policy.Route
-	format     connectrpc.Request
-	source     io.ReadCloser
-	controller *http.ResponseController
-	cancel     context.CancelFunc
-	ready      chan struct{}
-	current    *bytes.Reader
-	ticket     *ticket
-	in, out    int64
-	messages   int
-	mu         sync.Mutex
-	readMu     sync.Mutex
-	stopUpload context.CancelFunc
-	closed     bool
-	failed     *rpcFailure
+	proxy       *Proxy
+	request     *http.Request
+	route       policy.Route
+	format      connectrpc.Request
+	source      io.ReadCloser
+	controller  *http.ResponseController
+	cancel      context.CancelFunc
+	ready       chan struct{}
+	current     *bytes.Reader
+	ticket      *ticket
+	stateTicket *ticket
+	stream      policy.RPCStream
+	in, out     int64
+	messages    int
+	mu          sync.Mutex
+	readMu      sync.Mutex
+	stopUpload  context.CancelFunc
+	closed      bool
+	failed      *rpcFailure
 }
 
 func (b *rpcBody) failure() *rpcFailure {
@@ -452,12 +493,20 @@ func (b *rpcBody) Close() error {
 		_ = b.controller.SetReadDeadline(time.Now())
 		err := b.source.Close()
 		b.readMu.Lock()
+		defer b.readMu.Unlock()
+		if b.stateTicket != nil {
+			defer b.stateTicket.release()
+		}
 		if b.ticket != nil {
 			b.ticket.release()
 			b.ticket = nil
 		}
 		b.current = nil
-		b.readMu.Unlock()
+		if b.stream != nil {
+			b.stream.Close()
+			b.stream = nil
+		}
+		b.stateTicket = nil
 		return err
 	}
 	return nil

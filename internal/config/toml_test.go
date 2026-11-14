@@ -12,14 +12,14 @@ import (
 func TestTOMLPreservesTypedAdapterSettingsAndComments(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	text := `schema = 1
-integration = "fixture"
+agents = ["fixture"]
 [protection]
 chat = "redact" # Comments can explain protection decisions.
 pii = ["email", "phone"]
 [proxy]
 port = 8090
 extra_host_regex = ['api\.example\.test']
-[application]
+[applications.fixture]
 endpoint = "fixture"
 enabled = true
 models = ["one", "two"]
@@ -27,7 +27,7 @@ models = ["one", "two"]
 	if err := os.WriteFile(path, []byte(text), 0600); err != nil {
 		t.Fatal(err)
 	}
-	c, err := Load(path, true, Defaults("fixture", "linux"))
+	c, err := Load(path, true, Defaults("linux"))
 	if err != nil || c.Validate() != nil {
 		t.Fatalf("invalid configuration: %v", err)
 	}
@@ -36,7 +36,7 @@ models = ["one", "two"]
 		Enabled  bool     `json:"enabled"`
 		Models   []string `json:"models"`
 	}
-	if json.Unmarshal(c.Application, &application) != nil || application.Endpoint != "fixture" || !application.Enabled || !reflect.DeepEqual(application.Models, []string{"one", "two"}) {
+	if json.Unmarshal(c.Applications["fixture"], &application) != nil || application.Endpoint != "fixture" || !application.Enabled || !reflect.DeepEqual(application.Models, []string{"one", "two"}) {
 		t.Fatal("typed adapter-owned settings lost")
 	}
 	if c.Protection.Chat != "redact" || c.Proxy.Port != 8090 || !reflect.DeepEqual(c.Proxy.ExtraHostRegex, []string{`api\.example\.test`}) {
@@ -65,13 +65,13 @@ port = "PRIVATE"`,
 [proxy]
 port = 8090.0`,
 		`schema = 1
-[application]
+[applications.fixture]
 private = 2026-11-09`,
 		`schema = 1
-[application]
+[applications.fixture]
 private = nan`,
 		`schema = 1
-[application]
+[applications.fixture]
 private = inf`,
 		`schema = 1
 [proxy]
@@ -79,20 +79,20 @@ port = 8090
 [proxy]
 port = 8091`,
 		`schema = 1
-[application]
+[applications.fixture]
 secret = "PRIVATE"
 secret = "PRIVATE"`,
 		`schema = 1
-[Application]
+[Applications.fixture]
 binary = "PRIVATE"`,
 		`schema = 1
-[application]
+[applications.fixture]
 value = ` + strings.Repeat("[", 40) + `0` + strings.Repeat("]", 40),
 	} {
 		if err := os.WriteFile(path, []byte(text), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Load(path, true, Defaults("fixture", "linux")); err == nil || strings.Contains(err.Error(), "PRIVATE") {
+		if _, err := Load(path, true, Defaults("linux")); err == nil || strings.Contains(err.Error(), "PRIVATE") {
 			t.Fatalf("invalid config accepted or private value exposed: %v", err)
 		}
 	}
@@ -105,13 +105,13 @@ func TestFilesAlwaysUseTOMLRegardlessOfFilename(t *testing.T) {
 		if err := os.WriteFile(path, []byte(`{"schema":1,"application":{"private":"PRIVATE"}}`), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Load(path, true, Defaults("fixture", "linux")); err == nil || strings.Contains(err.Error(), "PRIVATE") {
+		if _, err := Load(path, true, Defaults("linux")); err == nil || strings.Contains(err.Error(), "PRIVATE") {
 			t.Fatalf("%s: JSON accepted or private value exposed: %v", name, err)
 		}
 		if err := os.WriteFile(path, []byte("schema = 1\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Load(path, true, Defaults("fixture", "linux")); err != nil {
+		if _, err := Load(path, true, Defaults("linux")); err != nil {
 			t.Fatalf("%s: TOML parsing depended on filename: %v", name, err)
 		}
 	}
@@ -123,7 +123,7 @@ func TestScanConfidenceIsValidatedAndPreservedInTOMLSnapshots(t *testing.T) {
 		if err := os.WriteFile(path, []byte("schema = 1\n[scan]\nconfidence = "+value+"\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		c, err := Load(path, true, Defaults("fixture", "linux"))
+		c, err := Load(path, true, Defaults("linux"))
 		if err == nil {
 			err = c.Validate()
 		}
@@ -141,7 +141,7 @@ func TestScanConfidenceIsValidatedAndPreservedInTOMLSnapshots(t *testing.T) {
 		if err := os.WriteFile(path, data, 0600); err != nil {
 			t.Fatal(err)
 		}
-		roundtrip, err := Load(path, true, Defaults("fixture", "linux"))
+		roundtrip, err := Load(path, true, Defaults("linux"))
 		if err != nil || !reflect.DeepEqual(roundtrip, c) {
 			t.Fatalf("confidence lost in snapshot: %v", err)
 		}

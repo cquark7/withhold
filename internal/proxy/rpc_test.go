@@ -27,6 +27,7 @@ import (
 	"github.com/cquark7/withhold/internal/policy"
 	"github.com/cquark7/withhold/internal/scanner"
 	"github.com/cquark7/withhold/internal/scanpool"
+	"github.com/cquark7/withhold/internal/testintegration"
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -69,6 +70,27 @@ func rpcCodec(stream, duplex bool) *policy.RPCCodec {
 			return testRPCMessage(data), nil
 		}}
 }
+
+type testRPCStream struct {
+	decode func([]byte, policy.DecodeLimits) (policy.Message, error)
+	close  func()
+}
+
+func (s *testRPCStream) Decode(data []byte, limits policy.DecodeLimits) (policy.Message, error) {
+	return s.decode(data, limits)
+}
+func (s *testRPCStream) Close() { s.close() }
+
+func rpcStateCodec(closed *atomic.Int32) *policy.RPCCodec {
+	codec := rpcCodec(true, true)
+	codec.OpenStream = func(limits policy.DecodeLimits) (policy.RPCStream, error) {
+		if err := limits.Reserve(8); err != nil {
+			return nil, err
+		}
+		return &testRPCStream{decode: codec.Decode, close: func() { closed.Add(1) }}, nil
+	}
+	return codec
+}
 func cleanRPCScanner() fakeScanner {
 	return fakeScanner{func(context.Context, []byte, int64) (scanner.Report, error) {
 		return scanner.Report{"status": "clean"}, nil
@@ -106,7 +128,7 @@ func newRPCFixture(t *testing.T, profile policy.Profile, scan Scanner, maxBytes 
 	}
 	roots := x509.NewCertPool()
 	roots.AddCert(up.Certificate())
-	p, err := New(Config{CA: ca, Roots: roots, Scope: profile, Scanner: scan, MaxBytes: maxBytes,
+	p, err := New(Config{CA: ca, Roots: roots, Scope: policy.Compose(profile, testintegration.Profile{Host: "unrelated.test", Mode: "redact"}), Scanner: scan, MaxBytes: maxBytes,
 		ScanTimeout: 200 * time.Millisecond, AuditPath: filepath.Join(dir, "audit"), HintPath: filepath.Join(dir, "hint")})
 	if err != nil {
 		t.Fatal(err)
@@ -261,7 +283,7 @@ func TestRPCDuplexInspectsBeforeReleaseAndStreamsBeforeEOF(t *testing.T) {
 func TestRPCLaterFailuresAbortResponseWithoutReleasingPayload(t *testing.T) {
 	for _, failure := range []string{"block", "scanner-error", "deadline", "panic", "invalid-rewrite", "unsupported", "envelope", "wire-cap"} {
 		t.Run(failure, func(t *testing.T) {
-			var scans atomic.Int32
+			var scans, closed atomic.Int32
 			scan := fakeScanner{func(ctx context.Context, data []byte, max int64) (scanner.Report, error) {
 				if scans.Add(1) == 1 {
 					return scanner.Report{"status": "clean"}, nil
@@ -286,7 +308,7 @@ func TestRPCLaterFailuresAbortResponseWithoutReleasingPayload(t *testing.T) {
 			}
 			received := make(chan []byte, 2)
 			upDone := make(chan struct{})
-			f := newRPCFixture(t, testRPCProfile{codec: rpcCodec(true, true), mode: mode}, scan, 256, func(w http.ResponseWriter, r *http.Request) {
+			f := newRPCFixture(t, testRPCProfile{codec: rpcStateCodec(&closed), mode: mode}, scan, 256, func(w http.ResponseWriter, r *http.Request) {
 				defer close(upDone)
 				frame, err := connectrpc.ReadFrame(r.Body, 4096, nil)
 				if err != nil {
@@ -331,6 +353,9 @@ func TestRPCLaterFailuresAbortResponseWithoutReleasingPayload(t *testing.T) {
 			}
 			receiveRPC(t, upDone)
 			assertRPCAdmissionReleased(t, f.proxy)
+			if closed.Load() != 1 {
+				t.Fatal("failed stream did not close request-local state exactly once")
+			}
 			select {
 			case <-received:
 				t.Fatal("failed later payload reached upstream")
@@ -563,7 +588,8 @@ func TestRPCServerStreamingAcceptsHTTP1ClientWithoutWaitingForEOF(t *testing.T) 
 }
 
 func TestRPCEarlyResponseStopsUploadWithoutWaitingForClientEOF(t *testing.T) {
-	f := newRPCFixture(t, testRPCProfile{codec: rpcCodec(true, true)}, cleanRPCScanner(), 4096,
+	var closed atomic.Int32
+	f := newRPCFixture(t, testRPCProfile{codec: rpcStateCodec(&closed)}, cleanRPCScanner(), 4096,
 		func(w http.ResponseWriter, r *http.Request) {
 			if _, err := connectrpc.ReadFrame(r.Body, 4096, nil); err != nil {
 				return
@@ -585,6 +611,9 @@ func TestRPCEarlyResponseStopsUploadWithoutWaitingForClientEOF(t *testing.T) {
 		t.Fatalf("early response failed: %v", err)
 	}
 	assertRPCAdmissionReleased(t, f.proxy)
+	if closed.Load() != 1 {
+		t.Fatal("early response retained stream state")
+	}
 }
 
 func TestRPCReleasedOutputHasCumulativeCap(t *testing.T) {
@@ -636,7 +665,8 @@ func TestRPCReleasedOutputHasCumulativeCap(t *testing.T) {
 
 func TestRPCIdleEnvelopeDoesNotHoldIntakeJob(t *testing.T) {
 	received := make(chan struct{})
-	f := newRPCFixture(t, testRPCProfile{codec: rpcCodec(true, true)}, cleanRPCScanner(), 4096,
+	var closed atomic.Int32
+	f := newRPCFixture(t, testRPCProfile{codec: rpcStateCodec(&closed)}, cleanRPCScanner(), 4096,
 		func(w http.ResponseWriter, r *http.Request) {
 			if _, err := connectrpc.ReadFrame(r.Body, 4096, nil); err != nil {
 				return
@@ -661,6 +691,12 @@ func TestRPCIdleEnvelopeDoesNotHoldIntakeJob(t *testing.T) {
 	if _, err := io.ReadFull(response.response.Body, ack); err != nil {
 		t.Fatal(err)
 	}
+	f.proxy.budget.mu.Lock()
+	retained := f.proxy.budget.bytes
+	f.proxy.budget.mu.Unlock()
+	if retained != 8 {
+		t.Fatal("idle stream state was released before the upload ended")
+	}
 	// Six finite uploads can still acquire admission while this stream waits for
 	// another header. A response is not an intake lease for its whole lifetime.
 	var tickets []*ticket
@@ -671,6 +707,9 @@ func TestRPCIdleEnvelopeDoesNotHoldIntakeJob(t *testing.T) {
 		}
 		tickets = append(tickets, ticket)
 	}
+	if err := tickets[0].add(64 * 1024 * 1024); !errors.Is(err, errCapacity) {
+		t.Fatal("retained stream state escaped aggregate input admission")
+	}
 	for _, ticket := range tickets {
 		ticket.release()
 	}
@@ -679,6 +718,74 @@ func TestRPCIdleEnvelopeDoesNotHoldIntakeJob(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertRPCAdmissionReleased(t, f.proxy)
+	if closed.Load() != 1 {
+		t.Fatal("completed upload retained stream state")
+	}
+}
+
+func TestRPCStreamInitializationCannotBypassAdmissionOrLeakState(t *testing.T) {
+	for _, observe := range []bool{false, true} {
+		for _, kind := range []string{"byte-cap", "aggregate", "negative", "factory-error", "nil-stream"} {
+			t.Run(kind+map[bool]string{false: "/enforce", true: "/observe"}[observe], func(t *testing.T) {
+				var calls, closed atomic.Int32
+				codec := rpcCodec(true, true)
+				codec.OpenStream = func(limits policy.DecodeLimits) (policy.RPCStream, error) {
+					state := &testRPCStream{decode: codec.Decode, close: func() { closed.Add(1) }}
+					switch kind {
+					case "factory-error":
+						if err := limits.Reserve(8); err != nil {
+							return state, err
+						}
+						return state, errors.New("private initialization detail")
+					case "nil-stream":
+						return nil, nil
+					case "byte-cap":
+						return state, limits.Reserve(int(limits.MaxBytes) + 1)
+					case "aggregate":
+						return state, limits.Reserve(64*1024*1024 + 1)
+					default:
+						return state, limits.Reserve(-1)
+					}
+				}
+				maxBytes := int64(4096)
+				if kind == "aggregate" {
+					maxBytes = 128 * 1024 * 1024
+				}
+				f := newRPCFixture(t, testRPCProfile{codec: codec}, cleanRPCScanner(), maxBytes, func(w http.ResponseWriter, r *http.Request) {
+					calls.Add(1)
+					_, _ = io.Copy(io.Discard, r.Body)
+					_, _ = w.Write([]byte("done"))
+				}, true)
+				f.proxy.config.Observe = observe
+				response, err := f.client.Do(f.request(t, bytes.NewReader(rpcFrame(t, []byte(`{"text":"clean"}`))), "application/connect+proto"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, err := io.ReadAll(response.Body)
+				_ = response.Body.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				expected := http.StatusRequestEntityTooLarge
+				if kind == "factory-error" || kind == "nil-stream" {
+					expected = http.StatusForbidden
+					if observe {
+						expected = http.StatusOK
+					}
+				}
+				if response.StatusCode != expected || bytes.Contains(body, []byte("private")) {
+					t.Fatal("stream initialization failure used incorrect or private error framing")
+				}
+				if expected != http.StatusOK && calls.Load() != 0 || expected == http.StatusOK && calls.Load() != 1 {
+					t.Fatal("stream initialization failure bypassed enforcement or broke observe mode")
+				}
+				if kind != "nil-stream" && closed.Load() != 1 {
+					t.Fatal("partially initialized stream was not closed exactly once")
+				}
+				assertRPCAdmissionReleased(t, f.proxy)
+			})
+		}
+	}
 }
 
 func TestCursorDuplexWithScannerWorker(t *testing.T) {
@@ -693,63 +800,94 @@ func TestCursorDuplexWithScannerWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	received := make(chan []byte, 2)
-	f := newRPCFixture(t, scope, pool, 1<<20, func(w http.ResponseWriter, r *http.Request) {
-		for range 2 {
-			frame, err := connectrpc.ReadFrame(r.Body, 1<<20, nil)
-			if err != nil {
-				return
-			}
-			received <- frame.Data
-			_, _ = w.Write([]byte("ack\n"))
-			w.(http.Flusher).Flush()
-		}
-	}, true)
-	f.proxy.config.ScanTimeout = 5 * time.Second
 	field := func(n protowire.Number, data []byte) []byte {
 		return protowire.AppendBytes(protowire.AppendTag(nil, n, 2), data)
 	}
-	invoke := func(text string) []byte { return field(2, field(2, field(1, field(2, []byte(text))))) }
-	reader, writer := io.Pipe()
-	defer reader.Close()
-	defer writer.Close()
-	request := f.request(t, reader, "application/connect+proto")
-	request.URL.Path = "/aiserver.v1.InferenceService/RunInference"
-	result := rpcStart(f, request)
-	first := invoke("Explain this function.")
-	_, _ = writer.Write(rpcFrame(t, first))
-	if !bytes.Equal(receiveRPC(t, received), first) {
-		t.Fatal("clean protobuf changed")
+	boolean := func(n protowire.Number, value uint64) []byte {
+		return protowire.AppendVarint(protowire.AppendTag(nil, n, 0), value)
 	}
-	response := receiveRPC(t, result)
-	if response.err != nil {
-		t.Fatal(response.err)
-	}
-	defer response.response.Body.Close()
-	ack := make([]byte, 4)
-	if _, err := io.ReadFull(response.response.Body, ack); err != nil {
-		t.Fatal(err)
-	}
+	invoke := func(messages ...[]byte) []byte { return field(2, field(2, bytes.Join(messages, nil))) }
+	text := func(s string) []byte { return field(1, field(2, []byte(s))) }
 	const sentinel = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
-	second := rpcFrame(t, invoke(`shell output token = "`+sentinel+`"`))
-	go func() {
-		for i := 0; i < len(second); i += 3 {
-			if _, err := writer.Write(second[i:min(i+3, len(second))]); err != nil {
-				return
+	for _, firstText := range []string{"Explain this function.", "Echo token = " + sentinel} {
+		t.Run(strings.Split(firstText, " ")[0], func(t *testing.T) {
+			received := make(chan []byte, 3)
+			f := newRPCFixture(t, scope, pool, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+				for range 3 {
+					frame, err := connectrpc.ReadFrame(r.Body, 1<<20, nil)
+					if err != nil {
+						return
+					}
+					received <- frame.Data
+					_, _ = w.Write([]byte("ack\n"))
+					w.(http.Flusher).Flush()
+				}
+			}, true)
+			f.proxy.config.ScanTimeout = 5 * time.Second
+			reader, writer := io.Pipe()
+			defer reader.Close()
+			defer writer.Close()
+			request := f.request(t, reader, "application/connect+proto")
+			request.URL.Path = "/aiserver.v1.InferenceService/RunInference"
+			result := rpcStart(f, request)
+			handshake := field(1, append(boolean(18, 1), boolean(27, 1)...))
+			_, _ = writer.Write(rpcFrame(t, handshake))
+			if got := receiveRPC(t, received); !bytes.Equal(got, field(1, append(boolean(18, 0), boolean(27, 0)...))) {
+				t.Fatal("clean handshake did not negotiate full invocations")
 			}
-		}
-		_ = writer.Close()
-	}()
-	got := receiveRPC(t, received)
-	if bytes.Contains(got, []byte(sentinel)) || !bytes.Contains(got, []byte("<WITHHELD_")) {
-		t.Fatal("real scanner did not sanitize actual upstream protobuf")
-	}
-	// Decode independently of the proxy's projection/rewrite path.
-	if _, err := cursor.DecodeRunInference(got, 1<<20); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.ReadAll(response.response.Body); err != nil {
-		t.Fatal(err)
+			response := receiveRPC(t, result)
+			if response.err != nil {
+				t.Fatal(response.err)
+			}
+			defer response.response.Body.Close()
+			ack := make([]byte, 4)
+			if _, err := io.ReadFull(response.response.Body, ack); err != nil {
+				t.Fatal(err)
+			}
+			first := invoke(text(firstText))
+			_, _ = writer.Write(rpcFrame(t, first))
+			got := receiveRPC(t, received)
+			if bytes.Contains(got, []byte(sentinel)) {
+				t.Fatal("initial prompt reached upstream without redaction")
+			}
+			if !strings.Contains(firstText, sentinel) && !bytes.Equal(got, first) {
+				t.Fatal("clean model content changed")
+			}
+			if _, err := io.ReadFull(response.response.Body, ack); err != nil {
+				t.Fatal(err)
+			}
+			reasoning := field(7, append(
+				field(2, []byte("Consider the previous response.")),
+				field(3, []byte("fixture-provider-signature"))...,
+			))
+			// Cursor retains the original user prompt locally, even after its
+			// upstream representation has been redacted.
+			second := rpcFrame(t, invoke(
+				text(firstText),
+				field(1, append(field(2, []byte("Previous response.")), reasoning...)),
+				text("What does this mean? File content token = "+sentinel),
+				field(1, field(6, field(1, field(3, field(3, []byte("tool output token = "+sentinel)))))),
+			))
+			go func() {
+				for i := 0; i < len(second); i += 3 {
+					if _, err := writer.Write(second[i:min(i+3, len(second))]); err != nil {
+						return
+					}
+				}
+				_ = writer.Close()
+			}()
+			got = receiveRPC(t, received)
+			if bytes.Contains(got, []byte(sentinel)) || !bytes.Contains(got, []byte("<WITHHELD_")) ||
+				!bytes.Contains(got, reasoning) || !bytes.Contains(got, []byte("What does this mean?")) {
+				t.Fatal("follow-up failed to sanitize history/file/tool content or preserve signed reasoning")
+			}
+			if _, err := cursor.DecodeRunInference(got, 1<<20); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.ReadAll(response.response.Body); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
@@ -817,7 +955,7 @@ func TestCursorContentCompatibilityWithScannerWorker(t *testing.T) {
 		{"agent-prompt-clean", "/agent.v1.AgentService/Run", "application/connect+proto", "",
 			field(1, field(2, field(1, field(1, field(1, []byte("ordinary prompt")))))), true, true, false, false},
 		{"agent-prompt-findings", "/agent.v1.AgentService/Run", "application/connect+proto", "",
-			field(1, field(2, field(1, field(1, field(1, []byte(sentinel)))))), true, true, true, false},
+			field(1, field(2, field(1, field(1, field(1, []byte(sentinel)))))), true, true, false, true},
 		{"agent-prefetched-blob", "/agent.v1.AgentService/Run", "application/connect+proto", "",
 			field(1, field(17, field(2, []byte("uninspected blob")))), true, true, true, false},
 		{"agent-shell-stream-fragment", "/agent.v1.AgentService/Run", "application/connect+proto", "",
@@ -835,7 +973,7 @@ func TestCursorContentCompatibilityWithScannerWorker(t *testing.T) {
 		{"agent-context-finding", "/agent.v1.AgentService/Run", "application/connect+proto", "",
 			field(2, field(10, field(1, field(1, field(29, field(2, []byte(sentinel))))))), true, true, true, false},
 		{"agent-prewarm-finding", "/agent.v1.AgentService/Run", "application/connect+proto", "",
-			field(8, field(8, []byte(sentinel))), true, true, true, false},
+			field(8, field(8, []byte(sentinel))), true, true, false, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			scope, err := cursor.NewTraffic(policy.ScopeOptions{AllowHosts: []string{"127.0.0.1"}, InlineMode: test.inlineMode})
@@ -1023,6 +1161,150 @@ func TestCursorAgentDuplexLaterResultsWithScannerWorker(t *testing.T) {
 				receiveRPC(t, upDone)
 			}
 			assertRPCAdmissionReleased(t, f.proxy)
+		})
+	}
+}
+
+func TestCursorAgentBlobReplayWithScannerWorker(t *testing.T) {
+	binary := os.Getenv("WITHHOLD_TEST_SCANNER_WORKER")
+	if binary == "" {
+		t.Skip("set WITHHOLD_TEST_SCANNER_WORKER to run process scanning")
+	}
+	pool := scanpool.NewWithEnvironment(binary, []string{
+		"HOME=" + t.TempDir(), "WITHHOLD_PLACEHOLDER_KEY=isolated-cursor-replay-test",
+	}, "--body")
+	defer pool.Close()
+	field := func(n protowire.Number, data []byte) []byte {
+		return protowire.AppendBytes(protowire.AppendTag(nil, n, protowire.BytesType), data)
+	}
+	const secret = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
+	for _, kind := range []string{"clean", "later-finding", "observe-replayed-finding"} {
+		t.Run(kind, func(t *testing.T) {
+			text := "ordinary previous conversation summary"
+			observe := kind == "observe-replayed-finding"
+			if observe {
+				text = secret
+			}
+			// The historical user message references a state snapshot. The later
+			// action supplies neither that snapshot nor its summary again.
+			var blobs []byte
+			blob := func(data []byte) []byte {
+				id := sha256.Sum256(data)
+				blobs = append(blobs, field(17, append(field(1, id[:]), field(2, data)...))...)
+				return id[:]
+			}
+			summary := blob(field(1, []byte(text)))
+			state := blob(field(6, summary))
+			user := blob(field(10, state))
+			turn := blob(field(1, field(1, user)))
+			first := field(1, append(field(1, field(8, turn)), blobs...))
+			follow := field(10, state)
+			if kind == "later-finding" {
+				follow = append(follow, field(1, []byte(secret))...)
+			}
+			later := field(4, field(1, field(1, follow)))
+			inputs := make(chan []byte, 2)
+			scan := fakeScanner{func(ctx context.Context, input []byte, maxBytes int64) (scanner.Report, error) {
+				inputs <- bytes.Clone(input)
+				return pool.Scan(ctx, input, maxBytes)
+			}}
+			scope, err := cursor.NewTraffic(policy.ScopeOptions{AllowHosts: []string{"127.0.0.1"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			received := make(chan connectrpc.Frame, 2)
+			done := make(chan struct{})
+			f := newRPCFixture(t, scope, scan, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+				defer close(done)
+				for range 2 {
+					frame, err := connectrpc.ReadFrame(r.Body, 1<<20, nil)
+					if err != nil {
+						<-r.Context().Done()
+						return
+					}
+					received <- frame
+					_, _ = w.Write([]byte("ack\n"))
+					w.(http.Flusher).Flush()
+				}
+			}, true)
+			f.proxy.config.Observe = observe
+			f.proxy.config.ScanTimeout = 5 * time.Second
+			reader, writer := io.Pipe()
+			defer reader.Close()
+			defer writer.Close()
+			request := f.request(t, reader, "application/connect+proto")
+			request.URL.Path = "/agent.v1.AgentService/Run"
+			request.Header.Set("Connect-Content-Encoding", "gzip")
+			result := rpcStart(f, request)
+			var compressed bytes.Buffer
+			z := gzip.NewWriter(&compressed)
+			_, _ = z.Write(first)
+			_ = z.Close()
+			initial, err := connectrpc.Envelope(1, compressed.Bytes(), 1<<20)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := writer.Write(initial); err != nil {
+				t.Fatal(err)
+			}
+			got := receiveRPC(t, received)
+			if got.Flags != 1 || !bytes.Equal(got.Data, compressed.Bytes()) {
+				t.Fatal("original compressed blob graph changed")
+			}
+			response := receiveRPC(t, result)
+			if response.err != nil {
+				t.Fatal(response.err)
+			}
+			defer response.response.Body.Close()
+			ack := make([]byte, 4)
+			if _, err := io.ReadFull(response.response.Body, ack); err != nil {
+				t.Fatal("blob graph waited for upload EOF")
+			}
+			fragmented := rpcFrame(t, later)
+			go func() {
+				for start := 0; start < len(fragmented); start += 2 {
+					if _, err := writer.Write(fragmented[start:min(start+2, len(fragmented))]); err != nil {
+						return
+					}
+				}
+				_ = writer.Close()
+			}()
+			_, readErr := io.ReadAll(response.response.Body)
+			receiveRPC(t, done)
+			for range 2 {
+				if input := receiveRPC(t, inputs); !bytes.Contains(input, []byte(text)) {
+					t.Fatal("replayed context was omitted from scanner-worker input")
+				}
+			}
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			got = receiveRPC(t, received)
+			if kind == "later-finding" {
+				if got.Flags != 0 || bytes.Contains(got.Data, []byte(secret)) ||
+					!bytes.Contains(got.Data, []byte("<WITHHELD_")) || !bytes.Contains(got.Data, field(10, state)) {
+					t.Fatal("inline follow-up was not redacted while retaining its history reference")
+				}
+			} else if got.Flags != 0 || !bytes.Equal(got.Data, later) {
+				t.Fatal("clean/observe replay changed reference bytes")
+			}
+			assertRPCAdmissionReleased(t, f.proxy)
+			if !observe {
+				// The same profile and upstream connection cannot authorize the
+				// references on a different HTTP request, including a retry.
+				retry := f.request(t, bytes.NewReader(rpcFrame(t, later)), "application/connect+proto")
+				retry.URL.Path = "/agent.v1.AgentService/Run"
+				retried, err := f.client.Do(retry)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, err := io.ReadAll(retried.Body)
+				_ = retried.Body.Close()
+				if err != nil || !bytes.Contains(body, []byte("blocked")) {
+					t.Fatal("retry inherited another upload's blob state")
+				}
+				assertRPCAdmissionReleased(t, f.proxy)
+			}
 		})
 	}
 }

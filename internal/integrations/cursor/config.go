@@ -8,7 +8,7 @@ import (
 	"github.com/cquark7/withhold/internal/config"
 )
 
-const Example = `[application]
+const Example = `[applications.cursor]
 binary = "cursor"
 settings_dir = "Cursor"
 `

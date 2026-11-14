@@ -10,7 +10,6 @@ import (
 	"runtime"
 
 	"github.com/cquark7/withhold/internal/config"
-	"github.com/cquark7/withhold/internal/integrations"
 	"github.com/cquark7/withhold/internal/localstate"
 )
 
@@ -18,22 +17,18 @@ func configInit(w io.Writer, o cliOptions, flags *flag.FlagSet) int {
 	var unsupported string
 	flags.Visit(func(option *flag.Flag) {
 		switch option.Name {
-		case "init", "dir", "config", "integration":
+		case "init", "dir", "config":
 		default:
 			unsupported = option.Name
 		}
 	})
 	if unsupported != "" {
-		return commandUsageError("config", "--init accepts only --dir, --config and --integration; omit --"+unsupported)
+		return commandUsageError("config", "--init accepts only agent names, --dir and --config; omit --"+unsupported)
 	}
 	if flagSet(flags, "config") && o.configPath == "" {
 		return commandUsageError("config", "--config requires a file path")
 	}
-	id := o.integration
-	if !flagSet(flags, "integration") {
-		id = env("WITHHOLD_INTEGRATION", id)
-	}
-	if _, err := integrations.Example(id); err != nil {
+	if _, err := applicationExamples(flags.Args()); err != nil {
 		return commandUsageError("config", err.Error())
 	}
 	path := o.configPath
@@ -45,8 +40,7 @@ func configInit(w io.Writer, o cliOptions, flags *flag.FlagSet) int {
 		fmt.Fprintln(os.Stderr, "withhold: cannot resolve configuration path")
 		return 1
 	}
-	selectIntegration := flagSet(flags, "integration") || os.Getenv("WITHHOLD_INTEGRATION") != ""
-	if err = createConfig(path, id, selectIntegration); err != nil {
+	if err = createConfig(path, flags.Args()); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			fmt.Fprintf(os.Stderr, "withhold: configuration already exists; not overwritten: %s\n", path)
 		} else {
@@ -58,12 +52,12 @@ func configInit(w io.Writer, o cliOptions, flags *flag.FlagSet) int {
 	return 0
 }
 
-func createConfig(path, id string, selectIntegration bool) error {
-	application, err := integrations.Example(id)
+func createConfig(path string, agents []string) error {
+	application, err := applicationExamples(agents)
 	if err != nil {
 		return err
 	}
-	text := config.Starter(id, runtime.GOOS, application, selectIntegration)
+	text := config.Starter(agents, runtime.GOOS, application)
 	return localstate.Write(path, []byte(text), true)
 }
 
@@ -82,7 +76,7 @@ func installConfig(w io.Writer, o cliOptions) {
 		fmt.Fprintf(os.Stderr, "withhold: installed, but cannot check configuration: %v\n", err)
 		return
 	}
-	if err := createConfig(path, integrations.Default, false); err != nil {
+	if err := createConfig(path, nil); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			fmt.Fprintf(w, "Existing configuration left unchanged: %s\n", path)
 		} else {

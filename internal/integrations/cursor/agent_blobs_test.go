@@ -210,7 +210,7 @@ func TestAgentBlobFieldPermissionsMatchTypedReferences(t *testing.T) {
 	for name, fields := range agentBlobTypes {
 		for number, kind := range fields {
 			field := pinned.fields[name][number]
-			if field.Type != "bytes" || !supportedField(name, field) || pinned.fields[kind] == nil {
+			if field.Type != "bytes" || !supportedField(name, field) || kind != agentBlobText && pinned.fields[kind] == nil {
 				t.Fatalf("invalid reviewed blob edge %s.%d -> %s", name, number, kind)
 			}
 		}

@@ -20,6 +20,26 @@ AUXILIARY_ROOTS = (
     "aiserver.v1.StreamCppRequest",
 )
 AGENT_OUTPUT = ROOT / "internal/integrations/cursor/agent-schema.json"
+CONTROL_OUTPUT = ROOT / "internal/integrations/cursor/control-schema.json"
+CONTROL_ROOTS = tuple(
+    "aiserver.v1." + name
+    for name in (
+        "GetTeamAdminSettingsRequest",
+        "GetTeamReposRequest",
+        "GetEffectiveUserPluginsRequest",
+        "GetKnownServersRequest",
+        "GetManagedSkillsRequest",
+        "BootstrapStatsigRequest",
+        "GetEffectiveUserAgentStoreSkillsSettingsRequest",
+        "GetMeRequest",
+        "ListMarketplacesRequest",
+        "GetServerConfigRequest",
+        "GetScmConnectionStatusRequest",
+        "GetRealtimeVoiceRequest",
+        "UpdateVscodeProfileRequest",
+        "AvailableModelsRequest",
+    )
+)
 # Snapshot complete descriptors for reviewed message types, not the entire
 # transitive Agent protocol. Field permissions are separately owned by Go.
 AGENT_ROOTS = tuple(
@@ -220,6 +240,11 @@ AGENT_ROOTS = tuple(
         "FileDiagnostics",
         "DiagnosticItem",
         "DiagnosticRange",
+        "RequestContextPartReferences",
+        "RequestContextRulesPart",
+        "RequestContextSkillsPart",
+        "RequestContextSubagentsPart",
+        "RequestContextMcpsPart",
     )
 )
 SCALARS = {
@@ -439,12 +464,15 @@ def main():
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--auxiliary", action="store_true")
     group.add_argument("--agent", action="store_true")
+    group.add_argument("--control", action="store_true")
     args = parser.parse_args()
     try:
         output = AUXILIARY_OUTPUT if args.auxiliary else OUTPUT
         roots = AUXILIARY_ROOTS if args.auxiliary else (ROOT_TYPE,)
         if args.agent:
             output, roots = AGENT_OUTPUT, AGENT_ROOTS
+        if args.control:
+            output, roots = CONTROL_OUTPUT, CONTROL_ROOTS
         content = extract(args.app, roots, transitive=not args.agent)
         metadata = json.loads(content)
         if args.check:

@@ -224,14 +224,21 @@ func (p *Proxy) block(w http.ResponseWriter, r *http.Request, route policy.Route
 }
 
 func (p *Proxy) blockResponse(r *http.Request, route policy.Route, reason string, stream bool) policy.Response {
-	if profile, ok := p.config.Scope.(policy.RequestBlocker); ok {
+	protocol := p.config.Scope
+	if route.Profile != nil {
+		protocol = route.Profile
+	}
+	if profile, ok := protocol.(policy.RequestBlocker); ok {
 		return profile.BlockRequest(r, route, reason)
 	}
-	return p.config.Scope.Block(reason, stream)
+	return protocol.Block(reason, stream)
 }
 
 func (p *Proxy) request(w http.ResponseWriter, r *http.Request) {
 	route := p.config.Scope.Classify(r.URL.Host, r.URL.RequestURI())
+	if route.Ambiguous && p.block(w, r, route, "ambiguous-route", nil) {
+		return
+	}
 	if isWebSocket(r) && route.Codec == nil {
 		p.websocket(w, r, route)
 		return
@@ -329,7 +336,11 @@ func (p *Proxy) inspect(w http.ResponseWriter, r *http.Request, route policy.Rou
 		}
 		// Stream-specific block framing belongs to the selected integration,
 		// not to the scanner worker's report.
-		report["wants_stream"] = p.config.Scope.WantsStream(decoded)
+		protocol := p.config.Scope
+		if route.Profile != nil {
+			protocol = route.Profile
+		}
+		report["wants_stream"] = protocol.WantsStream(decoded)
 	}
 	status, _ := report["status"].(string)
 	decision := policy.Evaluate(route, status, residue(report) > 0, false)

@@ -60,7 +60,7 @@ func parseScanOptions(f *flag.FlagSet, args []string) (paths []string, showHelp 
 }
 
 func scanConfiguration(o cliOptions, f *flag.FlagSet) (config.Config, error) {
-	c := config.Defaults(integrations.Default, runtime.GOOS)
+	c := config.Defaults(runtime.GOOS)
 	if flagSet(f, "config") && o.configPath == "" {
 		return c, errors.New("--config requires a file path")
 	}
@@ -96,7 +96,7 @@ func scanConfiguration(o cliOptions, f *flag.FlagSet) (config.Config, error) {
 	}
 	// Strictly validate the file's application schema, without ambient editor
 	// overrides, application discovery, or constructing a traffic/session runtime.
-	if _, err := integrations.Configure(c.Integration, c.Application, nil); err != nil {
+	if err := integrations.Normalize(&c, nil); err != nil {
 		return c, errors.New("invalid integration/application settings in scan configuration")
 	}
 	return c, nil

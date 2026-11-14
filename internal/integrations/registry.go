@@ -8,12 +8,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/cquark7/withhold/internal/config"
 	"github.com/cquark7/withhold/internal/integration"
 	"github.com/cquark7/withhold/internal/integrations/copilot"
+	"github.com/cquark7/withhold/internal/integrations/cursor"
 	"github.com/cquark7/withhold/internal/policy"
 )
-
-const Default = "vscode-copilot"
 
 // Description is the read-only public catalog. IDs select a supported harness
 // and traffic contract together; a provider name alone is not an integration.
@@ -26,7 +26,6 @@ type Description struct {
 type definition struct {
 	Description
 	example     string
-	suspicion   string
 	configure   func(json.RawMessage, func(string) string) (json.RawMessage, error)
 	traffic     func(policy.ScopeOptions, json.RawMessage) (policy.Profile, error)
 	application func(integration.ApplicationOptions) (integration.Application, error)
@@ -35,15 +34,24 @@ type definition struct {
 // One explicit registration per reviewed integration drives selection, help,
 // completion, and discovery. No init-time registration or dynamic code loading.
 var builtins = []definition{{
-	Description: Description{ID: Default, Name: "VS Code + GitHub Copilot", Documentation: "docs/integrations/vscode-copilot.md"},
+	Description: Description{ID: "vscode-copilot", Name: "VS Code + GitHub Copilot", Documentation: "docs/integrations/vscode-copilot.md"},
 	example:     copilot.Example,
-	suspicion:   copilot.DefaultSuspicion,
 	configure:   copilot.Configure,
 	traffic: func(o policy.ScopeOptions, settings json.RawMessage) (policy.Profile, error) {
 		return copilot.TrafficFromSettings(o, settings)
 	},
 	application: func(o integration.ApplicationOptions) (integration.Application, error) {
 		return copilot.Application{Options: o}, nil
+	},
+}, {
+	Description: Description{ID: "cursor", Name: "Cursor", Documentation: "docs/integrations/cursor.md"},
+	example:     cursor.Example,
+	configure:   cursor.Configure,
+	traffic: func(o policy.ScopeOptions, _ json.RawMessage) (policy.Profile, error) {
+		return cursor.NewTraffic(o)
+	},
+	application: func(o integration.ApplicationOptions) (integration.Application, error) {
+		return cursor.Application{Options: o}, nil
 	},
 }}
 
@@ -62,7 +70,90 @@ func lookup(id string) (definition, error) {
 			return d, nil
 		}
 	}
-	return definition{}, fmt.Errorf("unknown integration %q; run 'withhold integrations'", id)
+	hint := ""
+	for _, d := range List() {
+		if closeID(id, d.ID) {
+			hint = fmt.Sprintf("; did you mean %q?", d.ID)
+			break
+		}
+	}
+	return definition{}, fmt.Errorf("unknown agent %q%s; run 'withhold agents'", id, hint)
+}
+
+// Suggest only a single insertion, deletion, substitution, or transposition.
+// IDs still require an exact match; suggestions never select an adapter.
+func closeID(a, b string) bool {
+	for i := 0; i < min(len(a), len(b)); i++ {
+		if a[i] == b[i] {
+			continue
+		}
+		switch len(a) - len(b) {
+		case 0:
+			return a[i+1:] == b[i+1:] || i+1 < len(a) && a[i] == b[i+1] && a[i+1] == b[i] && a[i+2:] == b[i+2:]
+		case 1:
+			return a[i+1:] == b[i:]
+		case -1:
+			return a[i:] == b[i+1:]
+		}
+		return false
+	}
+	return len(a)-len(b) == 1 || len(b)-len(a) == 1
+}
+
+// Normalize validates all namespaced settings, including saved but inactive
+// agents, and supplies defaults only for selected agents.
+func Normalize(c *config.Config, get func(string) string) error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if c.Applications == nil {
+		c.Applications = map[string]json.RawMessage{}
+	}
+	for id, data := range c.Applications {
+		if slices.Contains(c.Agents, id) {
+			continue // Selected settings apply their environment before validation.
+		}
+		settings, err := Configure(id, data, nil)
+		if err != nil {
+			return err
+		}
+		c.Applications[id] = settings
+	}
+	for _, id := range c.Agents {
+		settings, err := Configure(id, c.Applications[id], get)
+		if err != nil {
+			return err
+		}
+		c.Applications[id] = settings
+	}
+	return nil
+}
+
+func RequireAgents(ids []string) error {
+	if len(ids) == 0 {
+		return fmt.Errorf("no agents selected; run 'withhold agents', then 'withhold setup AGENT...'")
+	}
+	for _, id := range ids {
+		if _, err := lookup(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func TrafficSet(c config.Config) (policy.Profile, error) {
+	if err := RequireAgents(c.Agents); err != nil {
+		return nil, err
+	}
+	profiles := make([]policy.Profile, 0, len(c.Agents))
+	for _, id := range c.Agents {
+		p, err := Traffic(id, c.Scope(), c.Applications[id])
+		if err != nil {
+			return nil, err
+		}
+		profiles = append(profiles, p)
+	}
+	return policy.Compose(profiles...), nil
 }
 
 // Configure validates the selected adapter's schema and resolves its defaults
@@ -82,16 +173,6 @@ func Example(id string) (string, error) {
 		return "", err
 	}
 	return d.example, nil
-}
-
-// SuspicionDefault exposes the selected profile's effective default for config
-// display and session recording when no shared override was supplied.
-func SuspicionDefault(id string) (string, error) {
-	d, err := lookup(id)
-	if err != nil {
-		return "", err
-	}
-	return d.suspicion, nil
 }
 
 func Traffic(id string, options policy.ScopeOptions, settings json.RawMessage) (policy.Profile, error) {

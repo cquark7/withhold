@@ -99,8 +99,12 @@ func (m *wireMessage) encode(changes map[*wireField][]byte, maxBytes int64) ([]b
 	}
 	values := make(map[*wireField][]byte)
 	for _, field := range m.fields {
-		if text, ok := changes[field]; ok && !bytes.Equal(text, field.payload) {
-			values[field] = protowire.AppendBytes(nil, text)
+		if value, ok := changes[field]; ok {
+			if scalarWire(field.def.Type) == protowire.BytesType {
+				values[field] = protowire.AppendBytes(nil, value)
+			} else {
+				values[field] = value
+			}
 		}
 		if field.child == nil {
 			continue

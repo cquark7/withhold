@@ -13,12 +13,14 @@ import (
 
 	"github.com/cquark7/withhold/internal/config"
 	"github.com/cquark7/withhold/internal/control"
+	"github.com/cquark7/withhold/internal/integration"
 )
 
 func startupRecord(t *testing.T) Record {
 	t.Helper()
-	c := config.Defaults("fixture", runtime.GOOS)
-	return Record{Schema: 1, Identity: control.Identity{Instance: control.Random(), Token: control.Random()}, PID: os.Getpid(), Port: c.Proxy.Port, Resource: filepath.Join(t.TempDir(), "client.ini"), Integration: c.Integration, Configuration: &c}
+	c := config.Defaults(runtime.GOOS)
+	c.Agents = []string{"fixture"}
+	return Record{Schema: 2, Identity: control.Identity{Instance: control.Random(), Token: control.Random()}, PID: os.Getpid(), Port: c.Proxy.Port, Applications: []ManagedApplication{{Agent: "fixture", Target: integration.Target{Resource: filepath.Join(t.TempDir(), "client.ini")}}}, Configuration: &c}
 }
 
 type observedStartupReader struct {

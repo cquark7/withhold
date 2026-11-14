@@ -22,6 +22,9 @@ type Route struct {
 	AllowNonJSON                          bool
 	HTTPFailureAction, NonPostRule        string
 	Codec                                 *RPCCodec
+	// Profile selects route-specific error framing in a composed profile.
+	Profile   Profile
+	Ambiguous bool
 }
 
 type Response struct {

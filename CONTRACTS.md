@@ -17,7 +17,12 @@ An integration selects a coding harness and a tested traffic contract together.
 It defines guarded hosts, request paths/surfaces, intentional passthrough,
 suspicious-host classification, and local error framing. Unknown integration
 IDs fail; naming an executable or adding an extra host does not establish support
-for another agent. `withhold integrations` lists only reviewed built-ins.
+for another agent. `withhold agents` lists only reviewed built-ins.
+
+One proxy composes the selected agent profiles. Overlapping guarded/passthrough
+claims fail closed independent of order. Passthrough and inspection-failure
+exceptions cannot override another profile's guarded or suspicious host.
+Unambiguous routes retain their adapter's error protocol.
 
 Unscoped hosts are audited; suspicious hosts are blocked for POST/PUT/PATCH or
 any request not provably bodyless. Unrelated traffic passes through. Unknown
@@ -136,7 +141,8 @@ and keys for discovered values and URL/base64 variants; failure blocks rewriting
 
 ## Transport and failures
 
-The proxy listens on IPv4 loopback. It supports absolute-form HTTP and HTTPS
+The proxy listens on IPv4 loopback, defaulting to `127.0.0.1:8451`; `--port`
+or `proxy.port` selects another port. It supports absolute-form HTTP and HTTPS
 CONNECT, HTTP/1.1, negotiated HTTP/2, and WebSockets. CONNECT authority, inner
 authority, and TLS SNI must agree. Upstream TLS verification stays enabled;
 upstream connections do not chain through environment-configured proxies.
@@ -155,6 +161,9 @@ decoded before inspection. Decoded size overflow and scanner failures follow
 the inspection policy above. Scanner capacity is never reported as clean.
 Redacted HTTP bodies become UTF-8 JSON with corrected length and stale encoding,
 digest, and trailer headers removed; clean/observe bodies retain wire bytes.
+Typed RPC adapters may rewrite clean capability handshakes to negotiate a
+supported wire format, as documented by the integration; model content is
+unchanged. Observe mode retains the original handshake too.
 Upload admission is released when transport closes the request body, not when
 its response stream ends.
 
@@ -177,13 +186,21 @@ message is decoded/scanned/released, not while waiting for the next envelope.
 Only approved original bytes or verified protobuf rewrites are released;
 unsupported schemas never authorize an enforcing-mode fallback.
 
+An adapter may retain request-local protocol state across envelopes. Retained
+bytes have a separate `max_bytes` cap and share the aggregate intake byte budget,
+without holding an intake job while awaiting another message. State is discarded
+when the upload closes, including cancellation and failure; another request or
+retry cannot inherit it. Retaining content is not a clean-content authorization:
+referenced content must enter inspection again before a later message is released.
+
 A failure before response headers uses a local error (HTTP 413 for upload
 admission failures). After response headers, a failed stream is aborted/reset,
 not ended successfully or spliced with an error inside a partial upstream
 envelope. Streaming finding summaries report release as send-unconfirmed:
 reading an upload buffer is not evidence of a completed network write. Scanned
 control identifiers/handshakes alone do not establish inspected-content coverage.
-No currently registered integration opts into this capability.
+The Cursor integration opts into this capability for its documented Connect
+routes; see its integration guide for the accepted request subset.
 
 Client WebSocket messages are bounded, reassembled, and decompressed before
 inspection; server messages pass through. Redact mode forwards verified rewrites;
@@ -198,18 +215,27 @@ Streaming detection and local error framing never change scanning or admission.
 
 ## Local state and recovery
 
-`setup` creates an EC P-256 CA and configures current-user trust; manual imports
+`setup AGENT...` creates an EC P-256 CA, configures current-user trust, and saves
+the exact agent set in the selected config without replacing unrelated settings
+or comments. It does not start a session or configure application routing.
+Missing names use the saved set; there is no implicit default or detection.
+Manual imports
 are the user's responsibility. Existing or partial CA files are not overwritten.
 Private keys/state use mode 0600 on POSIX or protected current-user Windows ACLs.
 Windows privacy checks require a protected DACL containing only the current
 user's full-control entry, independent of descriptor bookkeeping metadata.
 Leaf certificates expire within 24 hours or at CA expiry.
 
-`on` backs up and applies application settings, records effective configuration,
+`on [AGENT...]` uses the named set or saved defaults, without saving an override.
+Names are deduplicated/sorted and replace rather than append. All application
+resources must be distinct and pass preflight before mutation. Missing setup
+prints an actionable setup command; activation never silently installs trust.
+`on` backs up and applies all application settings, records effective configuration,
 and starts an authenticated session. The child reads its private ownership record
 only after the parent finishes publishing its PID, and rejects a different PID.
-Startup failure attempts rollback. Reuse requires the same binary, configuration,
-resource, and private-key fingerprint.
+Startup failure attempts rollback of all applications, continuing after individual
+restore failures and retaining recovery data until restoration succeeds.
+Reuse requires the same binary, configuration, resource set, and private-key fingerprint.
 There is no hot reload or login/reboot service.
 
 `off` attempts settings restoration even if shutdown/authentication fails. Only
@@ -223,7 +249,11 @@ delete logs, application settings, or the installed executable.
 Application settings and restart/trust requirements belong to the integration.
 The recorded resource is an absolute recovery anchor; restoration must not
 depend on current application discovery or configuration. There is one active
-integration per state directory; switching requires `off` before `on`.
+agent set per state directory; switching requires `off` before `on`.
+`off` accepts no agent names and restores every recorded resource. `doctor` uses
+the active session, otherwise saved targets; explicit names diagnose those targets.
+Status distinguishes saved/active agents and reports application settings/backups
+separately. Inspection counters remain session-wide, not originating-agent attribution.
 Launch is optional; unsupported launch returns a usage error. When supported,
 arguments after `--` and the application's exit status are preserved.
 
@@ -231,7 +261,7 @@ User configuration is TOML only: `DIR/config.toml`, or an explicit file selected
 with `--config` or `WITHHOLD_CONFIG`. Only that file is read, regardless of filename;
 JSON input is rejected and no alternate default filenames are discovered.
 Configuration uses schema 1 and strict typed validation;
-integration-owned `application` settings are validated by the selected adapter.
+adapter-owned `applications.AGENT` settings are validated by each adapter.
 Unknown keys, duplicate keys, nulls, invalid types, and unsupported TOML value
 types fail rather than silently changing protection. Configuration is never
 discovered from a project directory. Installation creates an absent default
@@ -275,8 +305,9 @@ main module version from Go build metadata when available, or `dev` for local
 builds without a module version. Usage/configuration errors return 2, operation/check failures 1, and
 success 0, except for the documented `scan` exit codes above. `doctor --preflight`
 is silent on success and returns 2 on failure.
-JSON commands write one object: configuration schema 1, status schema 4, doctor
-schema 2, integration catalog schema 1, demo schema 1, and scan schema 1.
+JSON commands write one object: configuration schema 1 (plural `agents` and
+`applications`, with no singular compatibility fields), status schema 5, doctor
+schema 3, agent catalog schema 2, demo schema 1, and scan schema 1.
 Schema changes must be explicit.
 `config` prints a reloadable TOML snapshot of the effective public configuration,
 including adapter-owned defaults; `config --json` prints the same settings as
@@ -287,9 +318,9 @@ running session with previously frozen settings.
 
 `config --example` instead prints a commented TOML starter without reading files,
 discovering application settings, or exporting ambient overrides. Integration
-selection is flag, environment, then default; other flags are rejected rather
-than ignored. Each adapter owns its example application section. `config --init`
-accepts only `--dir`, `--config`, and `--integration`; it does not read an
+selection is positional names only, with no implicit agent; other flags are
+rejected rather than ignored. Each adapter owns its example application section.
+`config --init` accepts only agent names, `--dir`, and `--config`; it does not read an
 existing config or snapshot unrelated environment overrides.
 
 `demo` exercises the bundled scanner and the proxy's HTTPS CONNECT, redaction,

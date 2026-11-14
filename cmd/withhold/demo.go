@@ -140,7 +140,7 @@ func exerciseDemo(ctx context.Context, dir string, ca *certstore.CA, engine prox
 	roots := x509.NewCertPool()
 	roots.AddCert(ca.Certificate)
 	// Fixed loopback scope uses the shipped adapter's chat/inline policies.
-	scope, err := integrations.Traffic(integrations.Default, policy.ScopeOptions{ExtraHosts: []string{"127.0.0.1"}, ChatMode: "redact", InlineMode: "block"}, nil)
+	scope, err := integrations.Traffic("vscode-copilot", policy.ScopeOptions{ExtraHosts: []string{"127.0.0.1"}, ChatMode: "redact", InlineMode: "block"}, nil)
 	if err != nil {
 		return nil, errors.New("demo traffic profile could not be constructed")
 	}

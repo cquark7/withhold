@@ -17,6 +17,7 @@ import (
 	"github.com/cquark7/withhold/internal/certstore"
 	"github.com/cquark7/withhold/internal/detector"
 	"github.com/cquark7/withhold/internal/localstate"
+	"github.com/cquark7/withhold/internal/policy"
 	"github.com/cquark7/withhold/internal/proxy"
 	"github.com/cquark7/withhold/internal/scanner"
 	"github.com/cquark7/withhold/internal/testintegration"
@@ -39,7 +40,8 @@ func TestIndependentIntegrationUsesSharedProtectionAndItsOwnProtocol(t *testing.
 	t.Setenv("WITHHOLD_PII", "invalid")
 	for _, test := range []struct {
 		name, pii, mode, path, body, surface, detectedMasked string
-		fail, observe, redacted, debug                       bool
+		fail, observe, redacted, debug, ambiguous            bool
+		method                                               string
 		status                                               int
 	}{
 		{name: "clean", mode: "redact", path: "/submit", body: `{"other_schema":{"text":"ordinary content"}}`, status: 200},
@@ -53,6 +55,8 @@ func TestIndependentIntegrationUsesSharedProtectionAndItsOwnProtocol(t *testing.
 		{name: "failure", mode: "redact", path: "/submit", body: `{"input":"private body"}`, fail: true, debug: true, status: 418},
 		{name: "surface labels cannot grant fail open", mode: "redact", surface: "embeddings", path: "/submit", body: `{"input":"private body"}`, fail: true, status: 418},
 		{name: "unknown route", mode: "redact", path: "/unknown", body: `{"input":"ordinary content"}`, debug: true, status: 418},
+		{name: "overlapping claims", mode: "redact", path: "/submit", body: `{"input":"ordinary content"}`, ambiguous: true, status: 403},
+		{name: "bodyless overlap", mode: "redact", path: "/submit", method: "GET", ambiguous: true, status: 403},
 		{name: "unsupported payload", mode: "redact", path: "/submit", body: `not JSON`, debug: true, status: 418},
 		{name: "observe preserves bytes", mode: "redact", path: "/submit", body: `{"input":"token = AKIA4X7Q2W8K9MNDZZZZ"}`, observe: true, status: 200},
 		{name: "debug observe reports original body", mode: "redact", path: "/submit", body: `{"input":"token = AKIA4X7Q2W8K9MNDZZZZ"}`, observe: true, debug: true, detectedMasked: "AKI…", status: 200},
@@ -77,12 +81,21 @@ func TestIndependentIntegrationUsesSharedProtectionAndItsOwnProtocol(t *testing.
 			if test.debug {
 				debugPath = filepath.Join(dir, "debug-findings.log")
 			}
-			p, err := proxy.New(proxy.Config{CA: &certstore.CA{}, Scope: testintegration.Profile{Host: u.Hostname(), Mode: test.mode, Surface: test.surface}, Scanner: inspection{engine, test.fail}, Observe: test.observe, MaxBytes: 4096, ScanTimeout: time.Second, AuditPath: filepath.Join(dir, "audit"), HintPath: filepath.Join(dir, "hint"), DebugPath: debugPath})
+			profile := testintegration.Profile{Host: u.Hostname(), Mode: test.mode, Surface: test.surface}
+			other := testintegration.Profile{Host: "unrelated.test", Mode: "redact"}
+			if test.ambiguous {
+				other.Host = profile.Host
+			}
+			p, err := proxy.New(proxy.Config{CA: &certstore.CA{}, Scope: policy.Compose(profile, other), Scanner: inspection{engine, test.fail}, Observe: test.observe, MaxBytes: 4096, ScanTimeout: time.Second, AuditPath: filepath.Join(dir, "audit"), HintPath: filepath.Join(dir, "hint"), DebugPath: debugPath})
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer p.Close()
-			r := httptest.NewRequest("POST", up.URL+test.path, strings.NewReader(test.body))
+			method := test.method
+			if method == "" {
+				method = "POST"
+			}
+			r := httptest.NewRequest(method, up.URL+test.path, strings.NewReader(test.body))
 			r.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 			p.ServeHTTP(w, r)
@@ -94,7 +107,11 @@ func TestIndependentIntegrationUsesSharedProtectionAndItsOwnProtocol(t *testing.
 			if w.Code != test.status {
 				t.Fatalf("status %d, want %d", w.Code, test.status)
 			}
-			if test.status == 418 {
+			if test.status == 403 {
+				if forwarded != nil || w.Header().Get("X-Withhold-Block") != "1" {
+					t.Fatal("ambiguous route reached upstream")
+				}
+			} else if test.status == 418 {
 				if forwarded != nil || w.Header().Get("X-Fixture-Block") != "yes" || !strings.HasPrefix(w.Body.String(), "fixture denied:") {
 					t.Fatal("integration-specific rejection was not enforced")
 				}

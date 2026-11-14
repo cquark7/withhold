@@ -82,9 +82,9 @@ class ReleasePolishTests(unittest.TestCase):
             self.assertEqual(list(self.scratch.iterdir()), [])
 
     def test_toml_starter_does_not_read_config_write_state_or_export_overrides(self):
-        result = self.command("config", "--example", "--integration", "vscode-copilot")
+        result = self.command("config", "--example", "vscode-copilot")
         self.assertIn("#", result.stdout)
-        self.assertIn("[application]", result.stdout)
+        self.assertIn("[applications.vscode-copilot]", result.stdout)
         self.assertNotIn(str(self.home), result.stdout)
         self.assertNotIn("private-user-key", result.stdout)
         self.assertEqual(list(self.home.iterdir()), [])
@@ -101,7 +101,7 @@ class ReleasePolishTests(unittest.TestCase):
         self.assertEqual(effective["protection"]["chat"], "redact")
         self.assertEqual(effective["protection"]["inline"], "block")
         self.assertFalse(effective["protection"]["observe"])
-        self.assertEqual(effective["application"]["binary"], "code")
+        self.assertEqual(effective["applications"]["vscode-copilot"]["binary"], "code")
         self.assertEqual(list(self.home.iterdir()), [])
 
     def test_onboarding_help_completion_and_option_errors_are_read_only(self):
@@ -111,10 +111,28 @@ class ReleasePolishTests(unittest.TestCase):
         self.assertIn("demo", self.command("_complete", "de").stdout)
         self.command("demo", "--config", "ignored.toml", expected=2)
         self.command("config", "--example", "--max-bytes", "1m", expected=2)
-        self.command("config", "--example", "--integration", "unknown", expected=2)
-        self.command("config", "--init", "--integration", "unknown", expected=2)
+        self.command("config", "--example", "unknown", expected=2)
+        self.command("config", "--init", "unknown", expected=2)
         self.assertEqual(list(self.home.iterdir()), [])
         self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_no_implicit_agent_or_legacy_selector(self):
+        env = {
+            key: value
+            for key, value in self.env.items()
+            if not key.startswith("WITHHOLD_")
+        }
+        env["WITHHOLD_DIR"] = str(self.home / "state")
+        env["WITHHOLD_INTEGRATION"] = "cursor"  # Removed selectors cannot pick agents.
+        result = self.command("on", env=env, expected=2)
+        self.assertIn("no agents selected", result.stderr)
+        self.assertIn("withhold setup AGENT", result.stderr)
+        self.command("integrations", env=env, expected=2)
+        self.command("on", "--integration", "cursor", env=env, expected=2)
+        self.command("on", "8090", env=env, expected=2)
+        typo = self.command("on", "curser", env=env, expected=2)
+        self.assertIn('did you mean "cursor"', typo.stderr)
+        self.assertEqual(list(self.home.iterdir()), [])
 
     def test_install_and_config_init_create_only_new_inheriting_files(self):
         env = {
@@ -129,7 +147,7 @@ class ReleasePolishTests(unittest.TestCase):
         path = state / "config.toml"
         self.assertIn(str(path), result.stdout)
         self.assertEqual(tomllib.loads(path.read_text()), {"schema": 1})
-        self.assertIn("# [application.traffic]", path.read_text())
+        self.assertIn("# agents = []", path.read_text())
         if os.name != "nt":
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
@@ -172,12 +190,10 @@ class ReleasePolishTests(unittest.TestCase):
 
     def test_init_saves_selected_adapter_without_snapshotting_ambient_overrides(self):
         path = self.root / "custom.toml"
-        self.command(
-            "config", "--init", "--integration", "vscode-copilot", "--config", str(path)
-        )
+        self.command("config", "--init", "vscode-copilot", "--config", str(path))
         self.assertEqual(
             tomllib.loads(path.read_text()),
-            {"schema": 1, "integration": "vscode-copilot"},
+            {"schema": 1, "agents": ["vscode-copilot"]},
         )
         self.assertNotIn("private-user-key", path.read_text())
 
@@ -188,8 +204,8 @@ class ReleasePolishTests(unittest.TestCase):
             if not key.startswith("WITHHOLD_")
         }
         env["WITHHOLD_DIR"] = str(self.home / "state")
-        result = self.command("setup", "--trust", "manual", env=env)
-        self.assertIn("'withhold doctor'", result.stdout)
+        result = self.command("setup", "cursor", "--trust", "manual", env=env)
+        self.assertIn("Saved agents: cursor", result.stdout)
         self.assertIn("'withhold on'", result.stdout)
 
     def test_effective_toml_and_json_show_overrides_without_writing(self):
@@ -201,20 +217,24 @@ class ReleasePolishTests(unittest.TestCase):
         env["WITHHOLD_DIR"] = str(self.home / "state")
         env["WITHHOLD_MAX_BYTES"] = "16m"
         env["WITHHOLD_EDITOR_BIN"] = "env-code"
-        result = self.command("config", "--max-bytes", "24m", env=env)
+        result = self.command("config", "vscode-copilot", "--max-bytes", "24m", env=env)
         self.assertIn(str(self.home / "state" / "config.toml"), result.stdout)
         self.assertIn("No file found", result.stdout)
         rendered = tomllib.loads(result.stdout)
         expected = json.loads(
-            self.command("config", "--json", "--max-bytes", "24m", env=env).stdout
+            self.command(
+                "config", "vscode-copilot", "--json", "--max-bytes", "24m", env=env
+            ).stdout
         )
         self.assertEqual(rendered, expected)
         self.assertEqual(rendered["proxy"]["max_bytes"], "24m")
-        self.assertEqual(rendered["proxy"]["suspicion_pattern"], "copilot")
-        self.assertEqual(rendered["application"]["binary"], "env-code")
+        self.assertEqual(rendered["proxy"]["port"], 8451)
+        self.assertNotIn("suspicion_pattern", rendered["proxy"])
+        application = rendered["applications"]["vscode-copilot"]
+        self.assertEqual(application["binary"], "env-code")
         self.assertIn(
             "/v1/engines/[^/]+/completions",
-            rendered["application"]["traffic"]["inline_paths"],
+            application["traffic"]["inline_paths"],
         )
         self.assertEqual(list(self.home.iterdir()), [])
         self.command("config", "--example", "--json", env=env, expected=2)

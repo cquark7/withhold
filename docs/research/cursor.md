@@ -1,8 +1,9 @@
 # Cursor request-boundary integration research
 
-Research date: **2026-11-13**. This is contributor research, **not a shipped
-integration or a protection guarantee**. Cursor is not registered in
-`withhold integrations`.
+Research date: **2026-11-13**. This contributor note records the investigation
+behind Cursor support; it does not expand the current contract. Cursor is now a
+registered, bounded integration. The current scope and validation record are in
+the [Cursor guide](../integrations/cursor.md).
 
 ## Required boundary
 
@@ -144,10 +145,10 @@ messages, bytes, and structured identifiers.
   from successful inspection. Do not implement an unscanned passthrough
   exception simply to make the editor work.
 
-## Implementation progress
+## Initial implementation history
 
-An unregistered [codec prototype](../../internal/integrations/cursor/README.md)
-now decodes full `RunInference` invocation messages, projects reviewed text into
+The initial [codec prototype](../../internal/integrations/cursor/README.md)
+decoded full `RunInference` invocation messages, projected reviewed text into
 the existing scanner, and reconstructs verified protobuf rewrites, including
 nested gzip/Zstandard. An isolated scanner-worker probe validated synthetic
 prompt/file text, shell results, and tool arguments before durable regression
@@ -174,20 +175,13 @@ incremental updates via full-document upload in that source build. This is not
 proof that a proxy can safely rewrite those updates or rely on that fallback in
 other versions.
 
-This is still not a registered or full Cursor integration. Delta/cache/blob/log
-semantics, signed/native/media content, full Tab/file-sync/indexing, alternate
-write channels, and auxiliary/auth routing need further work and live redaction
-validation. A limited authorized probe observed prompt-bearing RunInference and
-NameTab requests and redacted one supported RunInference invocation. Its
-diagnostic adapter passed unsupported traffic through, so it did not establish
-complete enforcement. Temporary settings were restored byte-for-byte; no trust
-store changes or raw captures were made.
+At this stage it was not registered. Subsequent bounded registration and manual
+validation are documented in the current [integration guide](../integrations/cursor.md).
 
 ## Offline compatibility review
 
-Review date: **2026-11-14**. The product remains unregistered. No live editor or
-provider sessions were run for this review, and no editor settings or trust
-stores were changed.
+Review date: **2026-11-14**. At the time of this offline review, the product was
+unregistered. No live editor or provider sessions were run for that review.
 
 Compatibility and privacy are separate requirements: rejecting an ordinary
 request is not evidence of a usable integration. Read-only installed-source
@@ -195,8 +189,8 @@ inspection and isolated regressions establish the following narrower findings:
 
 | Concern | Assessment and current boundary |
 | --- | --- |
-| Product selection | Confirmed: Cursor is not selectable. Registration remains gated rather than advertising incomplete normal-session support. |
-| Agent RPC | `AgentService/Run` decodes inline prompts/context, reviewed tool definitions, completed shell/read/write/delete/grep/directory/diagnostics/text-MCP results, request-context results, prewarming, controls, and the typed prefetched history subset below. Agent findings block rather than rewriting identifiers, hashes, or text whose replay semantics are not established. KV exchange, references outside the envelope, chunked shell output, unreviewed variants, and alternate write channels remain unsupported. `RunInference` is a separate supported route; neither subset establishes full ordinary-session coverage. |
+| Product selection | Confirmed at the time: Cursor was not selectable. It was later registered with the bounded scope in the current guide. |
+| Agent RPC | `AgentService/Run` decodes inline prompts/context, reviewed tool definitions, completed shell/read/write/delete/grep/directory/diagnostics/text-MCP results, request-context results, prewarming, controls, typed prefetched history and same-upload replay, UTF-8 prompt/extra-context/text-read blobs, and split request-context parts. Agent findings block rather than rewriting identifiers, hashes, or text whose replay semantics are not established. KV exchange, unavailable references, chunked shell output, unreviewed variants, and alternate write channels remain unsupported. `RunInference` is a separate supported route; neither subset establishes full ordinary-session coverage. |
 | NameTab context | Confirmed compatibility gap: known attached code and tool-result fields were rejected. Code-chunk lines, argument/content strings, and reviewed terminal/MCP result fields now use the shared scanner and verified protobuf rewriting. Other nested tool/context variants remain unsupported. |
 | Attachments | Confirmed text-file compatibility gap: inference file parts were rejected. Supported file/image string parts now retain order and use shared base64 inspection/media exclusions. NameTab's recognized image bytes are preserved as opaque media. OCR, document extraction, and fetching remote references are not part of the shared privacy contract. Blob uploads/references still require separate integrity handling. |
 | Selection and inline completion | Selection coordinates already decode; blocking inline findings is the intended default, not a missing feature. Known inline context items, additional visible file ranges, versions, and hashes now decode without changing any bytes. Hashes are preserved, not recomputed or treated as evidence that prior file-sync content was scanned. Findings cannot rewrite position/hash-bound context. |
@@ -205,10 +199,9 @@ inspection and isolated regressions establish the following narrower findings:
 Clean supported bodies must retain exact bytes, including opaque images,
 selection coordinates, hashes, part order, and unrelated metadata. Isolated
 HTTPS/HTTP2 fixtures inspect actual upstream bytes for attached code, tool
-results, file attachments, and inline policy decisions. Fixture success does
-not establish that a normal Cursor session works; registration still requires
-the remaining protocol/lifecycle work and ordinary-session compatibility
-evidence.
+results, file attachments, and inline policy decisions. At the time of this
+review, fixture success had not established a normal Cursor session; the
+subsequent limited live validation is recorded separately in the current guide.
 
 ### Typed prefetched history and ordinary context
 
@@ -228,7 +221,7 @@ references are immutable, and findings block even in redact mode. Synthetic
 tests exercise nested snapshots, duplicate uploads, repeated DAG edges, changed
 hashes, missing references across retries, and content hidden in prior tool
 results. Root prompt-message JSON, summary archives, file-state content, and
-blob-backed prompt/context/result variants still require their own handling.
+unreviewed blob-backed variants still require their own handling.
 Some local file-state IDs are not SHA-256 addresses; they are not admitted by
 this subset.
 
@@ -238,75 +231,52 @@ MCP instructions, hooks, and auto-run instructions. Their text is inspected,
 including when delivered later as a `request_context_result`. Recognizing a
 definition is not authorization for an unreviewed cloud/subagent execution.
 
-## Completion gates
+### Same-stream replay and serialized text context
 
-The first target is local Cursor desktop coding: fresh and continued chats,
-selected context, file reads and edits, terminal commands, and Tab. This does
-not promise cloud agents, arbitrary server-side state, OCR, or document parsing.
-**Release does not require every Cursor feature.** Optional computer use, cloud
-agents, unusual attachments, and alternate transports are not gates unless the
-ordinary workflow depends on them. Conversely, routinely blocking normal
-context or requiring manual proxy workarounds is not an acceptable release.
+The native Agent upload now retains resolved prefetched blobs for later messages
+in that upload. Stored bytes are independently owned, admitted against the shared
+intake byte budget, and capped by size and count. No intake job is held while an
+idle stream waits for another envelope. Each referenced graph is decoded and
+inspected again, including when a new field expects a different type. No clean
+decision, uninspected response, previous request, or retry supplies authorization.
+Close drops the state on normal completion, early responses, cancellation, and
+failures.
 
-The integration stays unregistered until the following workflow gates have
-evidence:
+Read-only installed-source inspection also establishes UTF-8 hydration of
+`UserMessage.text_blob_id`/`rich_text_blob_id`, extra context, and text-read history.
+Those blobs now use explicit text decoding. The request-context encoder stages
+separate protobuf rules/skills/subagent-definition/MCP parts and declares their
+lengths; the decoder resolves all parts, checks those lengths, and inspects them
+alongside inline dynamic context. Binary read data and unreviewed MCP options
+are not authorized by this extension.
 
-| Required workflow | Acceptance evidence |
-| --- | --- |
-| Fresh and continued local Agent chats | Clean prompts, rules, attachments, and previous turns work without manual changes; synthetic findings cannot reach upstream. |
-| Navigate and edit a repository | Read, search, list, edit, diagnostics, and ordinary tool errors complete without dropping context or corrupting references. |
-| Run terminal commands | Clean commands complete promptly; split output secrets are blocked before disclosure; cancellation works. |
-| Use Tab while editing | Full and incremental file context are inspected without offset/hash corruption or missing-baseline bypasses. |
-| Work through an ordinary session | Required model/config/auth/metadata traffic and retries work; unsupported background features do not disrupt these workflows. |
-| Enable and disable withhold | Routing and trust requirements are tested, and recovery preserves unrelated editor settings. |
+Isolated HTTPS/HTTP2 scanner-worker regressions verify clean compressed graph
+bytes, fragmented later references, reinspection of cached content, blocking a
+later finding before upstream receives it, observe-mode replay, and retry
+isolation. Shared transport regressions cover retained-state admission and cleanup
+on failures/early responses. These are not live ordinary-session results. KV
+exchange and references unavailable in the current upload remain outside the
+registered support boundary.
 
-1. **Agent message coverage.** Extend the typed decoder to the actual local
-   Agent workflow, adding interactions and tool variants only as required by
-   the matrix above. Reviewed request context, common completed results,
-   prewarming, and prefetched history already use shared scanning and preserve
-   clean bytes. This is offline coverage, not a usable-session claim.
-2. **Blob graph and replay.** Installed `blob-store.ts` computes SHA-256
-   addresses; request-context encoding also stages typed protobuf blobs at those
-   addresses. Establish each referenced blob's serialization and expected type,
-   then inspect content before releasing its upload. The self-contained typed
-   prefetched history subset is implemented; ordinary out-of-envelope exchange
-   and serialized prompt/context variants remain. Missing, ambiguous,
-   conflicting, or stale references must reject. Start with immutable,
-   block-on-findings handling rather than inventing new IDs. Test resumed
-   conversations, retries, duplicate IDs, and graphs spanning messages/requests;
-   do not assume one decoded Connect message contains the entire graph. Broader
-   subagent/cloud graph variants are not prerequisites unless normal local
-   sessions send them.
-3. **Logical shell output.** Installed `ShellStream` describes separate stdout,
-   stderr, start, and exit events. Add bounded, per-execution logical-output
-   inspection before allowing these chunks. Prove the chosen buffering/release
-   boundary does not deadlock ordinary tools; test split secrets, interleaved
-   executions, cancellation, truncation, and capacity/time limits. Complete
-   `ShellResult` support alone does not cover this path.
-4. **Tab state and edit history.** Establish file/version baselines before
-   admitting incremental sync or serialized `CppAppend` edits. Inspect the
-   reconstructed content, not only inserted text. Preserve original positions,
-   hashes, and edit records on clean traffic; findings can block when rewriting
-   would invalidate them. Test missing baselines, version gaps, Unicode offsets,
-   retries, and bounded state cleanup.
-5. **Route and lifecycle compatibility.** Inventory required auth/config/model,
-   auxiliary, indexing, and retry traffic for the supported workflow. Review
-   SSE/poll/append only if native HTTP/2 cannot satisfy that workflow; do not
-   enable an uninspected fallback. Typed inspection is
-   required for content-bearing routes; any body passthrough needs evidence that
-   it cannot carry protected content. Test reversible setup/recovery and failure
-   framing without adding harness branches to shared transport.
-6. **Controlled real-session validation and registration.** After offline gates,
-   obtain explicit authorization to use a synthetic workspace and bounded
-   provider requests. Verify both ordinary clean sessions and blocked/redacted
-   synthetic findings, including actual outbound bytes, routing, cancellation,
-   and recovery. Record tested version/platform and limits before adding the
-   product registry entry and public setup guide.
+## Current support boundary
 
-Offline verification needs no user credentials, private repository, editor
-settings changes, or trust-store changes. Later validation needs the user's
-consent and access to an authenticated Cursor instance; raw private captures
-must not be requested as a shortcut.
+As of **2026-11-15**, the `cursor` integration is registered. It targets local
+Agent/Auto model egress, not every Cursor feature. Completion does not require
+support for optional computer use, cloud agents, Tab, file synchronization, OCR,
+or alternate transports.
+
+Manual validation on macOS Apple silicon with Cursor 3.30.8 covered clean and
+continued Agent chats, prompt redaction and follow-up, `@README.md` context,
+file edits and cleanup, and redaction of a synthetic value in mentioned file
+content. Value-free proxy audit records showed the corresponding model requests
+were scanned and redacted before forwarding.
+
+Other reviewed protobuf routes are enforced only for their documented typed
+subsets. Unknown Cursor service paths, unsupported message shapes, and
+unreviewed encodings remain fail-closed; users should expect those features to
+be unavailable rather than silently bypass inspection. Platform/version limits
+and the exact manual test record are maintained in the
+[integration guide](../integrations/cursor.md).
 
 ## Sources
 

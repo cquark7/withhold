@@ -3,11 +3,13 @@ package cursor
 import (
 	"bytes"
 	"crypto/sha256"
+	"unicode/utf8"
 
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
 const maxAgentBlobs = 4096
+const agentBlobText = "cursor.blob.Text"
 
 // These references are typed by their owning field, not by guessing at the
 // blob's bytes. serde.ts and blob-reference-rewriter.ts establish the protobuf
@@ -30,6 +32,20 @@ var agentBlobTypes = map[string]map[protowire.Number]string{
 	},
 	"agent.v1.UserMessage": {
 		10: "agent.v1.ConversationStateStructure",
+		18: agentBlobText,
+		19: agentBlobText,
+	},
+	"agent.v1.ExtraContextEntry": {
+		2: agentBlobText,
+	},
+	"agent.v1.ReadToolSuccess": {
+		10: agentBlobText,
+	},
+	"agent.v1.RequestContextPartReferences": {
+		1: "agent.v1.RequestContextRulesPart",
+		3: "agent.v1.RequestContextSkillsPart",
+		5: "agent.v1.RequestContextSubagentsPart",
+		7: "agent.v1.RequestContextMcpsPart",
 	},
 }
 
@@ -46,20 +62,22 @@ type agentBlobKey struct {
 type agentBlobGraph struct {
 	decoder *decoder
 	blobs   map[[sha256.Size]byte][]byte
+	stream  *agentStream
 	used    map[[sha256.Size]byte]bool
 	active  map[agentBlobKey]bool
 	done    map[agentBlobKey]bool
 	roots   []*wireMessage
 }
 
-// A graph is local to one envelope. It never treats a prior request, retry,
+// A graph is resolved afresh for each envelope. It never treats a prior request,
 // upstream cache hit, or uninspected response as proof that content is clean.
 // All uploaded blobs must be reachable through reviewed, locally resolved
 // references; even an otherwise-unused blob could disclose confidential data.
-func (d *decoder) agentBlobs(root *wireMessage) ([]*wireMessage, error) {
+func (d *decoder) agentBlobs(root *wireMessage, stream *agentStream) ([]*wireMessage, map[[sha256.Size]byte][]byte, error) {
 	g := agentBlobGraph{
 		decoder: d, blobs: make(map[[sha256.Size]byte][]byte),
-		used: make(map[[sha256.Size]byte]bool), active: make(map[agentBlobKey]bool),
+		stream: stream,
+		used:   make(map[[sha256.Size]byte]bool), active: make(map[agentBlobKey]bool),
 		done: make(map[agentBlobKey]bool),
 	}
 	envelope := root.fields[0].child
@@ -71,32 +89,34 @@ func (d *decoder) agentBlobs(root *wireMessage) ([]*wireMessage, error) {
 			}
 			count++
 			if count > maxAgentBlobs {
-				return nil, ErrLimit
+				return nil, nil, ErrLimit
 			}
 			if err := d.ctx.Err(); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			id, value := field.child.field(1), field.child.field(2)
 			if id == nil || value == nil || len(id.payload) != sha256.Size {
-				return nil, ErrUnsupported
+				return nil, nil, ErrUnsupported
 			}
 			digest := sha256.Sum256(value.payload)
 			if !bytes.Equal(id.payload, digest[:]) {
-				return nil, ErrUnsupported
+				return nil, nil, ErrUnsupported
 			}
 			if previous, ok := g.blobs[digest]; ok && !bytes.Equal(previous, value.payload) {
-				return nil, ErrUnsupported
+				return nil, nil, ErrUnsupported
 			}
 			g.blobs[digest] = value.payload
 		}
 	}
 	if err := g.walk(root, 0); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if len(g.used) != len(g.blobs) {
-		return nil, ErrUnsupported
+	for id := range g.blobs {
+		if !g.used[id] {
+			return nil, nil, ErrUnsupported
+		}
 	}
-	return g.roots, nil
+	return g.roots, g.blobs, nil
 }
 
 func (g *agentBlobGraph) walk(message *wireMessage, depth int) error {
@@ -112,22 +132,35 @@ func (g *agentBlobGraph) walk(message *wireMessage, depth int) error {
 				return ErrUnsupported
 			}
 			key := agentBlobKey{id: [sha256.Size]byte(field.payload), kind: kind}
+			data, ok := g.blobs[key.id]
+			if !ok && g.stream != nil {
+				data, ok = g.stream.blobs[key.id]
+			}
+			if !ok {
+				return ErrUnsupported
+			}
+			if message.name == "agent.v1.RequestContextPartReferences" {
+				length := message.field(field.def.Number + 1)
+				expected := uint64(0)
+				if length != nil {
+					expected = length.uint()
+				}
+				if uint64(len(data)) != expected {
+					return ErrUnsupported
+				}
+			}
 			if g.active[key] {
 				return ErrUnsupported
 			}
 			if g.done[key] {
 				continue
 			}
-			data, ok := g.blobs[key.id]
-			if !ok {
-				return ErrUnsupported
-			}
 			if len(g.done)+len(g.active) >= maxAgentBlobs || int64(len(data)) > g.decoder.maxBytes-g.decoder.decoded {
 				return ErrLimit
 			}
 			g.decoder.decoded += int64(len(data))
 			g.active[key] = true
-			child, err := g.decoder.message(kind, data, depth+1)
+			child, err := g.decodeBlob(kind, data, depth+1)
 			if err != nil {
 				return err
 			}
@@ -144,4 +177,22 @@ func (g *agentBlobGraph) walk(message *wireMessage, depth int) error {
 		}
 	}
 	return nil
+}
+
+func (g *agentBlobGraph) decodeBlob(kind string, data []byte, depth int) (*wireMessage, error) {
+	if kind != agentBlobText {
+		return g.decoder.message(kind, data, depth)
+	}
+	// The installed user-message hydrator, extra-context renderer, and text-read
+	// serializer use UTF-8, not arbitrary protobuf or a guessed byte encoding.
+	if !utf8.Valid(data) {
+		return nil, ErrMalformed
+	}
+	g.decoder.fields++
+	if g.decoder.fields > maxFields {
+		return nil, ErrLimit
+	}
+	return &wireMessage{name: agentBlobText, fields: []*wireField{{
+		def: fieldDef{Number: 1, Name: "text", Type: "string"}, payload: data,
+	}}}, nil
 }

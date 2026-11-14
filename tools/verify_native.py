@@ -186,7 +186,7 @@ def smoke(destination: Path, target: str, version: str):
             for args in (
                 ("version",),
                 ("--help",),
-                ("setup", "--trust", "manual"),
+                ("setup", "vscode-copilot", "--trust", "manual"),
                 ("doctor", "--json", "--port", port),
             ):
                 result = subprocess.run(
@@ -205,7 +205,7 @@ def smoke(destination: Path, target: str, version: str):
                     raise ValueError("extracted executable version mismatch")
                 if args[0] == "doctor":
                     report = json.loads(result.stdout)
-                    if report.get("schema") != 2 or not report.get("ok"):
+                    if report.get("schema") != 3 or not report.get("ok"):
                         raise ValueError("extracted executable failed native doctor")
 
 

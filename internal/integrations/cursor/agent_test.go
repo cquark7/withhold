@@ -30,10 +30,11 @@ func agentExec(number protowire.Number, result []byte) []byte {
 	))
 }
 
-func TestAgentSelfContainedContentPreservesBytesAndBlocksRewriting(t *testing.T) {
+func TestAgentSelfContainedContentPreservesBytesAndIntegrity(t *testing.T) {
 	const secret = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
 	scan := newScanner(t, "")
 	fixtures := map[string][]byte{
+		"prewarm": byteField(8, byteField(8, []byte(secret))),
 		"prompt": agentRun(concat(
 			byteField(1, []byte(secret)), byteField(2, []byte("fixture-message")), byteField(8, []byte("ordinary rich text")),
 		), nil),
@@ -93,6 +94,13 @@ func TestAgentSelfContainedContentPreservesBytesAndBlocksRewriting(t *testing.T)
 			projection, err := base64.StdEncoding.DecodeString(report["body_base64"].(string))
 			if err != nil {
 				t.Fatal(err)
+			}
+			if name == "prompt" || name == "prewarm" {
+				rewritten, err := message.Rewrite(projection)
+				if err != nil || bytes.Contains(rewritten, []byte(secret)) || !bytes.Contains(rewritten, []byte("<WITHHELD_")) {
+					t.Fatal("inline Agent prompt was not redacted")
+				}
+				return
 			}
 			if rewritten, err := message.Rewrite(projection); rewritten != nil || !errors.Is(err, ErrUnsupported) {
 				t.Fatal("Agent reference/integrity-bound text was rewritten")
@@ -311,7 +319,6 @@ func TestAgentCommonToolHistoryIsInspected(t *testing.T) {
 
 func TestAgentPrewarmingUsesSamePrivacyBoundary(t *testing.T) {
 	const secret = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
-	assertAgentInspection(t, byteField(8, byteField(8, []byte(secret))), secret)
 	id, blob := agentBlob(byteField(1, []byte(secret)))
 	assertAgentInspection(t, byteField(8, concat(byteField(3, byteField(6, id)), blob)), secret)
 	for _, wire := range [][]byte{

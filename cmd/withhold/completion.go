@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/cquark7/withhold/internal/integrations"
@@ -62,6 +63,13 @@ func candidates(args []string) []string {
 				return nil // Let the shell complete input paths.
 			}
 			choices = []string{"--help"}
+			if acceptsAgents(command) {
+				for _, entry := range integrations.List() {
+					if !slices.Contains(args[1:len(args)-1], entry.ID) {
+						choices = append(choices, entry.ID)
+					}
+				}
+			}
 			f.VisitAll(func(option *flag.Flag) {
 				if allowedFlag(command, option.Name) {
 					choices = append(choices, "--"+option.Name)
@@ -78,12 +86,6 @@ func valueCandidates(name, prefix string) []string {
 		return matching([]string{"system", "manual"}, prefix)
 	case "chat-mode", "inline-mode":
 		return matching([]string{"redact", "block"}, prefix)
-	case "integration":
-		var ids []string
-		for _, entry := range integrations.List() {
-			ids = append(ids, entry.ID)
-		}
-		return matching(ids, prefix)
 	case "pii":
 		return matching([]string{"off", "all", "aadhaar", "credit-card", "email", "ip-address", "phone", "us-ssn"}, prefix)
 	case "secrets", "no-default-excludes":

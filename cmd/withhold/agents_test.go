@@ -15,26 +15,26 @@ func TestCatalogHelpAndCompletionUseRegisteredIntegrationsWithoutRuntimeConfig(t
 	t.Setenv("WITHHOLD_INTEGRATION", "not-registered")
 	t.Setenv("WITHHOLD_MAX_BYTES", "invalid")
 	var out bytes.Buffer
-	if listIntegrations(&out, []string{"--json"}) != 0 {
+	if listAgents(&out, []string{"--json"}) != 0 {
 		t.Fatal("discovery depended on runtime configuration")
 	}
 	var payload struct {
-		Schema       int                        `json:"schema"`
-		Integrations []integrations.Description `json:"integrations"`
+		Schema int                        `json:"schema"`
+		Agents []integrations.Description `json:"agents"`
 	}
-	if json.Unmarshal(out.Bytes(), &payload) != nil || payload.Schema != 1 || !reflect.DeepEqual(payload.Integrations, integrations.List()) {
+	if json.Unmarshal(out.Bytes(), &payload) != nil || payload.Schema != 2 || !reflect.DeepEqual(payload.Agents, integrations.List()) {
 		t.Fatal("catalog did not match registered integrations")
 	}
 	for _, entry := range integrations.List() {
-		if got := valueCandidates("integration", entry.ID); !reflect.DeepEqual(got, []string{entry.ID}) {
+		if got := candidates([]string{"on", entry.ID}); !reflect.DeepEqual(got, []string{entry.ID}) {
 			t.Fatal("completion did not use catalog")
 		}
 	}
 	out.Reset()
-	if listIntegrations(&out, []string{"--help"}) != 0 || !strings.Contains(out.String(), "--json") || strings.Contains(out.String(), "--config ") {
+	if listAgents(&out, []string{"--help"}) != 0 || !strings.Contains(out.String(), "--json") || strings.Contains(out.String(), "--config ") {
 		t.Fatal("catalog help is inconsistent")
 	}
-	if listIntegrations(&out, []string{"--config", "ignored.toml"}) != 2 {
+	if listAgents(&out, []string{"--config", "ignored.toml"}) != 2 {
 		t.Fatal("catalog accepted runtime configuration flags")
 	}
 }

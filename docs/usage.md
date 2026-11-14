@@ -1,9 +1,10 @@
 # Using withhold
 
 withhold is a local privacy guard with explicit coding-agent integrations. Builds
-target macOS, Linux, and Windows on x64/ARM64. Currently only
-[desktop VS Code + GitHub Copilot](integrations/vscode-copilot.md) is integrated.
-Use the [integration catalog](integrations/README.md) for support and setup. Read the
+target macOS, Linux, and Windows on x64/ARM64. It supports
+[desktop VS Code + GitHub Copilot](integrations/vscode-copilot.md) and a
+[bounded Cursor Agent/Auto egress integration](integrations/cursor.md). Use the
+[integration catalog](integrations/README.md) for support and setup. Read the
 [protection limits](../CONTRACTS.md#scope-and-traffic-policy) before setup.
 
 ## Installation
@@ -228,12 +229,13 @@ or real trust store is used. A failure returns 1, not a simulated success.
 
 This demonstrates local enforcement, **not** editor routing, real-provider
 compatibility, WebSocket coverage, or every supported payload format. See the
-[integration validation matrix](integrations/vscode-copilot.md#validation-and-support-matrix).
+selected integration guide for its validation record.
 
 ### Configure the application
 
 ```sh
-withhold setup
+withhold agents
+withhold setup cursor vscode-copilot
 withhold doctor
 withhold on
 # Follow your integration's application startup/restart instructions.
@@ -241,11 +243,19 @@ withhold status
 withhold off
 ```
 
-These commands use the configured integration (default `vscode-copilot`). Run
-`withhold integrations` to list this build's adapters. Select one with
-`--integration NAME` or the [user config](configuration.md); stop the current
-session before switching. Application settings, coverage, and restart requirements
-belong to its [integration guide](integrations/README.md), not the shared proxy.
+Choose only the agents you use. `setup AGENT...` prepares prerequisites and saves
+the default set without starting the proxy or changing application routing.
+`on` uses that set; `on cursor` replaces it for one session without saving.
+Names can appear before or after options. There is no implicit default agent,
+auto-detection, positional port, or selector flag; use `--port PORT`.
+
+One shared proxy serves the selected set. Changing the set or effective settings
+requires `off` before `on`; repeating the same set/settings is idempotent.
+Activation validates every application before changing settings and attempts
+rollback on failure. Failed restoration retains the complete recovery record.
+`off` restores all recorded resources even with changed or broken configuration.
+Application coverage and restart requirements belong to each
+[integration guide](integrations/README.md).
 
 The guard does not restart at login/reboot. If its process exits, settings remain
 managed until `off` restores them. Restart applications after toggling if connections
@@ -260,7 +270,8 @@ check the provider/surface in audit records.
 | Linux | Current user's NSS databases; requires NSS `certutil` (e.g. `libnss3-tools`). |
 | Windows | Manual CA import; setup prints the certificate path. |
 
-`withhold setup --trust manual` creates the CA without installing trust.
+`withhold setup AGENT... --trust manual` creates the CA without installing trust
+and saves the chosen set.
 Import `ca.crt` into the appropriate user/application trust store, subject to your
 organization's policy. Protect `ca.key`: the CA can intercept traffic that trusts it.
 
@@ -304,7 +315,11 @@ result on a supported route. `passthrough` includes uninspected policy passes
 and bodyless requests. Observe mode may inspect but forwards original sensitive
 content: `coverage.observe` makes this explicit. Review integration exceptions,
 especially embeddings and token exchange; do not infer full coverage from counts.
-Status JSON schema 4 separates `coverage`, `traffic`, and finding-log `debug` health.
+Status JSON schema 5 separates `saved_agents`, `active_agents`, per-agent
+`applications` settings/backups, `coverage`, `traffic`, and finding-log `debug`
+health. Counters describe the whole proxy session, not the originating agent.
+`doctor` uses the active session when present, otherwise saved defaults;
+`doctor AGENT...` explicitly checks only those agents (JSON schema 3).
 
 For temporary debugging, run `withhold off`, then `withhold on --debug`:
 

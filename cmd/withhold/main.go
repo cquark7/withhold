@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -111,8 +112,8 @@ func run(args []string) int {
 	if args[0] == "completion" {
 		return completion(os.Stdout, args[1:])
 	}
-	if args[0] == "integrations" {
-		return listIntegrations(os.Stdout, args[1:])
+	if args[0] == "agents" {
+		return listAgents(os.Stdout, args[1:])
 	}
 	if args[0] == "demo" {
 		return demo(os.Stdout, args[1:])
@@ -174,45 +175,59 @@ func run(args []string) int {
 		// The test-only scope override is inherited by the private child, never
 		// read from public config or a working-directory file.
 		c.AllowHosts = strings.Split(os.Getenv("WITHHOLD_TEST_ALLOW_HOSTS"), ",")
-		if c.Integration != owner.Integration || c.Proxy.Port != owner.Port {
+		if c.Proxy.Port != owner.Port {
 			fmt.Fprintln(os.Stderr, "withhold: runtime configuration differs from its private session")
 			return 1
 		}
 	} else {
 		c, loadErr = o.resolve(flags)
 	}
+	savedAgents := slices.Clone(o.savedAgents)
+	// Default diagnostics describe the active session, not a changed config.
+	frozen := owner != nil
+	if verb == "doctor" && flags.NArg() == 0 {
+		if r, e := session.LoadRecord(filepath.Join(o.dir, session.StateName)); e == nil {
+			c, loadErr, frozen = *r.Configuration, nil, true
+			o.overrides(&c, flags)
+		}
+	}
 	configError := ""
+	if loadErr != nil {
+		configError = loadErr.Error()
+	}
 	needsConfig := verb == "on" || verb == "serve" || verb == "doctor" || verb == "config" || verb == "setup" || verb == "launch"
 	var scope policy.Profile
 	if needsConfig {
-		if loadErr != nil {
-			configError = loadErr.Error()
-		}
-		if err = c.Validate(); err != nil {
-			configError = err.Error()
-		}
 		get := os.Getenv
-		if owner != nil {
+		if frozen {
 			get = nil // Private children consume recorded settings, not new overrides.
 		}
-		application, appErr := integrations.Configure(c.Integration, c.Application, get)
-		if appErr != nil {
-			configError = appErr.Error()
-		} else {
-			c.Application = application
-		}
-		if strings.TrimSpace(c.Proxy.SuspicionPattern) == "" {
-			if pattern, e := integrations.SuspicionDefault(c.Integration); e == nil {
-				c.Proxy.SuspicionPattern = pattern
-			}
-		}
-		scope, err = integrations.Traffic(c.Integration, c.Scope(), c.Application)
-		if err != nil {
+		if err = integrations.Normalize(&c, get); err != nil && configError == "" {
 			configError = err.Error()
+		}
+		if verb != "config" {
+			if err = integrations.RequireAgents(c.Agents); err != nil {
+				if configError == "" {
+					configError = err.Error()
+				}
+			} else {
+				scope, err = integrations.TrafficSet(c)
+				if err != nil && configError == "" {
+					configError = err.Error()
+				}
+			}
 		}
 		if configError != "" && verb != "doctor" {
 			return commandUsageError(verb, configError)
 		}
+	}
+	if verb == "on" || verb == "serve" {
+		// Inactive agents' overrides are not part of this session's identity.
+		selected := make(map[string]json.RawMessage, len(c.Agents))
+		for _, id := range c.Agents {
+			selected[id] = c.Applications[id]
+		}
+		c.Applications = selected
 	}
 	// Recovery never depends on startup policy or configuration validity.
 	if !needsConfig && (c.Proxy.Port < 1 || c.Proxy.Port > 65535) {
@@ -236,13 +251,6 @@ func run(args []string) int {
 		}
 	}
 	if verb == "config" {
-		application, err := integrations.Application(c.Integration, applicationOptions(home, c))
-		if err == nil {
-			_, err = application.Resolve()
-		}
-		if err != nil {
-			return commandUsageError(verb, err.Error())
-		}
 		if !o.json {
 			data, err := config.TOML(c)
 			if err != nil {
@@ -288,32 +296,33 @@ func run(args []string) int {
 			}
 		})
 		lookup := func(id string) (integration.Application, error) {
-			options := applicationOptions(home, c)
-			// Recovery uses the recorded resource; malformed current adapter
-			// settings must not prevent constructing its restore implementation.
-			if id != c.Integration {
-				options.Settings = nil
+			// Restore implementations need only the recorded target, never new
+			// configuration, editor overrides, or application discovery.
+			var settings json.RawMessage
+			if frozen {
+				settings = c.Applications[id]
 			}
-			if !needsConfig {
-				normalized, err := integrations.Configure(id, options.Settings, os.Getenv)
-				if err != nil {
-					options.Settings = nil
-				} else {
-					options.Settings = normalized
+			return integrations.Application(id, applicationOptions(home, settings))
+		}
+		applications := map[string]integration.Application{}
+		for _, id := range c.Agents {
+			application, appErr := integrations.Application(id, applicationOptions(home, c.Applications[id]))
+			if appErr != nil {
+				if !needsConfig || verb == "doctor" {
+					continue
 				}
-			} else if verb == "doctor" && configError != "" {
-				options.Settings = nil
+				return commandUsageError(verb, appErr.Error())
 			}
-			return integrations.Application(id, options)
+			applications[id] = application
 		}
-		application, appErr := lookup(c.Integration)
-		if appErr != nil && (!needsConfig || verb == "doctor") {
-			application, appErr = lookup(integrations.Default)
+		saveSelection := func() error {
+			path := o.configPath
+			if path == "" {
+				path = filepath.Join(o.dir, "config.toml")
+			}
+			return config.SaveAgents(path, c.Agents)
 		}
-		if appErr != nil {
-			return commandUsageError(verb, appErr.Error())
-		}
-		rc := session.Run(session.Options{Verb: verb, Dir: o.dir, Port: o.port, PortSet: portSet, JSON: o.json, Preflight: o.preflight, KeepFiles: o.keep, Debug: o.debug, TrustMode: o.trust, BinDir: o.binDir, ApplicationArgs: applicationArgs, StartupTimeout: startupTimeout, ConfigError: configError, Integration: c.Integration, Application: application, LookupApplication: lookup, Configuration: &c, EnvironmentID: configurationID(c)})
+		rc := session.Run(session.Options{Verb: verb, Dir: o.dir, Port: o.port, PortSet: portSet, TargetsSet: flags.NArg() > 0, JSON: o.json, Preflight: o.preflight, KeepFiles: o.keep, Debug: o.debug, TrustMode: o.trust, BinDir: o.binDir, ApplicationArgs: applicationArgs, StartupTimeout: startupTimeout, ConfigError: configError, Agents: c.Agents, SavedAgents: savedAgents, Applications: applications, LookupApplication: lookup, SaveSelection: saveSelection, Configuration: &c, EnvironmentID: configurationID(c)})
 		if verb == "install" && rc == 0 {
 			installConfig(os.Stdout, o)
 		}

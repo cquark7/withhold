@@ -20,8 +20,8 @@ type Traffic struct {
 	pattern, suspicion *regexp.Regexp
 }
 
-// NewTraffic is intentionally not in the product registry. Supported request
-// shapes are independently testable while coverage/lifecycle gates remain open.
+// NewTraffic builds the registered Cursor traffic profile. Unsupported service
+// paths remain scoped and fail closed.
 func NewTraffic(options policy.ScopeOptions) (*Traffic, error) {
 	t := &Traffic{chat: options.ChatMode, inline: options.InlineMode, extra: map[string]bool{}, allow: map[string]bool{}}
 	if t.chat == "" {
@@ -91,6 +91,13 @@ func (t *Traffic) Classify(authority, path string) policy.Route {
 	}
 	u, err := url.ParseRequestURI(path)
 	if err == nil && u.RawPath == "" {
+		if name, ok := controlRoutes[u.Path]; ok {
+			route.API = strings.TrimPrefix(u.Path, "/")
+			route.Codec = &policy.RPCCodec{Decode: func(body []byte, limits policy.DecodeLimits) (policy.Message, error) {
+				return decodeMessage(name, body, limits)
+			}}
+			return route
+		}
 		if rpc, ok := rpcRoutes[u.Path]; ok {
 			route.API = strings.TrimPrefix(u.Path, "/")
 			if rpc.inline {
@@ -100,6 +107,9 @@ func (t *Traffic) Classify(authority, path string) policy.Route {
 				Decode: func(body []byte, limits policy.DecodeLimits) (policy.Message, error) {
 					return decodeMessage(rpc.message, body, limits)
 				}}
+			if rpc.message == agentClientMessage {
+				route.Codec.OpenStream = openAgentStream
+			}
 			return route
 		}
 	}

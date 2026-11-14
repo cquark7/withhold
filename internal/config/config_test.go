@@ -10,7 +10,7 @@ import (
 
 func TestConfigLoadDefaultsStrictnessAndNoImplicitWrites(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
-	defaults := Defaults("fixture", "linux")
+	defaults := Defaults("linux")
 	if got, err := Load(path, false, defaults); err != nil || !reflect.DeepEqual(got, defaults) {
 		t.Fatal("missing optional file changed defaults")
 	}
@@ -48,13 +48,13 @@ port = "PRIVATE"`,
 
 func TestConfigurationValidationNeverSilentlyDropsPII(t *testing.T) {
 	for _, selection := range [][]string{{"emails"}, {"off", "email"}, {"email", ""}, {""}, {"email,phone"}} {
-		c := Defaults("fixture", "linux")
+		c := Defaults("linux")
 		c.Protection.PII = selection
 		if c.Validate() == nil {
 			t.Fatal("invalid PII selection accepted")
 		}
 	}
-	c := Defaults("fixture", "windows")
+	c := Defaults("windows")
 	c.Protection.PII = []string{"all"}
 	if c.Validate() != nil || len(c.Protection.PII) != 6 || c.Trust != "manual" {
 		t.Fatal("all selection or platform default lost")
@@ -62,7 +62,7 @@ func TestConfigurationValidationNeverSilentlyDropsPII(t *testing.T) {
 }
 
 func TestWorkerEnvironmentIsExplicitAndDoesNotMutateParent(t *testing.T) {
-	c := Defaults("fixture", "linux")
+	c := Defaults("linux")
 	c.Protection.PII = []string{"email"}
 	base := []string{"PATH=keep", "WITHHOLD_PII=all", "withhold_pii=off"}
 	got := c.WorkerEnvironment(base)
@@ -73,12 +73,12 @@ func TestWorkerEnvironmentIsExplicitAndDoesNotMutateParent(t *testing.T) {
 
 func TestRejectsNonregularAndExcessiveConfiguration(t *testing.T) {
 	dir := t.TempDir()
-	defaults := Defaults("fixture", "linux")
+	defaults := Defaults("linux")
 	if _, err := Load(dir, true, defaults); err == nil {
 		t.Fatal("directory accepted as configuration")
 	}
 	path := filepath.Join(dir, "config.toml")
-	for _, text := range []string{strings.Repeat(" ", 1<<20+1), "schema = 1\n[application]\nvalue = " + strings.Repeat("[", 40) + `0` + strings.Repeat("]", 40)} {
+	for _, text := range []string{strings.Repeat(" ", 1<<20+1), "schema = 1\n[applications.fixture]\nvalue = " + strings.Repeat("[", 40) + `0` + strings.Repeat("]", 40)} {
 		if err := os.WriteFile(path, []byte(text), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -100,7 +100,7 @@ func TestInternalObjectsRejectAmbiguousJSONWithoutExposingValues(t *testing.T) {
 		`{"schema":1,"schema":1}`, `{"schema":"PRIVATE"}`,
 		`{"schema":1,"unknown":"PRIVATE"}`, `{"schema":1} {"schema":1}`,
 	} {
-		c := Defaults("fixture", "linux")
+		c := Defaults("linux")
 		if err := DecodeObject([]byte(text), &c); err == nil || strings.Contains(err.Error(), "PRIVATE") {
 			t.Fatalf("invalid internal object accepted or values exposed: %v", err)
 		}
@@ -110,7 +110,7 @@ func TestInternalObjectsRejectAmbiguousJSONWithoutExposingValues(t *testing.T) {
 func TestOnlyCanonicalProtectionModesAreAccepted(t *testing.T) {
 	for _, mode := range []string{"redact", "block", "warn", "", "observe"} {
 		for _, field := range []string{"chat", "inline"} {
-			c := Defaults("fixture", "linux")
+			c := Defaults("linux")
 			if field == "chat" {
 				c.Protection.Chat = mode
 			} else {
@@ -124,8 +124,8 @@ func TestOnlyCanonicalProtectionModesAreAccepted(t *testing.T) {
 }
 
 func TestEnvironmentDoesNotReadAlternatePrefixAliases(t *testing.T) {
-	c := Defaults("fixture", "linux")
-	want := Defaults("fixture", "linux")
+	c := Defaults("linux")
+	want := Defaults("linux")
 	c.Environment(func(key string) string {
 		return map[string]string{
 			"GUARD_INTEGRATION": "other", "GUARD_PII": "email",

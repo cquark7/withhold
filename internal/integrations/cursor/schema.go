@@ -1,6 +1,6 @@
-// Package cursor implements an unregistered Cursor protocol codec.
-// It does not configure an editor or establish request-routing coverage.
-// Schema provenance identifies the reviewed source, not a runtime version gate.
+// Package cursor implements Cursor's bounded request codecs and application
+// adapter. Schema provenance identifies the reviewed source, not a runtime
+// version gate.
 package cursor
 
 import (
@@ -19,6 +19,9 @@ var auxiliarySchemaData []byte
 
 //go:embed agent-schema.json
 var agentSchemaData []byte
+
+//go:embed control-schema.json
+var controlSchemaData []byte
 
 type fieldDef struct {
 	Number   protowire.Number `json:"number"`
@@ -52,7 +55,7 @@ func loadSchema() schema {
 	for name := range s.Messages {
 		s.inferenceTypes[name] = true
 	}
-	for _, data := range [][]byte{auxiliarySchemaData, agentSchemaData} {
+	for _, data := range [][]byte{auxiliarySchemaData, agentSchemaData, controlSchemaData} {
 		var additional schema
 		if err := json.Unmarshal(data, &additional); err != nil {
 			panic("invalid embedded Cursor additional schema")
@@ -100,6 +103,9 @@ const (
 // Present fields with unresolved content, reference, or integrity semantics are
 // rejected even when their wire definitions are known.
 func supportedField(message string, field fieldDef) bool {
+	if fields, ok := controlFields[message]; ok {
+		return slices.Contains(fields, int(field.Number))
+	}
 	if fields, ok := agentFields[message]; ok {
 		return slices.Contains(fields, int(field.Number))
 	}
@@ -119,8 +125,8 @@ func supportedField(message string, field fieldDef) bool {
 		return field.Number != 26 // Length of a static prefix that rewriting can change.
 	case "aiserver.v1.InferenceCoreMessage":
 		switch field.Number {
-		case 7, 17, 18, 19:
-			return false // Reasoning, alternate assistant parts, native content, or lineage.
+		case 17, 18, 19:
+			return false // Alternate assistant parts, native content, or lineage.
 		}
 	case "aiserver.v1.InferenceContentPart":
 		return field.Number == 1 || field.Number == 2 || field.Number == 3

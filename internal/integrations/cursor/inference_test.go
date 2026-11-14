@@ -253,6 +253,52 @@ func TestInferenceCleanWirePreservation(t *testing.T) {
 	}
 }
 
+func TestInferenceFollowUpInspectsHistoryAndPreservesSignedReasoning(t *testing.T) {
+	const secret = "AKIA4X7Q2W8K9MNDZZZZ"
+	scan := newScanner(t, "")
+	reasoning := concat(
+		byteField(2, []byte("Consider the previous response.")),
+		byteField(3, []byte("fixture-provider-signature")),
+	)
+	wire := fullRequest(concat(
+		textRequest("token = "+secret),
+		byteField(1, concat(
+			uintField(1, 3), byteField(2, []byte("Previous assistant response.")),
+			byteField(7, reasoning),
+		)),
+		textRequest("What does this mean?"),
+	))
+	rewritten, _ := scanRewrite(t, scan, wire)
+	request := byteFields(t, byteFields(t, rewritten, 2)[0], 2)[0]
+	history := byteFields(t, request, 1)
+	if len(history) != 3 || !bytes.Equal(byteFields(t, history[1], 7)[0], reasoning) {
+		t.Fatal("follow-up lost conversation history or changed signed reasoning")
+	}
+	if bytes.Contains(rewritten, []byte(secret)) || !bytes.Contains(rewritten, []byte("What does this mean?")) {
+		t.Fatal("follow-up did not redact the original prompt while preserving the new prompt")
+	}
+	// A finding inside signed content must still block, not break its signature.
+	signed := fullRequest(byteField(1, byteField(7, concat(
+		byteField(2, []byte("token = "+secret)),
+		byteField(3, []byte("fixture-provider-signature")),
+	))))
+	message, err := DecodeRunInference(signed, testCap)
+	if err != nil || !message.HasContent() {
+		t.Fatal("reasoning-only content was not inspected")
+	}
+	report := scan.Scan(message.ScanInput(), testCap)
+	if report["status"] != "redacted" {
+		t.Fatal("finding in signed reasoning was missed")
+	}
+	projection, err := base64.StdEncoding.DecodeString(report["body_base64"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := message.Rewrite(projection); !errors.Is(err, ErrUnsupported) {
+		t.Fatal("signed reasoning was rewritten")
+	}
+}
+
 func TestInferenceSegmentedTextRedaction(t *testing.T) {
 	const secret = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
 	wire := segmentedRequest(
@@ -383,7 +429,7 @@ func TestInferenceRejectsUnsupportedAndMalformedContent(t *testing.T) {
 		{"seed", byteField(11, nil), ErrUnsupported},
 		{"run-request-cache", byteField(1, byteField(19, nil)), ErrUnsupported},
 		{"log-bytes", byteField(7, byteField(1, []byte{0xff})), ErrUnsupported},
-		{"signed-reasoning", fullRequest(byteField(1, byteField(7, nil))), ErrUnsupported},
+		{"unknown-reasoning-field", fullRequest(byteField(1, byteField(7, byteField(99, nil)))), ErrUnsupported},
 		{"native-content", fullRequest(byteField(1, byteField(18, nil))), ErrUnsupported},
 		{"static-prefix-length", fullRequest(concat(plain, uintField(26, 0))), ErrUnsupported},
 		{"duplicate-singular", fullRequest(byteField(1, concat(byteField(2, nil), byteField(2, nil)))), ErrUnsupported},

@@ -998,6 +998,23 @@
     "agent.v1.RequestContextError": [
       {"number": 1, "name": "error", "type": "string"}
     ],
+    "agent.v1.RequestContextMcpsPart": [
+      {"number": 1, "name": "tools", "type": "agent.v1.McpToolDefinition", "repeated": true},
+      {"number": 2, "name": "mcp_instructions", "type": "agent.v1.McpInstructions", "repeated": true},
+      {"number": 3, "name": "mcp_file_system_options", "type": "agent.v1.McpFileSystemOptions", "opt": true},
+      {"number": 4, "name": "mcp_meta_tool_options", "type": "agent.v1.McpMetaToolOptions", "opt": true}
+    ],
+    "agent.v1.RequestContextPartReferences": [
+      {"number": 1, "name": "rules_blob_id", "type": "bytes"},
+      {"number": 2, "name": "rules_byte_length", "type": "uint32"},
+      {"number": 3, "name": "skills_blob_id", "type": "bytes"},
+      {"number": 4, "name": "skills_byte_length", "type": "uint32"},
+      {"number": 5, "name": "subagents_blob_id", "type": "bytes"},
+      {"number": 6, "name": "subagents_byte_length", "type": "uint32"},
+      {"number": 7, "name": "mcps_blob_id", "type": "bytes"},
+      {"number": 8, "name": "mcps_byte_length", "type": "uint32"},
+      {"number": 9, "name": "dynamic_context", "type": "agent.v1.RequestContext"}
+    ],
     "agent.v1.RequestContextRejected": [
       {"number": 1, "name": "reason", "type": "string"}
     ],
@@ -1005,6 +1022,18 @@
       {"number": 1, "name": "success", "type": "agent.v1.RequestContextSuccess", "oneof": "result"},
       {"number": 2, "name": "error", "type": "agent.v1.RequestContextError", "oneof": "result"},
       {"number": 3, "name": "rejected", "type": "agent.v1.RequestContextRejected", "oneof": "result"}
+    ],
+    "agent.v1.RequestContextRulesPart": [
+      {"number": 1, "name": "rules", "type": "agent.v1.CursorRule", "repeated": true},
+      {"number": 2, "name": "non_file_rules", "type": "agent.v1.CursorRule", "repeated": true},
+      {"number": 3, "name": "cloud_rule", "type": "string", "opt": true}
+    ],
+    "agent.v1.RequestContextSkillsPart": [
+      {"number": 1, "name": "agent_skills", "type": "agent.v1.AgentSkill", "repeated": true},
+      {"number": 2, "name": "skill_options", "type": "agent.v1.SkillOptions", "opt": true}
+    ],
+    "agent.v1.RequestContextSubagentsPart": [
+      {"number": 1, "name": "custom_subagents", "type": "agent.v1.CustomSubagent", "repeated": true}
     ],
     "agent.v1.RequestContextSuccess": [
       {"number": 1, "name": "request_context", "type": "agent.v1.RequestContext"},

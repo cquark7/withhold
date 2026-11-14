@@ -45,10 +45,10 @@ class NativeDesktopTests(unittest.TestCase):
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
             self.port = s.getsockname()[1]
-        self.run_guard("setup", "--trust", "manual")
+        self.run_guard("setup", "vscode-copilot", "--trust", "manual")
         self.addCleanup(self.run_guard, "off", expected=None)
         status = json.loads(self.run_guard("status", "--json").stdout)
-        self.settings = Path(status["settings"]["path"])
+        self.settings = Path(status["applications"][0]["settings"]["path"])
         self.settings.parent.mkdir(parents=True, exist_ok=True)
 
     def cleanup_state(self):
@@ -96,7 +96,7 @@ class NativeDesktopTests(unittest.TestCase):
         self.assertIn("withhold is running", started.stdout)
         self.assertIn("startup does not prove traffic is inspected", started.stdout)
         status = json.loads(self.run_guard("status", "--json").stdout)
-        self.assertEqual(status["schema"], 4)
+        self.assertEqual(status["schema"], 5)
         self.assertFalse(status["debug"]["enabled"])
         self.assertEqual(status["coverage"]["state"], "awaiting-traffic")
         self.assertEqual(status["traffic"]["received"], 0)
@@ -123,6 +123,67 @@ class NativeDesktopTests(unittest.TestCase):
         self.assertEqual(
             json.loads(self.settings.read_text())["http.proxy"], "http://new"
         )
+
+    def test_saved_agent_set_session_override_and_all_application_recovery(self):
+        path = self.root / "state" / "config.toml"
+        path.write_text(
+            'schema = 1\nagents = ["vscode-copilot"]\n'
+            "# Keep this policy and its comment.\n[protection]\nchat = 'redact'\n"
+        )
+        self.run_guard("setup", "vscode-copilot", "cursor", "--trust", "manual")
+        saved = path.read_bytes()
+        self.assertIn(b"# Keep this policy and its comment.", saved)
+        self.assertFalse(self.settings.exists())  # Setup does not route applications.
+        configured = json.loads(self.run_guard("status", "--json").stdout)
+        resources = {
+            row["agent"]: Path(row["settings"]["path"])
+            for row in configured["applications"]
+        }
+        for agent, resource in resources.items():
+            resource.parent.mkdir(parents=True, exist_ok=True)
+            resource.write_text(json.dumps({"keep": agent}))
+
+        self.on("cursor")
+        self.on(
+            "cursor", "cursor"
+        )  # A set, not an ordered/multiplicity-sensitive list.
+        report = json.loads(self.run_guard("status", "--json").stdout)
+        self.assertEqual(report["active_agents"], ["cursor"])
+        self.assertEqual(report["saved_agents"], ["cursor", "vscode-copilot"])
+        self.assertEqual(path.read_bytes(), saved)
+        self.assertNotIn("http.proxy", json.loads(self.settings.read_text()))
+        self.run_guard("on", "vscode-copilot", "--port", self.port, expected=2)
+        doctor = json.loads(self.run_guard("doctor", "--json").stdout)
+        self.assertEqual(doctor["agents"], ["cursor"])
+        invalid = json.loads(
+            self.run_guard(
+                "doctor", "--max-bytes", "invalid", "--json", expected=1
+            ).stdout
+        )
+        self.assertFalse(invalid["ok"])  # Explicit diagnostics flags still apply.
+        explicit = json.loads(
+            self.run_guard("doctor", "vscode-copilot", "--json").stdout
+        )
+        self.assertEqual(explicit["agents"], ["vscode-copilot"])
+        self.run_guard("off")
+
+        self.on()
+        self.on("vscode-copilot", "cursor")  # Order does not change session identity.
+        report = json.loads(self.run_guard("status", "--json").stdout)
+        self.assertEqual(report["active_agents"], ["cursor", "vscode-copilot"])
+        self.run_guard("launch", expected=2)  # Never guess which agent to launch.
+        for resource in resources.values():
+            current = json.loads(resource.read_text())
+            self.assertIn("http.proxy", current)
+            current["mid-session"] = True
+            resource.write_text(json.dumps(current))
+        path.write_text("broken TOML =")
+        self.run_guard("off")
+        for agent, resource in resources.items():
+            self.assertEqual(
+                json.loads(resource.read_text()), {"keep": agent, "mid-session": True}
+            )
+        self.assertFalse((self.root / "state" / "session.json").exists())
 
     def test_foreign_listener_is_refused_without_settings_changes(self):
         self.settings.write_text('{"keep": true}')
@@ -308,7 +369,7 @@ class NativeDesktopTests(unittest.TestCase):
         self.on()
         self.run_guard("on", "--port", self.port, "--chat-mode", "block", expected=2)
         doctor = json.loads(self.run_guard("doctor", "--json").stdout)
-        self.assertEqual(doctor["schema"], 2)
+        self.assertEqual(doctor["schema"], 3)
         self.assertTrue(doctor["ok"])
         self.assertEqual(
             [r["id"] for r in doctor["checks"]][:2], ["native-runtime", "scanner"]
@@ -420,11 +481,11 @@ class NativeDesktopTests(unittest.TestCase):
             upstream_ca,
             env=dict(self.env, WITHHOLD_TEST_ALLOW_HOSTS="127.0.0.1"),
         )
-        self.assertIn("VS Code routing configured", result.stdout)
+        self.assertIn("vscode-copilot; routing configured", result.stdout)
         self.assertIn("integration guide", result.stdout)
         self.assertNotIn("withhold launch", result.stdout)
         status = self.run_guard("status")
-        self.assertIn("VS Code integration guide", status.stdout)
+        self.assertIn("each agent's integration guide", status.stdout)
         self.assertNotIn("withhold launch", status.stdout)
         current = json.loads(self.settings.read_text())
         self.assertEqual(current["http.noProxy"], ["localhost", "127.0.0.1", "::1"])
@@ -703,7 +764,7 @@ connection.close()
     def test_persistent_configuration_drives_workers_and_session_identity(self):
         path = self.root / "state" / "config.toml"
         text = (
-            'schema = 1\nintegration = "vscode-copilot"\n'
+            'schema = 1\nagents = ["vscode-copilot"]\n'
             '[protection]\npii = ["email"]\n'
             f"[proxy]\nport = {self.port}\n"
         )
@@ -711,7 +772,7 @@ connection.close()
         self.run_guard("on")
         record_path = self.root / "state" / "session.json"
         record = json.loads(record_path.read_text())
-        self.assertEqual(record["integration"], "vscode-copilot")
+        self.assertEqual(record["configuration"]["agents"], ["vscode-copilot"])
         self.assertEqual(record["configuration"]["protection"]["pii"], ["email"])
         self.assertNotIn(self.env["WITHHOLD_PLACEHOLDER_KEY"], record_path.read_text())
         doctor = json.loads(self.run_guard("doctor", "--json").stdout)
@@ -747,7 +808,7 @@ connection.close()
         self.run_guard("on", "--port", self.port, expected=2)
         self.assertEqual(self.settings.read_text(), '{"keep":true}')
         self.assertFalse((self.root / "state" / "session.json").exists())
-        path.write_text("schema = 1\n")
+        path.write_text('schema = 1\nagents = ["vscode-copilot"]\n')
         self.on()
         path.write_text("broken TOML =")
         self.run_guard("serve", "--help")
@@ -763,11 +824,14 @@ connection.close()
     def test_configuration_selects_vscode_resource_without_environment_overrides(self):
         path = self.root / "state" / "config.toml"
         path.write_text(
-            'schema = 1\n[application]\nsettings_dir = "ConfiguredCode"\n'
+            'schema = 1\nagents = ["vscode-copilot"]\n'
+            '[applications.vscode-copilot]\nsettings_dir = "ConfiguredCode"\n'
             f"[proxy]\nport = {self.port}\n"
         )
         configured = Path(
-            json.loads(self.run_guard("status", "--json").stdout)["settings"]["path"]
+            json.loads(self.run_guard("status", "--json").stdout)["applications"][0][
+                "settings"
+            ]["path"]
         )
         configured.parent.mkdir(parents=True)
         configured.write_text('{"keep":"configured"}')
@@ -780,7 +844,10 @@ connection.close()
 
     def test_invalid_application_config_is_reported_without_changing_settings(self):
         path = self.root / "state" / "config.toml"
-        path.write_text('schema = 1\n[application]\nsettings_dir = "../invalid"\n')
+        path.write_text(
+            'schema = 1\nagents = ["vscode-copilot"]\n'
+            '[applications.vscode-copilot]\nsettings_dir = "../invalid"\n'
+        )
         self.run_guard("config", expected=2)
         report = json.loads(self.run_guard("doctor", "--json", expected=1).stdout)
         self.assertFalse(report["ok"])
@@ -796,42 +863,48 @@ connection.close()
             WITHHOLD_EDITOR_SETTINGS_DIR="../invalid",
             WITHHOLD_MAX_BYTES="invalid",
         )
-        catalog = json.loads(self.run_guard("integrations", "--json", env=env).stdout)
-        self.assertEqual(catalog["schema"], 1)
+        catalog = json.loads(self.run_guard("agents", "--json", env=env).stdout)
+        self.assertEqual(catalog["schema"], 2)
         self.assertEqual(
-            [entry["id"] for entry in catalog["integrations"]], ["vscode-copilot"]
+            [entry["id"] for entry in catalog["agents"]],
+            ["cursor", "vscode-copilot"],
         )
         self.assertIn(
             "docs/integrations/vscode-copilot.md",
-            self.run_guard("integrations", env=env).stdout,
+            self.run_guard("agents", env=env).stdout,
         )
-        self.run_guard("integrations", "--config", "ignored.toml", env=env, expected=2)
+        self.assertIn(
+            "docs/integrations/cursor.md",
+            self.run_guard("agents", env=env).stdout,
+        )
+        self.run_guard("agents", "--config", "ignored.toml", env=env, expected=2)
         self.assertFalse((self.root / "uninitialized").exists())
 
     def test_toml_config_normalizes_application_options_and_drives_session(self):
         path = self.root / "state" / "config.toml"
         path.write_text(
-            'schema = 1\nintegration = "vscode-copilot"\n'
+            'schema = 1\nagents = ["vscode-copilot"]\n'
             '[protection]\npii = ["email"] # Optional detection.\n'
             f"[proxy]\nport = {self.port}\n"
-            '[application]\nbinary = "file-code"\nsettings_dir = "TOMLCode"\n'
+            '[applications.vscode-copilot]\nbinary = "file-code"\nsettings_dir = "TOMLCode"\n'
         )
         before = path.read_bytes()
         env = dict(self.env, WITHHOLD_EDITOR_BIN="env-code")
         effective = json.loads(self.run_guard("config", "--json", env=env).stdout)
-        self.assertEqual(effective["application"]["binary"], "env-code")
-        self.assertNotIn("profile", effective["application"])
-        self.assertEqual(effective["application"]["settings_dir"], "TOMLCode")
+        application = effective["applications"]["vscode-copilot"]
+        self.assertEqual(application["binary"], "env-code")
+        self.assertNotIn("profile", application)
+        self.assertEqual(application["settings_dir"], "TOMLCode")
         configured = Path(
-            json.loads(self.run_guard("status", "--json", env=env).stdout)["settings"][
-                "path"
-            ]
+            json.loads(self.run_guard("status", "--json", env=env).stdout)[
+                "applications"
+            ][0]["settings"]["path"]
         )
         self.run_guard("on", env=env)
         self.assertIn("http.proxy", json.loads(configured.read_text()))
         record = json.loads((self.root / "state" / "session.json").read_text())
         self.assertEqual(
-            record["configuration"]["application"], effective["application"]
+            record["configuration"]["applications"], effective["applications"]
         )
         self.assertEqual(record["configuration"]["protection"]["pii"], ["email"])
         self.assertEqual(path.read_bytes(), before)
@@ -852,7 +925,7 @@ connection.close()
         fixture.stdout.close()
         path = self.root / "state" / "config.toml"
         path.write_text(
-            "schema = 1\n[application.traffic]\n"
+            'schema = 1\nagents = ["vscode-copilot"]\n[applications.vscode-copilot.traffic]\n'
             'extra_hosts = ["127.0.0.1"]\n'
             'extra_chat_paths = ["/v2/chat"]\n'
             'extra_inline_paths = ["/v2/inline"]\n'
@@ -882,7 +955,7 @@ connection.close()
         self.assertEqual(send("/v2/unknown")[0], 429)
 
         path.write_text(
-            "schema = 1\n[application.traffic]\n"
+            'schema = 1\nagents = ["vscode-copilot"]\n[applications.vscode-copilot.traffic]\n'
             'extra_hosts = ["127.0.0.1"]\n'
             'extra_chat_paths = ["/v3/chat"]\n'
         )
@@ -915,7 +988,9 @@ connection.close()
             json.loads(self.run_guard("config", "--json").stdout)["protection"]["chat"],
             "redact",
         )
-        path.write_text(f"schema = 1\n[proxy]\nport = {self.port}\n")
+        path.write_text(
+            f'schema = 1\nagents = ["vscode-copilot"]\n[proxy]\nport = {self.port}\n'
+        )
         self.run_guard("on")
         self.run_guard("off")
         self.assertFalse(self.settings.exists())
@@ -939,7 +1014,10 @@ connection.close()
     def test_unknown_application_options_fail_before_startup(self):
         path = self.root / "state" / "config.toml"
         for option in ("unknown", "profile"):
-            path.write_text(f'schema = 1\n[application]\n{option} = "PRIVATE"\n')
+            path.write_text(
+                f'schema = 1\nagents = ["vscode-copilot"]\n'
+                f'[applications.vscode-copilot]\n{option} = "PRIVATE"\n'
+            )
             result = self.run_guard("on", expected=2)
             self.assertNotIn("PRIVATE", result.stderr)
             self.assertFalse(self.settings.exists())

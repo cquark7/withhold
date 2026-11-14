@@ -7,12 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/cquark7/withhold/internal/config"
-	"github.com/cquark7/withhold/internal/integrations"
 )
 
 type cliOptions struct {
@@ -21,17 +19,18 @@ type cliOptions struct {
 	port                                                           int
 	timeout                                                        time.Duration
 	hosts, patterns                                                stringsFlag
-	configPath, integration, pii                                   string
+	configPath, pii                                                string
 	text                                                           string
 	confidence                                                     string
 	secrets                                                        bool
 	noDefaultExcludes                                              bool
 	exclude                                                        stringsFlag
+	savedAgents                                                    []string
 }
 
 func defaultOptions(home string) cliOptions {
 	o := cliOptions{dir: filepath.Join(home, ".config", "withhold"), pii: "off", secrets: true}
-	o.use(config.Defaults(integrations.Default, runtime.GOOS))
+	o.use(config.Defaults(runtime.GOOS))
 	return o
 }
 
@@ -41,7 +40,6 @@ func (o *cliOptions) flags(command string) *flag.FlagSet {
 	f.SetOutput(io.Discard)
 	f.StringVar(&o.dir, "dir", o.dir, "state and CA directory")
 	f.StringVar(&o.configPath, "config", o.configPath, "TOML user configuration (default DIR/config.toml)")
-	f.StringVar(&o.integration, "integration", o.integration, "built-in integration; list with 'withhold integrations'")
 	f.StringVar(&o.pii, "pii", o.pii, "optional PII: off, all, or comma-separated categories")
 	f.StringVar(&o.text, "text", o.text, "scan literal text instead of files or stdin (arguments can enter shell history)")
 	f.StringVar(&o.confidence, "confidence", o.confidence, "minimum secret confidence: low, medium, high; empty keeps all levels (PII unchanged)")
@@ -86,6 +84,7 @@ func boolFlag(f *flag.Flag) bool {
 // Help and argument normalization respect values and the application delimiter.
 func parseOptions(f *flag.FlagSet, command string, args []string) (applicationArgs []string, showHelp bool, err error) {
 	var normalized []string
+	var targets []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
@@ -93,26 +92,30 @@ func parseOptions(f *flag.FlagSet, command string, args []string) (applicationAr
 				applicationArgs = append(applicationArgs, args[i+1:]...)
 				break
 			}
-			normalized = append(normalized, args[i:]...)
+			targets = append(targets, args[i+1:]...)
 			break
 		}
 		if arg == "--help" || arg == "-h" {
 			return nil, true, nil
 		}
-		if _, e := strconv.Atoi(arg); e == nil && (command == "on" || command == "serve") {
-			normalized = append(normalized, "--port", arg)
+		if !strings.HasPrefix(arg, "-") {
+			targets = append(targets, arg)
 			continue
 		}
 		normalized = append(normalized, arg)
 		if strings.HasPrefix(arg, "-") && !strings.Contains(arg, "=") && !boolFlag(f.Lookup(strings.TrimLeft(arg, "-"))) && i+1 < len(args) {
 			i++
 			normalized = append(normalized, args[i])
+		} else if option := f.Lookup(strings.TrimLeft(arg, "-")); option != nil && !boolFlag(option) && !strings.Contains(arg, "=") {
+			return nil, false, fmt.Errorf("flag needs an argument: %s", arg)
 		}
 	}
+	normalized = append(normalized, "--")
+	normalized = append(normalized, targets...)
 	if err = f.Parse(normalized); err != nil {
 		return nil, false, err
 	}
-	if f.NArg() != 0 {
+	if f.NArg() != 0 && !acceptsAgents(command) {
 		return nil, false, fmt.Errorf("unexpected argument %q", f.Arg(0))
 	}
 	f.Visit(func(option *flag.Flag) {
@@ -121,6 +124,14 @@ func parseOptions(f *flag.FlagSet, command string, args []string) (applicationAr
 		}
 	})
 	return applicationArgs, false, err
+}
+
+func acceptsAgents(command string) bool {
+	switch command {
+	case "setup", "on", "serve", "doctor", "config", "launch":
+		return true
+	}
+	return false
 }
 
 func commandUsageError(command, message string) int {

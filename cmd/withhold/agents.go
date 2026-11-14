@@ -9,19 +9,19 @@ import (
 )
 
 // Discovery, like help and completion, is independent of runtime configuration.
-func listIntegrations(w io.Writer, args []string) int {
+func listAgents(w io.Writer, args []string) int {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
-		return help(w, "integrations")
+		return help(w, "agents")
 	}
 	if len(args) > 1 || len(args) == 1 && args[0] != "--json" {
-		return commandUsageError("integrations", "integrations accepts only --json")
+		return commandUsageError("agents", "agents accepts only --json")
 	}
 	entries := integrations.List()
 	if len(args) == 1 {
 		if json.NewEncoder(w).Encode(struct {
-			Schema       int                        `json:"schema"`
-			Integrations []integrations.Description `json:"integrations"`
-		}{1, entries}) != nil {
+			Schema int                        `json:"schema"`
+			Agents []integrations.Description `json:"agents"`
+		}{2, entries}) != nil {
 			return 1
 		}
 		return 0

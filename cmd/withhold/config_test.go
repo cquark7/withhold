@@ -21,7 +21,7 @@ func TestPersistentConfigurationPrecedenceAndAdditiveScope(t *testing.T) {
 	cleanConfigEnvironment(t)
 	dir := t.TempDir()
 	text := `schema = 1
-integration = "vscode-copilot"
+agents = ["vscode-copilot"]
 [protection]
 chat = "block"
 pii = ["email"]
@@ -29,7 +29,7 @@ pii = ["email"]
 port = 8090
 max_bytes = "8m"
 extra_hosts = ["file.example"]
-[application]
+[applications.vscode-copilot]
 settings_dir = "Code - Insiders"
 `
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(text), 0600); err != nil {
@@ -49,7 +49,7 @@ settings_dir = "Code - Insiders"
 		t.Fatal(err)
 	}
 	var application map[string]string
-	if json.Unmarshal(c.Application, &application) != nil {
+	if json.Unmarshal(c.Applications["vscode-copilot"], &application) != nil {
 		t.Fatal("application settings lost")
 	}
 	if c.Proxy.MaxBytes != "24m" || c.Protection.Chat != "redact" || len(c.Protection.PII) != 0 || c.Proxy.Port != 8090 || application["settings_dir"] != "Code - Insiders" {
@@ -58,7 +58,7 @@ settings_dir = "Code - Insiders"
 	if !reflect.DeepEqual(c.Proxy.ExtraHosts, []string{"file.example", "env.example", "flag.example"}) {
 		t.Fatal("scope overlays did not merge")
 	}
-	if _, err := integrations.Traffic(c.Integration, c.Scope(), c.Application); err != nil {
+	if _, err := integrations.TrafficSet(c); err != nil {
 		t.Fatal(err)
 	}
 }

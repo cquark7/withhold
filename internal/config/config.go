@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -46,28 +47,28 @@ type Scan struct {
 // Config contains no credentials or placeholder key. It can be recorded with a
 // private session so children never reread a changing configuration file.
 type Config struct {
-	Schema      int        `json:"schema"`
-	Integration string     `json:"integration"`
-	Protection  Protection `json:"protection"`
-	Proxy       Proxy      `json:"proxy"`
-	Scan        Scan       `json:"scan"`
-	// Application is decoded and validated by the selected integration. Shared
+	Schema     int        `json:"schema"`
+	Agents     []string   `json:"agents"`
+	Protection Protection `json:"protection"`
+	Proxy      Proxy      `json:"proxy"`
+	Scan       Scan       `json:"scan"`
+	// Applications are decoded and validated by their adapters. Shared
 	// configuration never accumulates fields for individual harnesses.
-	Application    json.RawMessage `json:"application"`
-	Trust          string          `json:"trust"`
-	StartupTimeout string          `json:"startup_timeout"`
-	Audit          string          `json:"audit,omitempty"`
-	Hint           string          `json:"hint,omitempty"`
+	Applications   map[string]json.RawMessage `json:"applications"`
+	Trust          string                     `json:"trust"`
+	StartupTimeout string                     `json:"startup_timeout"`
+	Audit          string                     `json:"audit,omitempty"`
+	Hint           string                     `json:"hint,omitempty"`
 	// AllowHosts is exclusively the isolated process-test scope override.
 	AllowHosts []string `json:"-"`
 }
 
-func Defaults(integration, platform string) Config {
+func Defaults(platform string) Config {
 	trust := "system"
 	if platform == "windows" {
 		trust = "manual"
 	}
-	return Config{Schema: 1, Integration: integration, Protection: Protection{Chat: "redact", Inline: "block", PII: []string{}}, Proxy: Proxy{Port: 8080, MaxBytes: "32m", ScanTimeout: "10s", ExtraHosts: []string{}, ExtraHostRegex: []string{}}, Application: json.RawMessage(`{}`), Trust: trust, StartupTimeout: "60s"}
+	return Config{Schema: 1, Agents: []string{}, Protection: Protection{Chat: "redact", Inline: "block", PII: []string{}}, Proxy: Proxy{Port: 8451, MaxBytes: "32m", ScanTimeout: "10s", ExtraHosts: []string{}, ExtraHostRegex: []string{}}, Applications: map[string]json.RawMessage{}, Trust: trust, StartupTimeout: "60s"}
 }
 
 // Load reads TOML and rejects ambiguous, unknown, or oversized settings.
@@ -225,7 +226,6 @@ func (c *Config) Environment(get func(string) string) {
 			*target = v
 		}
 	}
-	set("WITHHOLD_INTEGRATION", &c.Integration)
 	set("WITHHOLD_MAX_BYTES", &c.Proxy.MaxBytes)
 	set("WITHHOLD_AUDIT", &c.Audit)
 	set("WITHHOLD_HINT", &c.Hint)
@@ -253,9 +253,16 @@ func (c *Config) Environment(get func(string) string) {
 }
 
 func (c *Config) Validate() error {
-	if c.Schema != 1 || c.Integration == "" {
-		return errors.New("config requires schema 1 and an integration")
+	if c.Schema != 1 {
+		return errors.New("config requires schema 1")
 	}
+	for _, id := range c.Agents {
+		if id == "" || strings.TrimSpace(id) != id {
+			return errors.New("agents must contain nonempty agent IDs")
+		}
+	}
+	slices.Sort(c.Agents)
+	c.Agents = slices.Compact(c.Agents)
 	confidence, err := detector.ParseConfidence(c.Scan.Confidence)
 	if err != nil {
 		return err

@@ -72,8 +72,9 @@ func fixtureOptions(t *testing.T) (Options, *testintegration.Application) {
 	if err := os.WriteFile(app.Path, []byte("endpoint=original\nkeep=original\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	o := Options{Verb: "on", Dir: dir, Port: unusedPort(t), StartupTimeout: time.Second, Integration: "fixture", Application: app}
-	c := config.Defaults("fixture", "linux")
+	o := Options{Verb: "on", Dir: dir, Port: unusedPort(t), StartupTimeout: time.Second, Agents: []string{"fixture"}, Applications: map[string]integration.Application{"fixture": app}}
+	c := config.Defaults("linux")
+	c.Agents = o.Agents
 	c.Proxy.Port = o.Port
 	o.Configuration = &c
 	o.LookupApplication = func(id string) (integration.Application, error) {
@@ -122,6 +123,72 @@ func TestIndependentApplicationRollsBackApplyAndChildFailures(t *testing.T) {
 	}
 }
 
+func TestAgentSetPreflightRollbackAndRecordedRecovery(t *testing.T) {
+	for _, failure := range []string{"preflight", "shared resource", "apply", "restore"} {
+		t.Run(failure, func(t *testing.T) {
+			o, first := fixtureOptions(t)
+			second := &testintegration.Application{Path: filepath.Join(o.Dir, "second.ini")}
+			secondPath := second.Path
+			if err := os.WriteFile(second.Path, []byte("endpoint=second-original\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			o.Agents = []string{"fixture", "second"}
+			o.Configuration.Agents = o.Agents
+			o.Applications["second"] = second
+			o.LookupApplication = func(id string) (integration.Application, error) {
+				if id == "fixture" {
+					return first, nil
+				}
+				if id == "second" {
+					return second, nil
+				}
+				return nil, errors.New("unknown agent")
+			}
+			wantCode := 1
+			if failure == "preflight" || failure == "shared resource" {
+				if failure == "shared resource" {
+					second.Path = first.Path
+				} else {
+					second.ResolveError = errors.New("cannot resolve second application")
+				}
+				wantCode = 2
+			} else {
+				second.ApplyError = errors.New("second application partially applied")
+				if failure == "restore" {
+					first.RestoreError = errors.New("first restore temporarily unavailable")
+				}
+			}
+			if Run(o) != wantCode {
+				t.Fatal("unexpected activation result")
+			}
+			if wantCode == 2 && (first.Applied != 0 || second.Applied != 0) {
+				t.Fatal("preflight failure changed an application")
+			}
+			if failure == "restore" {
+				if _, err := LoadRecord(filepath.Join(o.Dir, StateName)); err != nil {
+					t.Fatal("partial recovery lost the complete resource record:", err)
+				}
+				first.RestoreError = nil
+				first.ResolveError = errors.New("discovery must not be required")
+				second.ResolveError = first.ResolveError
+				o.Verb, o.Agents, o.Applications = "off", []string{"unrelated"}, nil
+				if Run(o) != 0 {
+					t.Fatal("retry did not recover both recorded applications")
+				}
+			}
+			for path, endpoint := range map[string]string{first.Path: "endpoint=original", secondPath: "endpoint=second-original"} {
+				data, _ := os.ReadFile(path)
+				if !strings.Contains(string(data), endpoint) || strings.Contains(string(data), "endpoint=guard") {
+					t.Fatalf("application not restored: %s", data)
+				}
+			}
+			if _, err := os.Stat(filepath.Join(o.Dir, StateName)); !os.IsNotExist(err) {
+				t.Fatal("completed recovery left a stale record")
+			}
+		})
+	}
+}
+
 func TestRecoveryUsesRecordedIntegrationAndResourceDespiteBrokenDiscovery(t *testing.T) {
 	o, app := fixtureOptions(t)
 	target, _ := app.Resolve()
@@ -130,13 +197,13 @@ func TestRecoveryUsesRecordedIntegrationAndResourceDespiteBrokenDiscovery(t *tes
 	}
 	current, _ := os.ReadFile(app.Path)
 	_ = os.WriteFile(app.Path, append(current, []byte("mid-session=preserved\n")...), 0600)
-	r := Record{Schema: 1, Identity: control.Identity{Instance: control.Random(), Token: control.Random()}, Port: o.Port, Resource: app.Path, Integration: "fixture", Configuration: o.Configuration}
+	r := Record{Schema: 2, Identity: control.Identity{Instance: control.Random(), Token: control.Random()}, Port: o.Port, Applications: []ManagedApplication{{Agent: "fixture", Target: target}}, Configuration: o.Configuration}
 	if err := saveRecord(filepath.Join(o.Dir, StateName), r); err != nil {
 		t.Fatal(err)
 	}
 	app.ResolveError = errors.New("current discovery is broken")
-	o.Application = &testintegration.Application{Path: filepath.Join(o.Dir, "wrong-client.ini")}
-	o.Integration = "invalid-current-selection"
+	o.Applications = map[string]integration.Application{"invalid": &testintegration.Application{Path: filepath.Join(o.Dir, "wrong-client.ini")}}
+	o.Agents = []string{"invalid-current-selection"}
 	o.Verb = "off"
 	if Run(o) != 0 || app.Restored != 1 {
 		t.Fatal("recorded integration was not used for recovery")
@@ -164,7 +231,7 @@ func TestApplicationWithoutLauncherCanRecoverButCannotLaunch(t *testing.T) {
 
 func TestOversizedRecoveryRecordIsRefusedBeforePublication(t *testing.T) {
 	path := filepath.Join(t.TempDir(), StateName)
-	if saveRecord(path, Record{Resource: strings.Repeat("x", 1024*1024)}) == nil {
+	if saveRecord(path, Record{Environment: strings.Repeat("x", 1024*1024)}) == nil {
 		t.Fatal("unreadable recovery record published")
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -181,16 +248,18 @@ func TestSessionRecordRequiresCompleteConsistentFrozenConfiguration(t *testing.T
 		valid  bool
 	}{
 		{name: "current", valid: true},
-		{name: "missing integration", change: func(r *Record) { r.Integration = "" }},
+		{name: "missing agent", change: func(r *Record) { r.Applications[0].Agent = "" }},
 		{name: "missing configuration", change: func(r *Record) { r.Configuration = nil }},
-		{name: "missing resource", change: func(r *Record) { r.Resource = "" }},
-		{name: "different integration", change: func(r *Record) { r.Configuration.Integration = "other" }},
+		{name: "missing resource", change: func(r *Record) { r.Applications[0].Target.Resource = "" }},
+		{name: "different agent", change: func(r *Record) { r.Configuration.Agents = []string{"other"} }},
+		{name: "missing application", change: func(r *Record) { r.Applications = nil }},
 		{name: "different port", change: func(r *Record) { r.Configuration.Proxy.Port++ }},
 		{name: "invalid policy", change: func(r *Record) { r.Configuration.Protection.Chat = "warn" }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			c := config.Defaults("fixture", "linux")
-			r := Record{Schema: 1, Identity: control.Identity{Instance: control.Random(), Token: control.Random()}, Port: c.Proxy.Port, Resource: filepath.Join(dir, "client.ini"), Integration: c.Integration, Configuration: &c}
+			c := config.Defaults("linux")
+			c.Agents = []string{"fixture"}
+			r := Record{Schema: 2, Identity: control.Identity{Instance: control.Random(), Token: control.Random()}, Port: c.Proxy.Port, Applications: []ManagedApplication{{Agent: "fixture", Target: integration.Target{Resource: filepath.Join(dir, "client.ini")}}}, Configuration: &c}
 			if test.change != nil {
 				test.change(&r)
 			}
@@ -207,7 +276,7 @@ func TestSessionRecordRequiresCompleteConsistentFrozenConfiguration(t *testing.T
 			}
 			if test.valid {
 				var data map[string]any
-				if json.Unmarshal(after, &data) != nil || data["resource"] != r.Resource || data["settings"] != nil {
+				if json.Unmarshal(after, &data) != nil || data["applications"] == nil || data["resource"] != nil {
 					t.Fatal("record does not use the resource contract")
 				}
 			}

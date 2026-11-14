@@ -27,23 +27,22 @@ type check struct {
 }
 
 func exists(path string) bool { _, err := os.Stat(path); return err == nil }
-func status(o Options, e integration.Target, r Record, recordErr error) int {
+func status(o Options, apps []application, r Record, recordErr error) int {
 	state, h := ownership(o.Port, r)
 	var pid any
 	if h != nil {
 		pid = h.PID
 	}
-	settings := map[string]any{"path": e.Resource, "http_proxy": nil, "clean": true, "error": nil}
-	if recordErr == nil {
-		e.Resource = r.Resource
-		settings["path"] = e.Resource
-	}
-	appState, err := o.Application.Read(e)
-	if err != nil {
-		settings["error"] = err.Error()
-	} else if appState.Proxy != nil {
-		settings["http_proxy"] = appState.Proxy
-		settings["clean"] = false
+	applicationReports := []map[string]any{}
+	for _, app := range apps {
+		settings := map[string]any{"path": app.Target.Resource, "http_proxy": nil, "clean": true, "error": nil}
+		appState, err := app.adapter.Read(app.Target)
+		if err != nil {
+			settings["error"] = err.Error()
+		} else if appState.Proxy != nil {
+			settings["http_proxy"], settings["clean"] = appState.Proxy, false
+		}
+		applicationReports = append(applicationReports, map[string]any{"agent": app.Agent, "settings": settings, "backup": map[string]any{"path": appState.BackupPath, "present": appState.BackupPresent}})
 	}
 	debugPath := filepath.Join(o.Dir, "debug-findings.log")
 	debugEnabled := false
@@ -53,14 +52,22 @@ func status(o Options, e integration.Target, r Record, recordErr error) int {
 		debugEnabled = live.Enabled
 	}
 	debug := map[string]any{"enabled": debugEnabled, "path": debugPath, "healthy": nil, "summaries_written": nil, "write_failures": nil}
-	coverage := map[string]any{"state": coverageState(live), "observe": nil, "integration": nil}
+	coverage := map[string]any{"state": coverageState(live), "observe": nil, "agents": []string{}}
 	if live != nil {
 		debug["healthy"], debug["summaries_written"], debug["write_failures"] = live.Healthy, live.EventsWritten, live.WriteFailures
-		coverage["observe"], coverage["integration"] = r.Configuration.Protection.Observe, r.Integration
+		coverage["observe"], coverage["agents"] = r.Configuration.Protection.Observe, r.Configuration.Agents
 	}
-	payload := map[string]any{"schema": 4, "verb": "status", "ok": true, "port": o.Port, "runtime": "native", "proxy": map[string]any{"state": state, "pid": pid, "authenticated": state == "ours", "record": filepath.Join(o.Dir, StateName)}, "settings": settings, "backup": map[string]any{"path": appState.BackupPath, "present": appState.BackupPresent}, "ca": map[string]any{"dir": o.Dir, "files_present": exists(filepath.Join(o.Dir, "ca.crt")) && exists(filepath.Join(o.Dir, "ca.key")), "trust_state": exists(filepath.Join(o.Dir, "trust-state.json"))}, "debug": debug, "coverage": coverage, "traffic": trafficReport(live)}
+	active := []string{}
+	if state == "ours" {
+		active = r.Configuration.Agents
+	}
+	payload := map[string]any{"schema": 5, "verb": "status", "ok": true, "port": o.Port, "runtime": "native", "agents": o.Agents, "saved_agents": o.SavedAgents, "active_agents": active, "applications": applicationReports, "proxy": map[string]any{"state": state, "pid": pid, "authenticated": state == "ours", "record": filepath.Join(o.Dir, StateName)}, "ca": map[string]any{"dir": o.Dir, "files_present": exists(filepath.Join(o.Dir, "ca.crt")) && exists(filepath.Join(o.Dir, "ca.key")), "trust_state": exists(filepath.Join(o.Dir, "trust-state.json"))}, "debug": debug, "coverage": coverage, "traffic": trafficReport(live)}
 	if recordErr != nil && !os.IsNotExist(recordErr) {
 		payload["record_error"] = recordErr.Error()
+	}
+	if o.ConfigError != "" {
+		payload["config_error"] = o.ConfigError
+		payload["saved_agents"] = nil
 	}
 	if o.JSON {
 		_ = json.NewEncoder(os.Stdout).Encode(payload)
@@ -73,7 +80,20 @@ func status(o Options, e integration.Target, r Record, recordErr error) int {
 		default:
 			fmt.Printf("withhold is off; no listener on 127.0.0.1:%d.\n", o.Port)
 		}
-		fmt.Printf("settings: %s\nbackup: %v\n", e.Resource, appState.BackupPresent)
+		if o.ConfigError != "" {
+			fmt.Printf("saved agents: unavailable (%s)\n", o.ConfigError)
+		} else {
+			fmt.Printf("saved agents: %s\n", strings.Join(o.SavedAgents, ", "))
+		}
+		fmt.Printf("active agents: %s\n", strings.Join(active, ", "))
+		for _, app := range applicationReports {
+			settings := app["settings"].(map[string]any)
+			backup := app["backup"].(map[string]any)
+			fmt.Printf("%s settings: %v\n  backup: %v\n", app["agent"], settings["path"], backup["present"])
+			if settings["error"] != nil {
+				fmt.Printf("  settings error: %v\n", settings["error"])
+			}
+		}
 		fmt.Printf("coverage: %s\n", coverageState(live))
 		if live != nil {
 			fmt.Printf("traffic: connects=%d received=%d scan_attempts=%d inspected=%d passthrough=%d detected=%d redacted=%d blocked=%d upstream_written=%d responses=%d upstream_errors=%d\n", live.Connections, live.Received, live.Scanned, live.Inspected, live.Passthrough, live.Detected, live.Redacted, live.Blocked, live.Written, live.Responses, live.UpstreamErrors)
@@ -104,12 +124,9 @@ func status(o Options, e integration.Target, r Record, recordErr error) int {
 		} else {
 			fmt.Println("debug: off — enable with 'withhold off', then 'withhold on --debug'")
 		}
-		if err != nil {
-			fmt.Fprintln(os.Stdout, "settings error:", err)
-		}
 		switch state {
 		case "ours":
-			fmt.Fprintf(os.Stdout, "Next: follow the %s integration guide to verify traffic is routed and inspected.\n", o.Application.Name())
+			fmt.Fprintln(os.Stdout, "Next: follow each agent's integration guide to verify traffic is routed and inspected. Counters are session-wide, not process attribution.")
 		case "foreign":
 			fmt.Fprintln(os.Stdout, "Next: release this port or choose another with 'withhold on --port PORT'.")
 		default:
@@ -118,7 +135,7 @@ func status(o Options, e integration.Target, r Record, recordErr error) int {
 	}
 	return 0
 }
-func doctor(o Options, e integration.Target, r Record, recordErr error) int {
+func doctor(o Options, apps []application, r Record, recordErr error) int {
 	rows := []check{{"native-runtime", "PASS", "standalone native executable", ""}}
 	binary, err := os.Executable()
 	if err == nil {
@@ -173,35 +190,41 @@ func doctor(o Options, e integration.Target, r Record, recordErr error) int {
 		row.Detail = "manual trust; import ca.crt into the application trust store"
 	}
 	rows = append(rows, row)
-	if launcher, ok := o.Application.(integration.Launcher); ok {
-		row = check{"application-cli", "PASS", e.Binary, ""}
-		if _, err := exec.LookPath(e.Binary); err != nil {
-			row.Status = "WARN"
-			row.Detail = "optional application launcher is unavailable: " + e.Binary
-			row.Fix = launcher.MissingCLI()
+	for _, app := range apps {
+		e := app.Target
+		if launcher, ok := app.adapter.(integration.Launcher); ok {
+			row = check{"application-cli", "PASS", e.Binary, ""}
+			if _, err := exec.LookPath(e.Binary); err != nil {
+				row.Status = "WARN"
+				row.Detail = "optional application launcher is unavailable: " + e.Binary
+				row.Fix = launcher.MissingCLI()
+			}
+			row.ID = app.Agent + "/" + row.ID
+			rows = append(rows, row)
 		}
+		rows = append(rows, check{"application-restart", "WARN", "follow the integration guide for application trust and restart requirements", ""})
+		row = check{"backup", "WARN", "created by withhold on", ""}
+		appState, settingsErr := app.adapter.Read(e)
+		if appState.BackupPresent {
+			row.Status = "PASS"
+			row.Detail = appState.BackupPath
+		}
+		row.ID = app.Agent + "/" + row.ID
+		rows = append(rows, row)
+		row = check{"settings", "PASS", e.Resource, ""}
+		if app.resolveError != nil {
+			row = check{"settings", "FAIL", app.resolveError.Error(), "correct namespaced application settings"}
+		} else if settingsErr != nil {
+			row.Status = "FAIL"
+			row.Detail = settingsErr.Error()
+			row.Fix = "repair application settings before continuing"
+		}
+		row.ID = app.Agent + "/" + row.ID
 		rows = append(rows, row)
 	}
-	rows = append(rows, check{"application-restart", "WARN", "follow the integration guide for application trust and restart requirements", ""})
-	if recordErr == nil {
-		e.Resource = r.Resource
+	if len(apps) == 0 {
+		rows = append(rows, check{"agents", "FAIL", "no agents selected", "withhold setup AGENT..."})
 	}
-	row = check{"backup", "WARN", "created by withhold on", ""}
-	appState, settingsErr := o.Application.Read(e)
-	if appState.BackupPresent {
-		row.Status = "PASS"
-		row.Detail = appState.BackupPath
-	}
-	rows = append(rows, row)
-	row = check{"settings", "PASS", e.Resource, ""}
-	if e.Resource == "" {
-		row = check{"settings", "FAIL", "application settings could not be resolved", "correct integration/application configuration"}
-	} else if settingsErr != nil {
-		row.Status = "FAIL"
-		row.Detail = err.Error()
-		row.Fix = "repair application settings before continuing"
-	}
-	rows = append(rows, row)
 	row = check{"request-cap", "PASS", "validated native cap; 6 jobs / 64 MiB intake and scan admission", ""}
 	if o.ConfigError != "" {
 		row.Status = "FAIL"
@@ -226,7 +249,7 @@ func doctor(o Options, e integration.Target, r Record, recordErr error) int {
 		}
 	}
 	if o.JSON {
-		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"schema": 2, "verb": "doctor", "runtime": "native", "ok": ok, "checks": rows})
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"schema": 3, "verb": "doctor", "runtime": "native", "agents": o.Agents, "ok": ok, "checks": rows})
 	} else {
 		counts := map[string]int{}
 		for _, row := range rows {

@@ -219,7 +219,7 @@ class NativeProxyTests(unittest.TestCase):
         )
         env.update(overrides or {})
         log = (state / "log").open("wb")
-        command = [NATIVE, "serve", "--port", str(port)]
+        command = [NATIVE, "serve", "vscode-copilot", "--port", str(port)]
         if "--debug" in args:
             # Hard links retain the fixture key's private Windows ACL while
             # giving each trace its own log directory. The CA is read-only.
@@ -880,7 +880,10 @@ class NativeProxyTests(unittest.TestCase):
             ("--chat-mode", "invalid"),
         ]:
             result = subprocess.run(
-                [NATIVE, "serve", *args], env=self.env, capture_output=True, timeout=5
+                [NATIVE, "serve", "vscode-copilot", *args],
+                env=self.env,
+                capture_output=True,
+                timeout=5,
             )
             self.assertEqual(result.returncode, 2, result.stderr)
 
