@@ -43,6 +43,17 @@ def validate_version(value: str) -> str:
     return value
 
 
+def github_module_url() -> str:
+    """Derive the repository URL from the canonical Go module path."""
+    match = re.search(r"(?m)^module\s+(\S+)", (ROOT / "go.mod").read_text())
+    module_path = match.group(1).strip('"') if match else ""
+    if not module_path.startswith("github.com/"):
+        raise ValueError(
+            "go.mod must declare a github.com module path for documentation links"
+        )
+    return "https://" + module_path
+
+
 def artifact_name(target: str, version: str) -> str:
     validate_version(version)
     if target not in TARGETS:
@@ -76,6 +87,7 @@ def archive_document(relative_path: str, version: str) -> bytes:
         ROOT / "LICENSE": "LICENSE",
     }
     ref = quote(version, safe="") if version.startswith("v") else "main"
+    repository_url = github_module_url()
 
     def rewrite(match):
         destination = urlsplit(match[2])
@@ -87,7 +99,7 @@ def archive_document(relative_path: str, version: str) -> bytes:
             raise ValueError(f"documentation link does not exist: {relative}")
         link = bundled.get(target)
         if link is None:
-            link = f"https://github.com/cquark7/withhold/blob/{ref}/{quote(relative)}"
+            link = f"{repository_url}/blob/{ref}/{quote(relative)}"
         if destination.fragment:
             link += "#" + destination.fragment
         return match[1] + link + ")"

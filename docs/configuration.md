@@ -122,8 +122,8 @@ minimum; confidence affects offline secrets only, not PII or proxy detection. Se
 [local text inspection](usage.md#scan-local-text) for usage and limits.
 
 Prefer absolute paths for logs, config, and upstream roots: relative paths use
-the invoking working directory. Application resource paths follow the selected
-integration's documented rules.
+the invoking working directory. Application resource paths follow each selected
+agent's documented rules.
 
 ## Flags and environment
 
@@ -132,7 +132,7 @@ for `setup`, `on`, `serve`, `doctor`, `config`, and optional `launch`.
 `launch` accepts exactly one agent (or a one-agent saved set); arguments after
 `--` remain literal. `off` accepts no agent names and restores the recorded set.
 `scan` accepts `--dir`, `--config`, `--pii`, `--confidence`, `--max-bytes`, and
-`--scan-timeout`, but not integration, routing, trust, or redact/block options.
+`--scan-timeout`, but not agent selection, routing, trust, or redact/block options.
 `--debug` is session-only on `on`/`serve`, not a file field.
 
 | Variable | Setting |
@@ -149,7 +149,7 @@ for `setup`, `on`, `serve`, `doctor`, `config`, and optional `launch`.
 | `WITHHOLD_PLACEHOLDER_KEY` | Secret HMAC-key override; never log/share it. |
 
 Harness-specific environment overrides are documented in the
-[integration guides](integrations/README.md).
+[agent guides](integrations/README.md).
 
 ## Local state
 

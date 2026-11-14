@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/cquark7/withhold/internal/config"
+	"github.com/cquark7/withhold/internal/doclink"
 	"github.com/cquark7/withhold/internal/integration"
 	"github.com/cquark7/withhold/internal/policy"
 	"github.com/cquark7/withhold/internal/testintegration"
@@ -33,7 +35,12 @@ func TestCatalogHasUniqueCompleteRegistrationsAndExistingGuides(t *testing.T) {
 			t.Fatal("incomplete or duplicate integration metadata")
 		}
 		seen[entry.ID] = true
-		if _, err := os.Stat(filepath.Join(root, entry.Documentation)); err != nil {
+		prefix := doclink.URL("")
+		if prefix == "" || !strings.HasPrefix(entry.Documentation, prefix) {
+			t.Fatalf("catalog guide is not a clickable HTTPS URL: %q", entry.Documentation)
+		}
+		path := strings.TrimPrefix(entry.Documentation, prefix)
+		if _, err := os.Stat(filepath.Join(root, "docs", path)); err != nil {
 			t.Fatal("catalog guide is missing:", err)
 		}
 		d, err := lookup(entry.ID)

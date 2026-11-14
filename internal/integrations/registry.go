@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/cquark7/withhold/internal/config"
+	"github.com/cquark7/withhold/internal/doclink"
 	"github.com/cquark7/withhold/internal/integration"
 	"github.com/cquark7/withhold/internal/integrations/copilot"
 	"github.com/cquark7/withhold/internal/integrations/cursor"
@@ -16,7 +17,7 @@ import (
 )
 
 // Description is the read-only public catalog. IDs select a supported harness
-// and traffic contract together; a provider name alone is not an integration.
+// and traffic contract together; a provider name alone is not a supported agent.
 type Description struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
@@ -34,7 +35,7 @@ type definition struct {
 // One explicit registration per reviewed integration drives selection, help,
 // completion, and discovery. No init-time registration or dynamic code loading.
 var builtins = []definition{{
-	Description: Description{ID: "vscode-copilot", Name: "VS Code + GitHub Copilot", Documentation: "docs/integrations/vscode-copilot.md"},
+	Description: Description{ID: "vscode-copilot", Name: "VS Code + GitHub Copilot", Documentation: doclink.URL("integrations/vscode-copilot.md")},
 	example:     copilot.Example,
 	configure:   copilot.Configure,
 	traffic: func(o policy.ScopeOptions, settings json.RawMessage) (policy.Profile, error) {
@@ -44,7 +45,7 @@ var builtins = []definition{{
 		return copilot.Application{Options: o}, nil
 	},
 }, {
-	Description: Description{ID: "cursor", Name: "Cursor", Documentation: "docs/integrations/cursor.md"},
+	Description: Description{ID: "cursor", Name: "Cursor", Documentation: doclink.URL("integrations/cursor.md")},
 	example:     cursor.Example,
 	configure:   cursor.Configure,
 	traffic: func(o policy.ScopeOptions, _ json.RawMessage) (policy.Profile, error) {
@@ -131,7 +132,7 @@ func Normalize(c *config.Config, get func(string) string) error {
 
 func RequireAgents(ids []string) error {
 	if len(ids) == 0 {
-		return fmt.Errorf("no agents selected; run 'withhold agents', then 'withhold setup AGENT...'")
+		return fmt.Errorf("no agents selected; run 'withhold setup AGENT...' to save defaults (use 'withhold agents' to see choices)")
 	}
 	for _, id := range ids {
 		if _, err := lookup(id); err != nil {

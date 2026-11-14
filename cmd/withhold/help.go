@@ -5,18 +5,21 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/cquark7/withhold/internal/doclink"
+	"github.com/cquark7/withhold/internal/integrations"
 )
 
 var commandOrder = []string{"setup", "on", "off", "status", "doctor", "scan", "agents", "demo", "uninstall", "install", "launch", "serve", "init-ca", "config", "completion", "version"}
 var commands = map[string]string{
-	"setup":      "Prepare agent prerequisites and save the default agent set.",
+	"setup":      "Prepare the local CA and certificate trust for selected agents; save them as defaults.",
 	"on":         "Configure application routing and start an authenticated background proxy.",
 	"off":        "Stop withhold and restore managed settings, preserving other edits.",
 	"status":     "Report session, traffic inspection evidence, and recovery state.",
 	"doctor":     "Check the bundled scanner, configuration, settings, and trust.",
 	"demo":       "Demonstrate redaction and blocking locally, without a provider or setup.",
 	"scan":       "Find secrets and selected PII in local text, files, or directories without rewriting.",
-	"launch":     "Launch the selected application, if its integration supports it.",
+	"launch":     "Launch the selected agent's application, when supported.",
 	"uninstall":  "Restore settings and remove verified certificate trust.",
 	"install":    "Copy this standalone executable into a per-user binary directory.",
 	"serve":      "Run the proxy in the foreground, without changing application settings.",
@@ -24,7 +27,7 @@ var commands = map[string]string{
 	"completion": "Print shell completion for bash, zsh, fish, or powershell.",
 	"version":    "Print the native build and bundled detector versions.",
 	"config":     "View effective settings or create a user-editable TOML configuration.",
-	"agents":     "List supported agents and their scope/setup guides.",
+	"agents":     "List supported agents and print clickable setup-guide URLs.",
 }
 
 var examples = map[string]string{
@@ -58,7 +61,7 @@ func help(w io.Writer, command string) int {
 				fmt.Fprintf(w, "  %-12s %s\n", name, commands[name])
 			}
 		}
-		fmt.Fprintln(w, "\nGet started:\n  withhold agents\n  withhold setup AGENT...\n  withhold on\n  withhold status\n  withhold off\n\nSetup saves your default agents and configures user-scope CA trust.\nUse 'withhold on AGENT...' to override the set for one session without saving it.\nFollow each agent's trust, routing, and restart instructions.\nOnly supported request bodies routed through the proxy are inspected.\n\nUse 'withhold help COMMAND' for options and examples.")
+		fmt.Fprintln(w, "\nGet started:\n  withhold agents\n  withhold setup AGENT...\n  withhold on\n  withhold status\n  withhold off\n\n'withhold agents' lists supported agents and clickable guide URLs. Setup saves\nthe selected defaults and prepares CA trust in system or manual mode. It does not\nstart the proxy or configure application routing. Use 'withhold on AGENT...' to\nreplace the set for one session without saving it.\nFollow each agent's trust, routing, and restart instructions.\nOnly supported request bodies routed through the proxy are inspected.\n\nUse 'withhold help COMMAND' for options and examples.")
 		return 0
 	}
 	description, ok := commands[command]
@@ -107,13 +110,16 @@ func help(w io.Writer, command string) int {
 	case "config":
 		fmt.Fprintln(w, "\nConfig prints effective TOML as a reloadable snapshot; it may include private\npaths and pins defaults if saved. --json prints the same settings as JSON.\nAgent names override the saved selection for this view only.\n--init creates a default-inheriting file without overwriting; it accepts agent\nnames, --dir and --config. --example ignores config and environment; it accepts\nonly agent names. Neither supplies an implicit default agent.")
 	case "launch":
-		fmt.Fprintln(w, "\nLaunch is optional and integration-specific. Arguments after -- stay literal;\nthe application's exit status is preserved. Follow its integration guide for\nproxy/CA environment and process-restart requirements.")
+		fmt.Fprintln(w, "\nLaunching is optional and only supported for some agents. Arguments after --\nstay literal; the application's exit status is preserved. Follow the selected\nagent's guide for proxy/CA environment and process-restart requirements.")
 	case "setup":
-		fmt.Fprintln(w, "\nNamed agents replace the saved default set after successful setup. Without\nnames, use the saved set. Setup does not start the proxy or configure routing.")
-		fmt.Fprintln(w, "\nSystem mode changes current-user certificate trust. Linux requires NSS certutil;\nNSS alone may not cover the application's networking runtime. Manual mode prints\nthe CA path. Trust guide:\nhttps://github.com/cquark7/withhold/blob/main/docs/usage.md#certificate-trust")
+		fmt.Fprintln(w, "\nSupported agents:")
+		_ = writeAgentChoices(w, integrations.List(), false)
+		fmt.Fprintln(w, "Run 'withhold agents' for clickable guide URLs.")
+		fmt.Fprintln(w, "\nNamed agents replace the saved default set after successful setup. Without\nnames, setup reuses the saved set; if none is saved, choose one or more names\nabove. An initial setup with no names prints the choices and makes no changes.\nSetup does not start the proxy or configure application routing.")
+		fmt.Fprintf(w, "\nSystem mode changes current-user certificate trust. Linux requires NSS certutil;\nNSS alone may not cover the application's networking runtime. Manual mode prints\nthe CA path. Trust guide:\n%s\n", doclink.URL("usage.md#certificate-trust"))
 	case "on", "serve":
 		if command == "on" {
-			fmt.Fprintln(w, "\nWithout agent names, use the saved set. Explicit names replace that set for this\nsession only; they do not save defaults or append targets. Run 'withhold agents'\nfor support boundaries. Missing setup never silently changes certificate trust.\nThe active set is pinned; run 'withhold off' before changing it.")
+			fmt.Fprintln(w, "\nWithout agent names, use the saved set. Explicit names replace that set for this\nsession only; they do not save defaults or append targets. Run 'withhold agents'\nfor supported agents and guide URLs. Missing setup never silently changes\ncertificate trust. The active set is pinned; run 'withhold off' before changing it.")
 		}
 		fmt.Fprintln(w, "\nObserve mode can forward secrets unchanged. Stop with 'withhold off' before\nchanging a background session's options. Foreground serve stops with Ctrl-C.")
 		fmt.Fprintln(w, "\nPII is off by default. Use --pii all or comma-separated categories:\naadhaar,credit-card,email,ip-address,phone,us-ssn. See CONTRACTS.md for limits.")
@@ -123,9 +129,9 @@ func help(w io.Writer, command string) int {
 	}
 	if allowedFlag(command, "config") {
 		if command == "scan" {
-			fmt.Fprintln(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nPrecedence: flags > WITHHOLD_PII / WITHHOLD_MAX_BYTES > file > defaults.\nOnly detection settings and scan limits apply; editor/proxy environment is ignored.\nReference: https://github.com/cquark7/withhold/blob/main/docs/usage.md#scan-local-text")
+			fmt.Fprintf(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nPrecedence: flags > WITHHOLD_PII / WITHHOLD_MAX_BYTES > file > defaults.\nOnly detection settings and scan limits apply; editor/proxy environment is ignored.\nReference: %s\n", doclink.URL("usage.md#scan-local-text"))
 		} else {
-			fmt.Fprintln(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nPrecedence: flags > environment > file > defaults; extra hosts/patterns merge.\nView settings with 'withhold config'. Reference:\nhttps://github.com/cquark7/withhold/blob/main/docs/configuration.md")
+			fmt.Fprintf(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nPrecedence: flags > environment > file > defaults; extra hosts/patterns merge.\nView settings with 'withhold config'. Reference:\n%s\n", doclink.URL("configuration.md"))
 		}
 	}
 	if command == "scan" {

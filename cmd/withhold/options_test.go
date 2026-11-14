@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/cquark7/withhold/internal/integrations"
 )
 
 func TestParseOptionsPreservesValuesAndEditorArguments(t *testing.T) {
@@ -72,7 +74,7 @@ func TestDebugFlagIsRestrictedToProxyCommands(t *testing.T) {
 	}
 }
 
-func TestGettingStartedUsesIntegrationDiscoveryNotHarnessAssumptions(t *testing.T) {
+func TestGettingStartedUsesAgentSelectionNotHarnessAssumptions(t *testing.T) {
 	var out bytes.Buffer
 	if help(&out, "") != 0 {
 		t.Fatal("help failed")
@@ -82,8 +84,17 @@ func TestGettingStartedUsesIntegrationDiscoveryNotHarnessAssumptions(t *testing.
 		t.Fatal(out.String())
 	}
 	out.Reset()
-	if help(&out, "launch") != 0 || !strings.Contains(out.String(), "Launch is optional and integration-specific") {
+	if help(&out, "launch") != 0 || !strings.Contains(out.String(), "Launching is optional and only supported for some agents") || strings.Contains(out.String(), "integration") {
 		t.Fatal(out.String())
+	}
+	out.Reset()
+	if help(&out, "setup") != 0 {
+		t.Fatal("setup help failed")
+	}
+	for _, entry := range integrations.List() {
+		if !strings.Contains(out.String(), entry.ID) || !strings.Contains(out.String(), entry.Name) {
+			t.Errorf("setup help omitted %s: %s", entry.ID, out.String())
+		}
 	}
 }
 

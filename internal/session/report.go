@@ -126,7 +126,7 @@ func status(o Options, apps []application, r Record, recordErr error) int {
 		}
 		switch state {
 		case "ours":
-			fmt.Fprintln(os.Stdout, "Next: follow each agent's integration guide to verify traffic is routed and inspected. Counters are session-wide, not process attribution.")
+			fmt.Fprintln(os.Stdout, "Next: follow each agent's guide to verify traffic is routed and inspected. Counters are session-wide, not process attribution.")
 		case "foreign":
 			fmt.Fprintln(os.Stdout, "Next: release this port or choose another with 'withhold on --port PORT'.")
 		default:
@@ -202,7 +202,7 @@ func doctor(o Options, apps []application, r Record, recordErr error) int {
 			row.ID = app.Agent + "/" + row.ID
 			rows = append(rows, row)
 		}
-		rows = append(rows, check{"application-restart", "WARN", "follow the integration guide for application trust and restart requirements", ""})
+		rows = append(rows, check{"application-restart", "WARN", "follow the agent guide for application trust and restart requirements", ""})
 		row = check{"backup", "WARN", "created by withhold on", ""}
 		appState, settingsErr := app.adapter.Read(e)
 		if appState.BackupPresent {
@@ -223,7 +223,7 @@ func doctor(o Options, apps []application, r Record, recordErr error) int {
 		rows = append(rows, row)
 	}
 	if len(apps) == 0 {
-		rows = append(rows, check{"agents", "FAIL", "no agents selected", "withhold setup AGENT..."})
+		rows = append(rows, check{"agents", "FAIL", "no agents selected", "run 'withhold setup AGENT...' to save a default set; use 'withhold agents' to list choices"})
 	}
 	row = check{"request-cap", "PASS", "validated native cap; 6 jobs / 64 MiB intake and scan admission", ""}
 	if o.ConfigError != "" {

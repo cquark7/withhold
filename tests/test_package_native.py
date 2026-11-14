@@ -82,7 +82,7 @@ class NativeArchiveTests(unittest.TestCase):
                 guide = files["README.md"]
                 self.assertIn(b"(CONTRACTS.md#scope-and-traffic-policy)", guide)
                 self.assertIn(
-                    b"https://github.com/cquark7/withhold/blob/v0.1.0-rc.1/docs/configuration.md",
+                    f"{packaging.github_module_url()}/blob/v0.1.0-rc.1/docs/configuration.md".encode(),
                     guide,
                 )
 

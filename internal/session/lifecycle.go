@@ -235,7 +235,7 @@ func Run(o Options) int {
 				return fail(1, fmt.Errorf("CA ready, but agent selection was not saved: %w", err))
 			}
 		}
-		fmt.Printf("Local CA ready. Saved agents: %s.\nRun 'withhold on'. Follow each agent's integration guide for trust and restart requirements.\n", strings.Join(o.Agents, ", "))
+		fmt.Printf("Local CA ready. Saved agents: %s.\nRun 'withhold on'. Follow each agent's guide for trust and restart requirements.\n", strings.Join(o.Agents, ", "))
 		if o.TrustMode == "manual" {
 			fmt.Printf("CA trust is manual; import %s into the application's trust store before use.\n", filepath.Join(o.Dir, "ca.crt"))
 		}
@@ -382,7 +382,7 @@ func on(o Options, apps []application, r Record, recordErr error) int {
 	deadline := time.Now().Add(o.StartupTimeout)
 	for time.Now().Before(deadline) {
 		if h, e := control.Probe(o.Port, r.Identity); e == nil && h.Build == build && h.PID == r.PID {
-			fmt.Printf("withhold is running on 127.0.0.1:%d (authenticated pid %d). Agents: %s; routing configured.\nFollow each integration guide for trust and restart requirements; startup does not prove traffic is inspected.\n", o.Port, h.PID, strings.Join(o.Agents, ", "))
+			fmt.Printf("withhold is running on 127.0.0.1:%d (authenticated pid %d). Agents: %s; routing configured.\nFollow each agent's guide for trust and restart requirements; startup does not prove traffic is inspected.\n", o.Port, h.PID, strings.Join(o.Agents, ", "))
 			if h.Debug != nil && h.Debug.Enabled {
 				fmt.Printf("Debug findings: %s\nUse 'withhold status' for live traffic/redaction counters.\n", filepath.Join(o.Dir, "debug-findings.log"))
 			}
@@ -477,7 +477,7 @@ func off(o Options, apps []application, r Record, recordErr error) int {
 		}
 		fmt.Println("withhold is off; managed settings restored.")
 		if len(apps) > 0 {
-			fmt.Printf("Restart %s if connections or launch-time proxy settings are cached; follow each integration guide.\n", strings.Join(o.Agents, ", "))
+			fmt.Printf("Restart %s if connections or launch-time proxy settings are cached; follow each agent's guide.\n", strings.Join(o.Agents, ", "))
 		}
 	}
 	return rc

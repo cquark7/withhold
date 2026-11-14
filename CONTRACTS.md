@@ -4,8 +4,8 @@ These are the observable guarantees and limits of withhold. Changes require
 matching tests and documentation. For operation and settings, see
 [usage](docs/usage.md) and [configuration](docs/configuration.md).
 Harness-specific guarantees and inspection-policy exceptions live in the
-[integration contracts](docs/integrations/README.md). Both layers apply; an
-integration cannot relax the shared transport, privacy, or recovery guarantees.
+[agent-specific guarantees](docs/integrations/README.md). Both layers apply; an
+agent cannot relax the shared transport, privacy, or recovery guarantees.
 
 ## Scope and traffic policy
 
@@ -13,11 +13,11 @@ withhold reduces **accidental disclosure in supported request bodies** routed
 through its proxy. Headers, URL queries, responses, deliberate bypass, and
 provider-side handling are outside its protection. Scanning is local and offline.
 
-An integration selects a coding harness and a tested traffic contract together.
+Each supported agent identifies a coding harness and its tested traffic contract.
 It defines guarded hosts, request paths/surfaces, intentional passthrough,
-suspicious-host classification, and local error framing. Unknown integration
-IDs fail; naming an executable or adding an extra host does not establish support
-for another agent. `withhold agents` lists only reviewed built-ins.
+suspicious-host classification, and local error framing. Unknown agent IDs fail;
+naming an executable or adding an extra host does not establish support for
+another agent. `withhold agents` lists only reviewed built-ins.
 
 One proxy composes the selected agent profiles. Overlapping guarded/passthrough
 claims fail closed independent of order. Passthrough and inspection-failure
@@ -199,8 +199,8 @@ not ended successfully or spliced with an error inside a partial upstream
 envelope. Streaming finding summaries report release as send-unconfirmed:
 reading an upload buffer is not evidence of a completed network write. Scanned
 control identifiers/handshakes alone do not establish inspected-content coverage.
-The Cursor integration opts into this capability for its documented Connect
-routes; see its integration guide for the accepted request subset.
+Cursor opts into this capability for its documented Connect routes; see the
+Cursor agent guide for the accepted request subset.
 
 Client WebSocket messages are bounded, reassembled, and decompressed before
 inspection; server messages pass through. Redact mode forwards verified rewrites;
@@ -210,7 +210,7 @@ stop it. Observe mode forwards originals instead of enforcing policy; transport
 and capacity failures still stop the session. Panics abort flows, never create
 an uninspected fallback. Shutdown closes connections and reaps workers.
 
-Policy blocks use the selected integration's tested error response protocol.
+Policy blocks use the selected agent's tested error response protocol.
 Streaming detection and local error framing never change scanning or admission.
 
 ## Local state and recovery
@@ -218,7 +218,10 @@ Streaming detection and local error framing never change scanning or admission.
 `setup AGENT...` creates an EC P-256 CA, configures current-user trust, and saves
 the exact agent set in the selected config without replacing unrelated settings
 or comments. It does not start a session or configure application routing.
-Missing names use the saved set; there is no implicit default or detection.
+Missing names use the saved set; there is no implicit default or detection. When
+neither names nor a saved set exist, `setup` returns 2, lists registered agent
+IDs/names with an example command, and makes no state or trust changes. `agents`
+prints the same current catalog with HTTPS guide URLs.
 Manual imports
 are the user's responsibility. Existing or partial CA files are not overwritten.
 Private keys/state use mode 0600 on POSIX or protected current-user Windows ACLs.
@@ -298,7 +301,7 @@ Human output is concise and factual: startup confirms a running proxy and
 configured routing, not verified inspection coverage. Policy terms remain
 `redact` and `block`; branding does not change machine status/action vocabulary.
 
-Help, version, completion, and integration discovery do not read runtime
+Help, version, completion, and agent discovery do not read runtime
 configuration, initialize trust, change settings, or start
 workers. Version reports the release build version when supplied, otherwise the
 main module version from Go build metadata when available, or `dev` for local
@@ -307,7 +310,7 @@ success 0, except for the documented `scan` exit codes above. `doctor --prefligh
 is silent on success and returns 2 on failure.
 JSON commands write one object: configuration schema 1 (plural `agents` and
 `applications`, with no singular compatibility fields), status schema 5, doctor
-schema 3, agent catalog schema 2, demo schema 1, and scan schema 1.
+schema 3, agent catalog schema 3, demo schema 1, and scan schema 1.
 Schema changes must be explicit.
 `config` prints a reloadable TOML snapshot of the effective public configuration,
 including adapter-owned defaults; `config --json` prints the same settings as

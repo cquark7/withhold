@@ -117,7 +117,7 @@ Setup creates a local certificate authority
 sent. **Setup changes current-user certificate trust on macOS/Linux.** Windows
 uses manual trust. Review
 [certificate trust](docs/usage.md#certificate-trust) and the
-[integration guide](docs/integrations/vscode-copilot.md) first.
+[VS Code + Copilot agent guide](docs/integrations/vscode-copilot.md) first.
 
 ```sh
 withhold agents
@@ -181,7 +181,7 @@ overwriting anything. See the [configuration reference](docs/configuration.md).
 ## Privacy and limits
 
 - Inspection covers supported bodies **routed through the proxy**. Deliberate
-  bypass, integration-specific passthrough, and unrelated hosts are outside it.
+  bypass, agent-specific passthrough, and unrelated hosts are outside it.
 - Headers, URL queries, responses, and opaque media/document/archive attachments
   are not scanned. There is no OCR or document extraction.
 - Detection can miss values or produce false positives. PII patterns are not
@@ -209,7 +209,7 @@ new integrations, detection cases, clearer docs, and focused fixes.
 
 ## Documentation
 
-- [Usage and recovery](docs/usage.md) · [Integration catalog](docs/integrations/README.md)
+- [Usage and recovery](docs/usage.md) · [Agent catalog](docs/integrations/README.md)
 - [Configuration](docs/configuration.md) · [Protection contract](CONTRACTS.md)
 - [Architecture](docs/architecture.md) · [Adding an integration](docs/adding-integrations.md)
 - [Development](CONTRIBUTING.md) · [Release verification](docs/releasing.md)

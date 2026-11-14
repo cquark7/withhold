@@ -97,7 +97,7 @@ func scanConfiguration(o cliOptions, f *flag.FlagSet) (config.Config, error) {
 	// Strictly validate the file's application schema, without ambient editor
 	// overrides, application discovery, or constructing a traffic/session runtime.
 	if err := integrations.Normalize(&c, nil); err != nil {
-		return c, errors.New("invalid integration/application settings in scan configuration")
+		return c, errors.New("invalid agent application settings in scan configuration")
 	}
 	return c, nil
 }

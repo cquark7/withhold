@@ -206,6 +206,9 @@ func run(args []string) int {
 			configError = err.Error()
 		}
 		if verb != "config" {
+			if verb == "setup" && configError == "" && len(c.Agents) == 0 {
+				return setupAgentsRequired(os.Stderr)
+			}
 			if err = integrations.RequireAgents(c.Agents); err != nil {
 				if configError == "" {
 					configError = err.Error()

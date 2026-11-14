@@ -76,7 +76,7 @@ func launch(o Options, apps []application, r Record, recordErr error) int {
 	e := app.Target
 	launcher, ok := app.adapter.(integration.Launcher)
 	if !ok {
-		return fail(2, errors.New("selected integration does not support launch; follow its integration guide"))
+		return fail(2, errors.New("launch is not supported for this agent; see its guide for supported launch options"))
 	}
 	if recordErr != nil {
 		return fail(1, errors.New("run 'withhold on' before launching the application"))
@@ -89,7 +89,7 @@ func launch(o Options, apps []application, r Record, recordErr error) int {
 		matched = matched || managed.Agent == app.Agent && managed.Target.Resource == e.Resource
 	}
 	if !matched {
-		return fail(1, errors.New("application settings differ from the running session; run 'withhold off' before changing integrations or settings"))
+		return fail(1, errors.New("application settings differ from the running session; run 'withhold off' before changing agents or settings"))
 	}
 	if _, err := certstore.Load(o.Dir); err != nil {
 		return fail(1, err)

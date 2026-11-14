@@ -1,10 +1,10 @@
 # Using withhold
 
-withhold is a local privacy guard with explicit coding-agent integrations. Builds
-target macOS, Linux, and Windows on x64/ARM64. It supports
+withhold is a local privacy guard for supported coding agents. Builds target
+macOS, Linux, and Windows on x64/ARM64. It supports
 [desktop VS Code + GitHub Copilot](integrations/vscode-copilot.md) and a
-[bounded Cursor Agent/Auto egress integration](integrations/cursor.md). Use the
-[integration catalog](integrations/README.md) for support and setup. Read the
+[bounded Cursor Agent/Auto workflow](integrations/cursor.md). Use the
+[agent catalog](integrations/README.md) for support and setup. Read the
 [protection limits](../CONTRACTS.md#scope-and-traffic-policy) before setup.
 
 ## Installation
@@ -229,7 +229,7 @@ or real trust store is used. A failure returns 1, not a simulated success.
 
 This demonstrates local enforcement, **not** editor routing, real-provider
 compatibility, WebSocket coverage, or every supported payload format. See the
-selected integration guide for its validation record.
+selected agent guide for its validation record.
 
 ### Configure the application
 
@@ -238,10 +238,16 @@ withhold agents
 withhold setup cursor vscode-copilot
 withhold doctor
 withhold on
-# Follow your integration's application startup/restart instructions.
+# Follow each selected agent's application startup/restart instructions.
 withhold status
 withhold off
 ```
+
+`withhold agents` lists supported IDs, names, and clickable guide URLs;
+`withhold setup --help` also lists the supported IDs and names. If no saved
+default set exists, bare `withhold setup` prints the choices and exits without
+changing trust or local state. Choose an agent explicitly, for example
+`withhold setup cursor`.
 
 Choose only the agents you use. `setup AGENT...` prepares prerequisites and saves
 the default set without starting the proxy or changing application routing.
@@ -254,8 +260,8 @@ requires `off` before `on`; repeating the same set/settings is idempotent.
 Activation validates every application before changing settings and attempts
 rollback on failure. Failed restoration retains the complete recovery record.
 `off` restores all recorded resources even with changed or broken configuration.
-Application coverage and restart requirements belong to each
-[integration guide](integrations/README.md).
+Application coverage and restart requirements are documented in each
+[agent guide](integrations/README.md).
 
 The guard does not restart at login/reboot. If its process exits, settings remain
 managed until `off` restores them. Restart applications after toggling if connections
@@ -275,8 +281,8 @@ and saves the chosen set.
 Import `ca.crt` into the appropriate user/application trust store, subject to your
 organization's policy. Protect `ca.key`: the CA can intercept traffic that trusts it.
 
-OS trust does not necessarily cover a harness's networking runtime. Follow its
-integration guide for additional roots or launch-time configuration; never
+OS trust does not necessarily cover an agent's networking runtime. Follow its
+guide for additional roots or launch-time configuration; never
 disable TLS verification as a workaround. `doctor` cannot verify manual imports.
 
 ## Configuration and diagnostics
@@ -360,7 +366,7 @@ and trust removal succeed.
 | Verification failure | Stop; check the expected tag and checksum. For provenance failures, check the commit and GitHub CLI version. Do not bypass verification. |
 | Certificate errors | Check `doctor` and the integration trust guide. Private upstream PKI uses `--upstream-ca FILE`. |
 | Port occupied | Check `status`; stop your session or choose `on --port 8090`. Foreign listeners are never stopped. |
-| Running, no expected traffic | Check application routing, host scope, and runtime location against the integration guide. |
+| Running, no expected traffic | Check application routing, host scope, and runtime location against the agent guide. |
 | Startup/restore failure | Keep state/backups, inspect `proxy.log`, repair invalid application settings, and retry `off`. |
 
 Run `withhold off`, then `withhold uninstall` to restore settings and remove

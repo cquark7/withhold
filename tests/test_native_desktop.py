@@ -482,10 +482,10 @@ class NativeDesktopTests(unittest.TestCase):
             env=dict(self.env, WITHHOLD_TEST_ALLOW_HOSTS="127.0.0.1"),
         )
         self.assertIn("vscode-copilot; routing configured", result.stdout)
-        self.assertIn("integration guide", result.stdout)
+        self.assertIn("agent's guide", result.stdout)
         self.assertNotIn("withhold launch", result.stdout)
         status = self.run_guard("status")
-        self.assertIn("each agent's integration guide", status.stdout)
+        self.assertIn("each agent's guide", status.stdout)
         self.assertNotIn("withhold launch", status.stdout)
         current = json.loads(self.settings.read_text())
         self.assertEqual(current["http.noProxy"], ["localhost", "127.0.0.1", "::1"])
@@ -864,19 +864,15 @@ connection.close()
             WITHHOLD_MAX_BYTES="invalid",
         )
         catalog = json.loads(self.run_guard("agents", "--json", env=env).stdout)
-        self.assertEqual(catalog["schema"], 2)
+        self.assertEqual(catalog["schema"], 3)
         self.assertEqual(
             [entry["id"] for entry in catalog["agents"]],
             ["cursor", "vscode-copilot"],
         )
-        self.assertIn(
-            "docs/integrations/vscode-copilot.md",
-            self.run_guard("agents", env=env).stdout,
-        )
-        self.assertIn(
-            "docs/integrations/cursor.md",
-            self.run_guard("agents", env=env).stdout,
-        )
+        catalog_text = self.run_guard("agents", env=env).stdout
+        for agent in catalog["agents"]:
+            self.assertTrue(agent["documentation"].startswith("https://"))
+            self.assertIn(agent["documentation"], catalog_text)
         self.run_guard("agents", "--config", "ignored.toml", env=env, expected=2)
         self.assertFalse((self.root / "uninitialized").exists())
 

@@ -1,8 +1,9 @@
 # Supported agents
 
-An integration pairs a **coding harness** (its setup, trust, and lifecycle) with
-a **traffic profile** (provider hosts, APIs, and error protocol). Sharing an API
-or being a VS Code fork does not make an agent supported automatically.
+Each supported agent combines a **coding harness** (its setup, trust, and
+lifecycle) with a **tested traffic scope** (provider hosts, APIs, and error
+protocol). Sharing an API or being a VS Code fork does not make an agent
+supported automatically.
 
 | Agent ID | Harness | Platforms | Contract and setup |
 | --- | --- | --- | --- |
@@ -10,7 +11,7 @@ or being a VS Code fork does not make an agent supported automatically.
 | `vscode-copilot` | Desktop VS Code + GitHub Copilot | macOS, Linux, Windows; [trust requirements](vscode-copilot.md#validation-and-support-matrix) | [Guide](vscode-copilot.md) |
 
 Codex, OpenCode, remote extension hosts, WSL, containers, and browser editors
-are not established integrations. No dynamic plugins are loaded.
+are not currently supported agents. No dynamic plugins are loaded.
 
 Cursor support is deliberately limited; see its guide for the validated workflow
 and fail-closed exclusions.
@@ -38,5 +39,5 @@ route claims fail closed rather than selecting a profile by order. One adapter's
 passthrough cannot override another adapter's guarded or suspicious host.
 Session-wide inspection counters are not attribution to individual agents.
 
-Every integration contract supplements the [shared contract](../../CONTRACTS.md).
-For implementing one, see [Adding an integration](../adding-integrations.md).
+Each agent's documented scope supplements the [shared contract](../../CONTRACTS.md).
+For adding agent support, see [Adding an integration](../adding-integrations.md).
