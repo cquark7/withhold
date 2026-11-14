@@ -107,7 +107,7 @@ class CursorSchemaTests(unittest.TestCase):
         child = "agent.v1.UnreviewedChild"
         source = (
             f'r=Z.makeMessageType("{root}",'
-            '()=>[{no:1,name:"child",kind:"message",T:c}]),'
+            '()=>[{no:1e3,name:"child",kind:"message",T:c}]),'
             f'c=Z.makeMessageType("{child}",'
             '()=>[{no:1,name:"payload",kind:"scalar",T:12}])'
         )
@@ -122,6 +122,8 @@ class CursorSchemaTests(unittest.TestCase):
             complete = json.loads(extract(app, (root,)))
         self.assertEqual(set(shallow["messages"]), {root})
         self.assertEqual(shallow["messages"][root][0]["type"], child)
+        self.assertIsInstance(shallow["messages"][root][0]["number"], int)
+        self.assertEqual(shallow["messages"][root][0]["number"], 1000)
         self.assertEqual(set(complete["messages"]), {root, child})
 
 

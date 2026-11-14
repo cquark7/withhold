@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -752,6 +753,24 @@ func TestCursorDuplexWithScannerWorker(t *testing.T) {
 	}
 }
 
+func cursorAgentHistoryFixture(text string) []byte {
+	field := func(n protowire.Number, data []byte) []byte {
+		return protowire.AppendBytes(protowire.AppendTag(nil, n, protowire.BytesType), data)
+	}
+	var blobs []byte
+	blob := func(data []byte) []byte {
+		id := sha256.Sum256(data)
+		blobs = append(blobs, field(17, append(field(1, id[:]), field(2, data)...))...)
+		return id[:]
+	}
+	user := blob(field(1, []byte("ordinary previous prompt")))
+	edit := field(2, field(12, field(2, field(1, field(7, []byte(text))))))
+	step := blob(edit)
+	turn := blob(field(1, append(field(1, user), field(2, step)...)))
+	run := append(field(1, field(8, turn)), field(2, field(1, field(1, field(1, []byte("ordinary follow-up prompt")))))...)
+	return field(1, append(run, blobs...))
+}
+
 func TestCursorContentCompatibilityWithScannerWorker(t *testing.T) {
 	binary := os.Getenv("WITHHOLD_TEST_SCANNER_WORKER")
 	if binary == "" {
@@ -805,6 +824,18 @@ func TestCursorContentCompatibilityWithScannerWorker(t *testing.T) {
 			field(2, field(14, field(1, field(1, []byte(sentinel[:12]))))), true, true, true, false},
 		{"agent-heartbeat", "/agent.v1.AgentService/Run", "application/connect+proto", "",
 			field(7, nil), true, true, false, false},
+		{"agent-history-clean", "/agent.v1.AgentService/Run", "application/connect+proto", "",
+			cursorAgentHistoryFixture("ordinary edited file"), true, true, false, false},
+		{"agent-history-finding", "/agent.v1.AgentService/Run", "application/connect+proto", "",
+			cursorAgentHistoryFixture(sentinel), true, true, true, false},
+		{"agent-history-modified-hash", "/agent.v1.AgentService/Run", "application/connect+proto", "",
+			bytes.Replace(cursorAgentHistoryFixture("ordinary edited file"), []byte("edited"), []byte("mutate"), 1), true, true, true, false},
+		{"agent-context-clean", "/agent.v1.AgentService/Run", "application/connect+proto", "",
+			field(2, field(10, field(1, field(1, field(11, field(2, []byte("ordinary git status"))))))), true, true, false, false},
+		{"agent-context-finding", "/agent.v1.AgentService/Run", "application/connect+proto", "",
+			field(2, field(10, field(1, field(1, field(29, field(2, []byte(sentinel))))))), true, true, true, false},
+		{"agent-prewarm-finding", "/agent.v1.AgentService/Run", "application/connect+proto", "",
+			field(8, field(8, []byte(sentinel))), true, true, true, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			scope, err := cursor.NewTraffic(policy.ScopeOptions{AllowHosts: []string{"127.0.0.1"}, InlineMode: test.inlineMode})
@@ -906,6 +937,8 @@ func TestCursorAgentDuplexLaterResultsWithScannerWorker(t *testing.T) {
 		{"shell-finding", field(2, field(2, field(1, field(5, []byte(secret))))), true},
 		{"kv-blob", field(3, field(2, field(1, []byte("uninspected blob")))), true},
 		{"shell-chunk", field(2, field(14, field(1, field(1, []byte(secret[:12]))))), true},
+		{"clean-context", field(2, field(10, field(1, field(1, field(14, field(2, []byte("ordinary tool instructions"))))))), false},
+		{"context-finding", field(2, field(10, field(1, field(1, field(29, field(2, []byte(secret))))))), true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			received := make(chan connectrpc.Frame, 2)

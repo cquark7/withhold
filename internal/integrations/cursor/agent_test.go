@@ -185,10 +185,10 @@ func TestAgentSupportedFieldGraphIsReviewed(t *testing.T) {
 				t.Fatalf("invalid or duplicate reviewed field %s.%d", name, number)
 			}
 			seen[number] = true
-			if field.Type == "bytes" {
+			if field.Type == "bytes" && !agentByteField(name, field.Number) {
 				t.Fatalf("unresolved byte field admitted: %s.%s", name, field.Name)
 			}
-			if scalarWire(field.Type) == protowire.BytesType && field.Type != "string" {
+			if scalarWire(field.Type) == protowire.BytesType && field.Type != "string" && field.Type != "bytes" {
 				if _, ok := pinned.fields[field.Type]; !ok {
 					t.Fatalf("unreviewed child descriptor: %s.%s -> %s", name, field.Name, field.Type)
 				}
@@ -221,6 +221,7 @@ func FuzzDecodeAgent(f *testing.F) {
 	f.Add(agentRun(byteField(1, []byte("ordinary prompt")), nil))
 	f.Add(agentExec(7, byteField(1, byteField(2, []byte("ordinary file contents")))))
 	f.Add(byteField(7, nil))
+	f.Add(agentHistory(byteField(1, []byte("ordinary prompt")), byteField(1, byteField(1, []byte("ordinary reply")))))
 	f.Add([]byte{0x0a, 0x80})
 	f.Fuzz(func(t *testing.T, body []byte) {
 		message, err := decodeMessage(agentClientMessage, body, policy.DecodeLimits{MaxBytes: testCap})
@@ -232,4 +233,93 @@ func FuzzDecodeAgent(f *testing.F) {
 			t.Fatalf("accepted Agent message did not retain exact bytes: %v", err)
 		}
 	})
+}
+
+func TestAgentOrdinaryContextAndResultsAreInspected(t *testing.T) {
+	const secret = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
+	for name, requestContext := range map[string][]byte{
+		"git-status":        byteField(11, byteField(2, []byte(secret))),
+		"mcp-instructions":  byteField(14, byteField(2, []byte(secret))),
+		"skill-body":        byteField(29, byteField(2, []byte(secret))),
+		"skill-descriptor":  byteField(18, byteField(1, byteField(2, []byte(secret)))),
+		"subagent-prompt":   byteField(22, byteField(6, []byte(secret))),
+		"permissions":       byteField(46, byteField(1, []byte(secret))),
+		"terminal-command":  byteField(13, byteField(3, byteField(2, byteField(2, byteField(1, []byte(secret)))))),
+		"repository-origin": byteField(6, byteField(2, []byte(secret))),
+	} {
+		t.Run(name, func(t *testing.T) {
+			assertAgentInspection(t, agentRun(nil, requestContext), secret)
+			assertAgentInspection(t, agentExec(10, byteField(1, byteField(1, requestContext))), secret)
+		})
+	}
+	grepMatch := byteField(3, byteField(1, byteField(2, byteField(2, []byte(secret)))))
+	for name, result := range map[string][]byte{
+		"grep-active-editor": agentExec(5, byteField(1, byteField(5, grepMatch))),
+		"grep-workspace": agentExec(5, byteField(1, byteField(4, concat(
+			byteField(1, []byte("fixture-workspace")),
+			byteField(2, grepMatch),
+		)))),
+		"directory":     agentExec(8, byteField(1, byteField(1, byteField(3, byteField(1, []byte(secret)))))),
+		"diagnostic":    agentExec(9, byteField(1, byteField(2, byteField(3, []byte(secret))))),
+		"context-error": agentExec(10, byteField(2, byteField(1, []byte(secret)))),
+		"mini-shell":    agentExec(55, byteField(1, byteField(5, []byte(secret)))),
+	} {
+		t.Run(name, func(t *testing.T) { assertAgentInspection(t, result, secret) })
+	}
+}
+
+func TestAgentCommonToolHistoryIsInspected(t *testing.T) {
+	const secret = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
+	for name, tool := range map[string][]byte{
+		"shell-command": byteField(1, byteField(1, byteField(1, []byte(secret)))),
+		"shell-result":  byteField(1, byteField(2, byteField(1, byteField(5, []byte(secret))))),
+		"delete":        byteField(3, byteField(2, byteField(1, byteField(4, []byte(secret))))),
+		"glob":          byteField(4, byteField(2, byteField(1, byteField(3, []byte(secret))))),
+		"grep":          byteField(5, byteField(2, byteField(2, byteField(1, []byte(secret))))),
+		"read":          byteField(8, byteField(2, byteField(1, byteField(1, []byte(secret))))),
+		"update-todos":  byteField(9, byteField(1, byteField(1, byteField(2, []byte(secret))))),
+		"read-todos":    byteField(10, byteField(2, byteField(1, byteField(1, byteField(2, []byte(secret)))))),
+		"edit-diff":     byteField(12, byteField(2, byteField(1, byteField(5, []byte(secret))))),
+		"edit-before":   byteField(12, byteField(2, byteField(1, byteField(6, []byte(secret))))),
+		"edit-after":    byteField(12, byteField(2, byteField(1, byteField(7, []byte(secret))))),
+		"directory":     byteField(13, byteField(2, byteField(1, byteField(1, byteField(1, []byte(secret)))))),
+		"lints":         byteField(14, byteField(2, byteField(1, byteField(1, byteField(2, byteField(3, []byte(secret))))))),
+		"mcp":           byteField(15, byteField(2, byteField(1, byteField(1, byteField(1, byteField(1, []byte(secret))))))),
+		"mcp-argument": byteField(15, byteField(1, byteField(2, concat(
+			byteField(1, []byte("token")), byteField(2, byteField(3, []byte(secret))),
+		)))),
+	} {
+		t.Run(name, func(t *testing.T) {
+			assertAgentInspection(t, agentHistory(byteField(1, []byte("ordinary prompt")), byteField(2, tool)), secret)
+		})
+	}
+	for name, tool := range map[string][]byte{
+		"unknown-tool":    byteField(99, nil),
+		"read-data":       byteField(8, byteField(2, byteField(1, byteField(6, []byte("ordinary bytes"))))),
+		"read-blob":       byteField(8, byteField(2, byteField(1, byteField(10, []byte("blob-id"))))),
+		"omitted-rule":    byteField(8, byteField(2, byteField(1, byteField(13, uintField(17, 1))))),
+		"remote-subagent": byteField(19, nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			wire := agentHistory(nil, byteField(2, tool))
+			if _, err := decodeMessage(agentClientMessage, wire, policy.DecodeLimits{MaxBytes: testCap}); !errors.Is(err, ErrUnsupported) {
+				t.Fatal("unreviewed tool history was admitted")
+			}
+		})
+	}
+}
+
+func TestAgentPrewarmingUsesSamePrivacyBoundary(t *testing.T) {
+	const secret = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
+	assertAgentInspection(t, byteField(8, byteField(8, []byte(secret))), secret)
+	id, blob := agentBlob(byteField(1, []byte(secret)))
+	assertAgentInspection(t, byteField(8, concat(byteField(3, byteField(6, id)), blob)), secret)
+	for _, wire := range [][]byte{
+		byteField(8, byteField(3, byteField(6, id))),
+		byteField(8, byteField(27, nil)), // Model credentials are not context.
+	} {
+		if _, err := decodeMessage(agentClientMessage, wire, policy.DecodeLimits{MaxBytes: testCap}); !errors.Is(err, ErrUnsupported) {
+			t.Fatal("prewarming bypassed ordinary Agent restrictions")
+		}
+	}
 }

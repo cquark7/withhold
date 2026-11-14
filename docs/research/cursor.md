@@ -196,7 +196,7 @@ inspection and isolated regressions establish the following narrower findings:
 | Concern | Assessment and current boundary |
 | --- | --- |
 | Product selection | Confirmed: Cursor is not selectable. Registration remains gated rather than advertising incomplete normal-session support. |
-| Agent RPC | `AgentService/Run` now decodes a self-contained subset: inline prompts/context, reviewed tool definitions, completed shell/read/write/delete/text-MCP results, and controls. Agent findings block rather than rewriting identifiers, hashes, or text whose replay semantics are not established. Blob/KV state, chunked shell output, other tool/interaction variants, and alternate write channels remain unsupported. `RunInference` is a separate supported route; neither subset establishes full ordinary-session coverage. |
+| Agent RPC | `AgentService/Run` decodes inline prompts/context, reviewed tool definitions, completed shell/read/write/delete/grep/directory/diagnostics/text-MCP results, request-context results, prewarming, controls, and the typed prefetched history subset below. Agent findings block rather than rewriting identifiers, hashes, or text whose replay semantics are not established. KV exchange, references outside the envelope, chunked shell output, unreviewed variants, and alternate write channels remain unsupported. `RunInference` is a separate supported route; neither subset establishes full ordinary-session coverage. |
 | NameTab context | Confirmed compatibility gap: known attached code and tool-result fields were rejected. Code-chunk lines, argument/content strings, and reviewed terminal/MCP result fields now use the shared scanner and verified protobuf rewriting. Other nested tool/context variants remain unsupported. |
 | Attachments | Confirmed text-file compatibility gap: inference file parts were rejected. Supported file/image string parts now retain order and use shared base64 inspection/media exclusions. NameTab's recognized image bytes are preserved as opaque media. OCR, document extraction, and fetching remote references are not part of the shared privacy contract. Blob uploads/references still require separate integrity handling. |
 | Selection and inline completion | Selection coordinates already decode; blocking inline findings is the intended default, not a missing feature. Known inline context items, additional visible file ranges, versions, and hashes now decode without changing any bytes. Hashes are preserved, not recomputed or treated as evidence that prior file-sync content was scanned. Findings cannot rewrite position/hash-bound context. |
@@ -210,25 +210,73 @@ not establish that a normal Cursor session works; registration still requires
 the remaining protocol/lifecycle work and ordinary-session compatibility
 evidence.
 
+### Typed prefetched history and ordinary context
+
+Read-only inspection of installed `serde.ts`, `blob-reference-rewriter.ts`,
+`agent-store.ts`, and the plan encoder establishes these protobuf blob types:
+todos, summaries, plans, conversation turns, user messages, conversation steps,
+and shell command/output history. A prefetched graph for these fields is now
+decoded and inspected before forwarding. Each upload must match its SHA-256
+address and be reachable through an admitted typed reference. Missing or
+malformed children, unused uploads, and unknown fields reject the envelope;
+there is no generic UTF-8 scan or cross-request trust cache.
+
+The graph supports reviewed local shell/read/edit/delete/glob/grep/directory/
+todo/lint/text-MCP history, not every `ToolCall` variant. It is bounded by wire,
+projection, depth, field, and typed-node/upload limits. Clean graph bytes and
+references are immutable, and findings block even in redact mode. Synthetic
+tests exercise nested snapshots, duplicate uploads, repeated DAG edges, changed
+hashes, missing references across retries, and content hidden in prior tool
+results. Root prompt-message JSON, summary archives, file-state content, and
+blob-backed prompt/context/result variants still require their own handling.
+Some local file-state IDs are not SHA-256 addresses; they are not admitted by
+this subset.
+
+Ordinary inline request context now includes git status/origins, project trees
+and terminal metadata, rules, skills/descriptors, custom-subagent definitions,
+MCP instructions, hooks, and auto-run instructions. Their text is inspected,
+including when delivered later as a `request_context_result`. Recognizing a
+definition is not authorization for an unreviewed cloud/subagent execution.
+
 ## Completion gates
 
 The first target is local Cursor desktop coding: fresh and continued chats,
 selected context, file reads and edits, terminal commands, and Tab. This does
 not promise cloud agents, arbitrary server-side state, OCR, or document parsing.
-The integration stays unregistered until the following gates have evidence:
+**Release does not require every Cursor feature.** Optional computer use, cloud
+agents, unusual attachments, and alternate transports are not gates unless the
+ordinary workflow depends on them. Conversely, routinely blocking normal
+context or requiring manual proxy workarounds is not an acceptable release.
+
+The integration stays unregistered until the following workflow gates have
+evidence:
+
+| Required workflow | Acceptance evidence |
+| --- | --- |
+| Fresh and continued local Agent chats | Clean prompts, rules, attachments, and previous turns work without manual changes; synthetic findings cannot reach upstream. |
+| Navigate and edit a repository | Read, search, list, edit, diagnostics, and ordinary tool errors complete without dropping context or corrupting references. |
+| Run terminal commands | Clean commands complete promptly; split output secrets are blocked before disclosure; cancellation works. |
+| Use Tab while editing | Full and incremental file context are inspected without offset/hash corruption or missing-baseline bypasses. |
+| Work through an ordinary session | Required model/config/auth/metadata traffic and retries work; unsupported background features do not disrupt these workflows. |
+| Enable and disable withhold | Routing and trust requirements are tested, and recovery preserves unrelated editor settings. |
 
 1. **Agent message coverage.** Extend the typed decoder to the actual local
-   Agent workflow, including request context, interactions, tool failures, and
-   prewarming. Self-contained messages already use shared scanning and preserve
-   clean bytes. This is a first slice, not a usable-session claim.
+   Agent workflow, adding interactions and tool variants only as required by
+   the matrix above. Reviewed request context, common completed results,
+   prewarming, and prefetched history already use shared scanning and preserve
+   clean bytes. This is offline coverage, not a usable-session claim.
 2. **Blob graph and replay.** Installed `blob-store.ts` computes SHA-256
    addresses; request-context encoding also stages typed protobuf blobs at those
    addresses. Establish each referenced blob's serialization and expected type,
-   then inspect content before releasing its upload. Missing, ambiguous,
+   then inspect content before releasing its upload. The self-contained typed
+   prefetched history subset is implemented; ordinary out-of-envelope exchange
+   and serialized prompt/context variants remain. Missing, ambiguous,
    conflicting, or stale references must reject. Start with immutable,
    block-on-findings handling rather than inventing new IDs. Test resumed
    conversations, retries, duplicate IDs, and graphs spanning messages/requests;
-   do not assume one decoded Connect message contains the entire graph.
+   do not assume one decoded Connect message contains the entire graph. Broader
+   subagent/cloud graph variants are not prerequisites unless normal local
+   sessions send them.
 3. **Logical shell output.** Installed `ShellStream` describes separate stdout,
    stderr, start, and exit events. Add bounded, per-execution logical-output
    inspection before allowing these chunks. Prove the chosen buffering/release
@@ -242,7 +290,9 @@ The integration stays unregistered until the following gates have evidence:
    would invalidate them. Test missing baselines, version gaps, Unicode offsets,
    retries, and bounded state cleanup.
 5. **Route and lifecycle compatibility.** Inventory required auth/config/model,
-   auxiliary, indexing, retry, and SSE/poll/append traffic. Typed inspection is
+   auxiliary, indexing, and retry traffic for the supported workflow. Review
+   SSE/poll/append only if native HTTP/2 cannot satisfy that workflow; do not
+   enable an uninspected fallback. Typed inspection is
    required for content-bearing routes; any body passthrough needs evidence that
    it cannot carry protected content. Test reversible setup/recovery and failure
    framing without adding harness branches to shared transport.

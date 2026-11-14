@@ -122,6 +122,17 @@ func decodeMessage(name string, body []byte, limits policy.DecodeLimits) (*Infer
 	if err := result.collect(root, nil); err != nil {
 		return nil, err
 	}
+	if name == agentClientMessage {
+		blobs, err := d.agentBlobs(root)
+		if err != nil {
+			return nil, err
+		}
+		for _, blob := range blobs {
+			if err := result.collect(blob, nil); err != nil {
+				return nil, err
+			}
+		}
+	}
 	// Include the scanner-facing independent copy in retained-input admission.
 	if err := reserve(2 * int(result.jsonBytes)); err != nil {
 		return nil, err
@@ -550,6 +561,11 @@ func (m *InferenceMessage) Rewrite(scanned []byte) ([]byte, error) {
 				}
 			}
 		}
+	}
+	if m.messageType == agentClientMessage {
+		// Blob projections are inspection-only trees, not children to encode
+		// into reference fields. All Agent slots and keys are immutable.
+		return bytes.Clone(m.root.raw), nil
 	}
 	body, err := m.root.encode(changes, m.maxBytes)
 	if err != nil {
