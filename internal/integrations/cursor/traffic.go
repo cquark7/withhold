@@ -3,6 +3,7 @@ package cursor
 import (
 	"encoding/json"
 	"errors"
+	"mime"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -136,6 +137,10 @@ func (*Traffic) Block(reason string, stream bool) policy.Response {
 }
 
 func (t *Traffic) BlockRequest(r *http.Request, route policy.Route, reason string) policy.Response {
-	stream := route.Codec != nil && route.Codec.Streaming && r.Header.Get("Content-Type") == "application/connect+proto"
+	stream := route.Codec != nil && route.Codec.Streaming
+	if stream {
+		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		stream = err == nil && mediaType == "application/connect+proto"
+	}
 	return t.Block(reason, stream)
 }
