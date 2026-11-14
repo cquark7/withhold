@@ -172,7 +172,7 @@ func TestTrafficRoutesAndConnectBlocks(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/new.Service/Method", "/agent.v1.AgentService/RunSSE", "/agent.v1.AgentService/RunPoll", "/aiserver.v1.BidiService/BidiAppend", "/aiserver.v1.FileSyncService/FSUploadFile", "/aiserver.v1.AiService/CppAppend", "/aiserver.v1.AiService/%4eameTab"} {
+	for _, path := range []string{"/new.Service/Method", "/agent.v1.AgentService/Run", "/agent.v1.AgentService/RunSSE", "/agent.v1.AgentService/RunPoll", "/aiserver.v1.BidiService/BidiAppend", "/aiserver.v1.FileSyncService/FSUploadFile", "/aiserver.v1.AiService/CppAppend", "/aiserver.v1.AiService/%4eameTab"} {
 		route := scope.Classify("api2.cursor.sh", path)
 		if !route.Unknown || route.Codec == nil {
 			t.Fatal("unknown/cache/blob path could bypass inspection")

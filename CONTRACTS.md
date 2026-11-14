@@ -168,6 +168,8 @@ Upload admission is released when transport closes the request body, not when
 its response stream ends.
 
 Integrations may opt individual routes into a typed Connect/protobuf codec.
+Each message must carry its inspectable content; upload-local content caches and
+server-side content references are not supported.
 Unary bodies are inspected before opening upstream; streaming bodies are
 reassembled into complete envelopes and inspected before releasing any of that
 message's payload. Duplex routes require HTTP/2 on both sides. Responses still
@@ -185,13 +187,6 @@ retained decoded input before allocation. Intake jobs are held while a complete
 message is decoded/scanned/released, not while waiting for the next envelope.
 Only approved original bytes or verified protobuf rewrites are released;
 unsupported schemas never authorize an enforcing-mode fallback.
-
-An adapter may retain request-local protocol state across envelopes. Retained
-bytes have a separate `max_bytes` cap and share the aggregate intake byte budget,
-without holding an intake job while awaiting another message. State is discarded
-when the upload closes, including cancellation and failure; another request or
-retry cannot inherit it. Retaining content is not a clean-content authorization:
-referenced content must enter inspection again before a later message is released.
 
 A failure before response headers uses a local error (HTTP 413 for upload
 admission failures). After response headers, a failed stream is aborted/reset,

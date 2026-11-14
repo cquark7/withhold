@@ -71,7 +71,6 @@ var rpcRoutes = map[string]struct {
 	message                string
 	stream, duplex, inline bool
 }{
-	"/agent.v1.AgentService/Run":                        {agentClientMessage, true, true, false},
 	"/aiserver.v1.InferenceService/RunInference":        {clientMessage, true, true, false},
 	"/aiserver.v1.AiService/NameTab":                    {"aiserver.v1.NameTabRequest", false, false, false},
 	"/agent.v1.AgentService/UpdateConversationMetadata": {"agent.v1.UpdateConversationMetadataRequest", false, false, false},
@@ -108,9 +107,6 @@ func (t *Traffic) Classify(authority, path string) policy.Route {
 				Decode: func(body []byte, limits policy.DecodeLimits) (policy.Message, error) {
 					return decodeMessage(rpc.message, body, limits)
 				}}
-			if rpc.message == agentClientMessage {
-				route.Codec.OpenStream = openAgentStream
-			}
 			return route
 		}
 	}

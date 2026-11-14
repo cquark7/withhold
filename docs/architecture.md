@@ -1,8 +1,8 @@
 # Architecture
 
 withhold is a single Go executable with process-isolated scanning. Its core is
-provider- and harness-independent; only the VS Code/Copilot adapter is registered. There is
-no dynamically loaded plugin system or general multi-agent support claim.
+provider- and harness-independent; Cursor and VS Code/Copilot are registered with
+explicit traffic scopes. There is no dynamically loaded plugin system.
 
 ```text
 CLI/config → integration registry → managed session or foreground proxy
@@ -59,11 +59,8 @@ Import-boundary tests protect this separation.
   Shared transport owns framing, admission, compression, deadlines, cancellation,
   backpressure, and scan-before-release. No Cursor RPC names or schema parsing
   enter the proxy, scanner, or session manager. Existing JSON routes need no codec.
-  An optional stream factory owns upload-local protocol state. Its separate
-  reservation counts retained bytes against the same aggregate input budget;
-  only complete envelopes hold intake jobs. Transport closes state on every
-  upload exit. Adapters must reinspect referenced content, not cache decisions
-  or infer trust from upstream state.
+  Each message is decoded independently; there is no content cache or reference
+  resolution across envelopes. Only complete envelopes hold intake jobs.
 - **Reuse at actual boundaries.** Copilot and Cursor share editor-settings and
   launch mechanics, not traffic schemas or setup discovery. Each adapter owns its
   store, additional managed keys, executable metadata, and normalized options.

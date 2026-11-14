@@ -5,9 +5,6 @@
   "root": "aiserver.v1.GetTeamAdminSettingsRequest",
   "enums": {"aiserver.v1.AvailableModelsScope": [0, 1, 2, 3], "aiserver.v1.ClientOS": [0, 1, 2, 3, 4, 5], "aiserver.v1.ClientSurface": [0, 1, 2], "aiserver.v1.InAppAdTrigger": [0, 1, 2, 3, 4, 5], "aiserver.v1.RemoteConnectionType": [0, 1, 2, 3, 4, 5, 6], "aiserver.v1.ScmConnectAdConnectionState": [0, 1, 2, 3], "aiserver.v1.ScmConnectAdProvider": [0, 1, 2]},
   "messages": {
-    "agent.v1.ClientLlmGatewayCredential": [
-      {"number": 1, "name": "bearer_token", "type": "string"}
-    ],
     "aiserver.v1.AvailableModelsRequest": [
       {"number": 1, "name": "is_nightly", "type": "bool"},
       {"number": 2, "name": "include_long_context_models", "type": "bool"},

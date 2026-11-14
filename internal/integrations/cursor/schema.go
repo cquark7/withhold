@@ -17,9 +17,6 @@ var schemaData []byte
 //go:embed auxiliary-schema.json
 var auxiliarySchemaData []byte
 
-//go:embed agent-schema.json
-var agentSchemaData []byte
-
 //go:embed control-schema.json
 var controlSchemaData []byte
 
@@ -55,7 +52,7 @@ func loadSchema() schema {
 	for name := range s.Messages {
 		s.inferenceTypes[name] = true
 	}
-	for _, data := range [][]byte{auxiliarySchemaData, agentSchemaData, controlSchemaData} {
+	for _, data := range [][]byte{auxiliarySchemaData, controlSchemaData} {
 		var additional schema
 		if err := json.Unmarshal(data, &additional); err != nil {
 			panic("invalid embedded Cursor additional schema")
@@ -106,13 +103,9 @@ func supportedField(message string, field fieldDef) bool {
 	if fields, ok := controlFields[message]; ok {
 		return slices.Contains(fields, int(field.Number))
 	}
-	if fields, ok := agentFields[message]; ok {
-		return slices.Contains(fields, int(field.Number))
-	}
 	if !pinned.inferenceTypes[message] {
 		// Extraction records provenance, not permission. Only these separately
-		// reviewed auxiliary fields enter the runtime, even if their transitive
-		// descriptors are also present in the development snapshot.
+		// reviewed auxiliary fields enter the runtime.
 		fields := auxiliaryFields[message]
 		return slices.Contains(fields, int(field.Number))
 	}

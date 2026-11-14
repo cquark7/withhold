@@ -7,7 +7,9 @@ import plistlib
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from tools import extract_cursor_schema
 from tools.extract_cursor_schema import (
     BUNDLE,
     OUTPUT,
@@ -77,7 +79,12 @@ class CursorSchemaTests(unittest.TestCase):
             (app / "Contents/Info.plist").write_bytes(
                 plistlib.dumps({"CFBundleShortVersionString": "4.2.1"})
             )
-            result = json.loads(extract(app))
+            result = json.loads(
+                extract(
+                    app,
+                    ("aiserver.v1.RunInferenceClientMessage", "google.protobuf.Struct"),
+                )
+            )
         self.assertEqual(result["cursor_version"], "4.2.1")
         self.assertEqual(
             result["bundle_sha256"], hashlib.sha256(source.encode()).hexdigest()
@@ -102,9 +109,9 @@ class CursorSchemaTests(unittest.TestCase):
             result = json.loads(extract(app, (root, "agent.v1.NewerRPCRequest")))
         self.assertEqual(result["messages"], {root: []})
 
-    def test_shallow_snapshots_keep_field_types_without_enabling_children(self):
-        root = "agent.v1.AgentClientMessage"
-        child = "agent.v1.UnreviewedChild"
+    def test_refresh_does_not_follow_unreviewed_children(self):
+        root = "aiserver.v1.NameTabRequest"
+        child = "aiserver.v1.UnreviewedChild"
         source = (
             f'r=Z.makeMessageType("{root}",'
             '()=>[{no:1e3,name:"child",kind:"message",T:c}]),'
@@ -118,13 +125,20 @@ class CursorSchemaTests(unittest.TestCase):
             (app / "Contents/Info.plist").write_bytes(
                 plistlib.dumps({"CFBundleShortVersionString": "3.30.8"})
             )
-            shallow = json.loads(extract(app, (root,), transitive=False))
-            complete = json.loads(extract(app, (root,)))
-        self.assertEqual(set(shallow["messages"]), {root})
-        self.assertEqual(shallow["messages"][root][0]["type"], child)
-        self.assertIsInstance(shallow["messages"][root][0]["number"], int)
-        self.assertEqual(shallow["messages"][root][0]["number"], 1000)
-        self.assertEqual(set(complete["messages"]), {root, child})
+            output = app / "reviewed.json"
+            baseline = {"root": root, "messages": {root: []}, "enums": {}}
+            output.write_text(json.dumps(baseline))
+            with (
+                mock.patch("sys.argv", ["extract_cursor_schema.py", "--app", str(app)]),
+                mock.patch.object(extract_cursor_schema, "OUTPUT", output),
+            ):
+                extract_cursor_schema.main()
+            result = json.loads(output.read_text())
+        self.assertEqual(set(result["messages"]), {root})
+        self.assertEqual(result["messages"][root][0]["type"], child)
+        self.assertIsInstance(result["messages"][root][0]["number"], int)
+        self.assertEqual(result["messages"][root][0]["number"], 1000)
+        self.assertFalse(compatible(baseline, result))
 
 
 if __name__ == "__main__":

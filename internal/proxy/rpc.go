@@ -91,39 +91,6 @@ func (p *Proxy) rpc(w http.ResponseWriter, r *http.Request, route policy.Route) 
 	})
 	defer stop()
 	defer body.Close()
-	if route.Codec.OpenStream != nil {
-		body.stateTicket = &ticket{b: &p.budget}
-		stream, err := route.Codec.OpenStream(policy.DecodeLimits{
-			MaxBytes: p.config.MaxBytes, Reserve: func(n int) error {
-				if n < 0 || int64(n) > p.config.MaxBytes-body.stateTicket.used {
-					return errCap
-				}
-				return body.stateTicket.add(n)
-			}, Context: uploadContext,
-		})
-		// Keep a returned stream owned even if its initialization also failed.
-		body.stream = stream
-		if err != nil || stream == nil {
-			if err == nil {
-				err = &rpcFailure{reason: "rpc-inspection-failed"}
-			}
-			failure := rpcError(err)
-			if failure.transport || !p.config.Observe {
-				body.fail(err)
-				p.rpcReject(w, r, route, body.failure())
-				return
-			}
-			// Audit-only operation can still use the stateless decoder, with
-			// normal message admission and framing. Never use partial state or
-			// substitute an unbounded raw upload.
-			p.audit.emit(r, route, "block", "blocked", failureReport(failure), true, false)
-		} else {
-			codec := *route.Codec
-			codec.Decode = stream.Decode
-			route.Codec = &codec
-			body.route = route
-		}
-	}
 	// Inspect the first message before opening upstream. Later reads are driven
 	// by upstream backpressure, not an unbounded producer goroutine or queue.
 	if err := body.next(); err != nil {
@@ -311,25 +278,23 @@ func (p *Proxy) rpcMessage(r *http.Request, route policy.Route, data []byte, t *
 // rpcBody is read only by net/http's upload goroutine. Close can run
 // concurrently and never waits for that goroutine's blocked client read.
 type rpcBody struct {
-	proxy       *Proxy
-	request     *http.Request
-	route       policy.Route
-	format      connectrpc.Request
-	source      io.ReadCloser
-	controller  *http.ResponseController
-	cancel      context.CancelFunc
-	ready       chan struct{}
-	current     *bytes.Reader
-	ticket      *ticket
-	stateTicket *ticket
-	stream      policy.RPCStream
-	in, out     int64
-	messages    int
-	mu          sync.Mutex
-	readMu      sync.Mutex
-	stopUpload  context.CancelFunc
-	closed      bool
-	failed      *rpcFailure
+	proxy      *Proxy
+	request    *http.Request
+	route      policy.Route
+	format     connectrpc.Request
+	source     io.ReadCloser
+	controller *http.ResponseController
+	cancel     context.CancelFunc
+	ready      chan struct{}
+	current    *bytes.Reader
+	ticket     *ticket
+	in, out    int64
+	messages   int
+	mu         sync.Mutex
+	readMu     sync.Mutex
+	stopUpload context.CancelFunc
+	closed     bool
+	failed     *rpcFailure
 }
 
 func (b *rpcBody) failure() *rpcFailure {
@@ -494,19 +459,11 @@ func (b *rpcBody) Close() error {
 		err := b.source.Close()
 		b.readMu.Lock()
 		defer b.readMu.Unlock()
-		if b.stateTicket != nil {
-			defer b.stateTicket.release()
-		}
 		if b.ticket != nil {
 			b.ticket.release()
 			b.ticket = nil
 		}
 		b.current = nil
-		if b.stream != nil {
-			b.stream.Close()
-			b.stream = nil
-		}
-		b.stateTicket = nil
 		return err
 	}
 	return nil

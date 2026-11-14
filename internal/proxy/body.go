@@ -28,7 +28,6 @@ type budget struct {
 type ticket struct {
 	b    *budget
 	used int64
-	job  bool
 	once sync.Once
 }
 
@@ -39,7 +38,7 @@ func (b *budget) acquire() (*ticket, error) {
 		return nil, errCapacity
 	}
 	b.jobs++
-	return &ticket{b: b, job: true}, nil
+	return &ticket{b: b}, nil
 }
 func (t *ticket) add(n int) error {
 	t.b.mu.Lock()
@@ -54,9 +53,7 @@ func (t *ticket) add(n int) error {
 func (t *ticket) release() {
 	t.once.Do(func() {
 		t.b.mu.Lock()
-		if t.job {
-			t.b.jobs--
-		}
+		t.b.jobs--
 		t.b.bytes -= t.used
 		t.b.mu.Unlock()
 	})

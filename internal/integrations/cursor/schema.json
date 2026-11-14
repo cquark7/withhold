@@ -231,18 +231,6 @@
       {"number": 2, "name": "decoded_size", "type": "uint32"},
       {"number": 3, "name": "data", "type": "bytes"}
     ],
-    "aiserver.v1.RunInferenceDeltaBase": [
-      {"number": 1, "name": "invocation_id", "type": "string"},
-      {"number": 2, "name": "message_count", "type": "uint32"},
-      {"number": 3, "name": "prefix_sha256", "type": "bytes"},
-      {"number": 4, "name": "reuse_tools", "type": "bool"},
-      {"number": 5, "name": "request_sha256", "type": "bytes"}
-    ],
-    "aiserver.v1.RunInferenceDeltaBaseSeed": [
-      {"number": 1, "name": "invocation_id", "type": "string"},
-      {"number": 2, "name": "request", "type": "aiserver.v1.InferenceStreamRequest"},
-      {"number": 3, "name": "compressed_request", "type": "aiserver.v1.RunInferenceCompressedRequest"}
-    ],
     "aiserver.v1.RunInferenceExecutePlan": [
       {"number": 1, "name": "plan_file_uri", "type": "string", "opt": true},
       {"number": 2, "name": "plan_file_content", "type": "string", "opt": true}
@@ -294,9 +282,6 @@
       {"number": 25, "name": "supports_model_handles", "type": "bool", "opt": true},
       {"number": 26, "name": "compresses_speculative_invocations", "type": "bool"},
       {"number": 27, "name": "supports_delta_base_seeds", "type": "bool"}
-    ],
-    "aiserver.v1.RunInferenceRunRequestLog": [
-      {"number": 1, "name": "agent_run_request", "type": "bytes"}
     ],
     "aiserver.v1.RunInferenceSubagentModelOverride": [
       {"number": 1, "name": "subagent_type", "type": "string"},

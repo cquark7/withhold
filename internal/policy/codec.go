@@ -19,23 +19,12 @@ type Message interface {
 }
 
 // RPCCodec opts a route into Connect's unary or enveloped protobuf transport.
-// Decode is stateless. Streaming routes may opt into request-local state with
-// OpenStream; transport never resolves application references itself.
+// Each complete message is decoded independently; server-side content references
+// and cross-message content caches are not supported.
 type RPCCodec struct {
 	Streaming bool
 	Duplex    bool
 	Decode    func(body []byte, limits DecodeLimits) (Message, error)
-	// OpenStream is called once per supported streaming upload. Its Reserve
-	// callback admits state retained across messages, without holding an intake
-	// job between envelopes. Close runs after decoding stops, on every exit.
-	OpenStream func(limits DecodeLimits) (RPCStream, error)
-}
-
-// RPCStream owns adapter state for one upload. Decode calls are serial; Close
-// runs only after any active Decode returns. Reservations must not outlive it.
-type RPCStream interface {
-	Decode(body []byte, limits DecodeLimits) (Message, error)
-	Close()
 }
 
 // DecodeLimits reserves retained decoded input before allocation. The callback

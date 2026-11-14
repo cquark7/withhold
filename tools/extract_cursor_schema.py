@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract protocol field metadata without executing Cursor's JavaScript."""
+"""Refresh reviewed protocol metadata without executing Cursor's JavaScript."""
 
 import argparse
 import hashlib
@@ -11,242 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 BUNDLE = "Contents/Resources/app/out/vs/workbench/workbench.desktop.main.js"
 OUTPUT = ROOT / "internal/integrations/cursor/schema.json"
-ROOT_TYPE = "aiserver.v1.RunInferenceClientMessage"
 AUXILIARY_OUTPUT = ROOT / "internal/integrations/cursor/auxiliary-schema.json"
-AUXILIARY_ROOTS = (
-    "aiserver.v1.NameTabRequest",
-    "agent.v1.UpdateConversationMetadataRequest",
-    "aiserver.v1.ClassifyAgentAutoReviewRequest",
-    "aiserver.v1.StreamCppRequest",
-)
-AGENT_OUTPUT = ROOT / "internal/integrations/cursor/agent-schema.json"
 CONTROL_OUTPUT = ROOT / "internal/integrations/cursor/control-schema.json"
-CONTROL_ROOTS = tuple(
-    "aiserver.v1." + name
-    for name in (
-        "GetTeamAdminSettingsRequest",
-        "GetTeamReposRequest",
-        "GetEffectiveUserPluginsRequest",
-        "GetKnownServersRequest",
-        "GetManagedSkillsRequest",
-        "BootstrapStatsigRequest",
-        "GetEffectiveUserAgentStoreSkillsSettingsRequest",
-        "GetMeRequest",
-        "ListMarketplacesRequest",
-        "GetServerConfigRequest",
-        "GetScmConnectionStatusRequest",
-        "GetRealtimeVoiceRequest",
-        "UpdateVscodeProfileRequest",
-        "AvailableModelsRequest",
-    )
-)
-# Snapshot complete descriptors for reviewed message types, not the entire
-# transitive Agent protocol. Field permissions are separately owned by Go.
-AGENT_ROOTS = tuple(
-    "agent.v1." + name
-    for name in (
-        "AgentClientMessage",
-        "AgentRunRequest",
-        "ConversationStateStructure",
-        "ConversationAction",
-        "UserMessageAction",
-        "ResumeAction",
-        "CancelAction",
-        "UserMessage",
-        "SelectedContext",
-        "ExtraContextEntry",
-        "SelectedFile",
-        "SelectedCodeSelection",
-        "SelectedTerminal",
-        "SelectedTerminalSelection",
-        "SelectedCursorRule",
-        "SelectedCursorCommand",
-        "Range",
-        "Position",
-        "CursorRule",
-        "CursorRuleType",
-        "CursorRuleTypeGlobal",
-        "CursorRuleTypeFileGlobs",
-        "CursorRuleTypeAgentFetched",
-        "CursorRuleTypeManuallyAttached",
-        "RequestContext",
-        "RequestContextEnv",
-        "ModelDetails",
-        "ThinkingDetails",
-        "RequestedModel",
-        "RequestedModel.ModelParameterValue",
-        "McpTools",
-        "McpToolDefinition",
-        "ExecClientMessage",
-        "ExecClientControlMessage",
-        "ExecClientStreamClose",
-        "ExecClientHeartbeat",
-        "ExecClientThrow",
-        "ClientHeartbeat",
-        "HookAdditionalContext",
-        "ShellResult",
-        "ShellSuccess",
-        "ShellFailure",
-        "ShellTimeout",
-        "ShellRejected",
-        "ShellSpawnError",
-        "ShellPermissionDenied",
-        "OutputLocation",
-        "ReadResult",
-        "ReadSuccess",
-        "ReadError",
-        "ReadRejected",
-        "ReadFileNotFound",
-        "ReadPermissionDenied",
-        "ReadInvalidFile",
-        "WriteResult",
-        "WriteSuccess",
-        "WritePermissionDenied",
-        "WriteNoSpace",
-        "WriteError",
-        "WriteRejected",
-        "DeleteResult",
-        "DeleteSuccess",
-        "DeleteFileNotFound",
-        "DeleteNotFile",
-        "DeletePermissionDenied",
-        "DeleteFileBusy",
-        "DeleteRejected",
-        "DeleteError",
-        "McpResult",
-        "McpSuccess",
-        "McpToolResultContentItem",
-        "McpTextContent",
-        "McpError",
-        "McpRejected",
-        "McpPermissionDenied",
-        "McpToolNotFound",
-        "McpServerNotFound",
-        "McpApproved",
-        "SystemReminder",
-        "PreFetchedBlob",
-        "PrewarmRequest",
-        "ConversationTurnStructure",
-        "AgentConversationTurnStructure",
-        "ShellConversationTurnStructure",
-        "ConversationStep",
-        "AssistantMessage",
-        "ThinkingMessage",
-        "TodoItem",
-        "ConversationSummary",
-        "ConversationPlan",
-        "ShellCommand",
-        "ShellOutput",
-        "RequestContextResult",
-        "RequestContextSuccess",
-        "RequestContextError",
-        "RequestContextRejected",
-        "GitRepoInfo",
-        "RepositoryIndexingInfo",
-        "McpInstructions",
-        "AgentSkill",
-        "SkillOptions",
-        "SkillDescriptor",
-        "CustomSubagent",
-        "HooksConfigInfo",
-        "PermissionsAutoRunInstructions",
-        "LsDirectoryTreeNode",
-        "LsDirectoryTreeNode.File",
-        "TerminalMetadata",
-        "TerminalMetadata.Command",
-        "GrepResult",
-        "GrepSuccess",
-        "GrepUnionResult",
-        "GrepContentResult",
-        "GrepFileMatch",
-        "GrepContentMatch",
-        "GrepFilesResult",
-        "GrepCountResult",
-        "GrepFileCount",
-        "GrepError",
-        "LsResult",
-        "LsSuccess",
-        "LsError",
-        "LsRejected",
-        "LsTimeout",
-        "DiagnosticsResult",
-        "DiagnosticsSuccess",
-        "Diagnostic",
-        "DiagnosticsError",
-        "DiagnosticsRejected",
-        "DiagnosticsFileNotFound",
-        "DiagnosticsPermissionDenied",
-        "ToolCall",
-        "ShellToolCall",
-        "ShellArgs",
-        "ShellCommandParsingResult",
-        "ShellCommandParsingResult.ExecutableCommand",
-        "ShellCommandParsingResult.ExecutableCommandArg",
-        "ShellCommandParsingResult.Redirect",
-        "CommandClassifierResult",
-        "CommandClassifierResult.ClassifiedCommand",
-        "ShellOutputNotificationConfig",
-        "ShellHookApprovalRequirement",
-        "SmartModeApproval",
-        "SandboxPolicy",
-        "NetworkPolicy",
-        "NetworkPolicyLoggingConfig",
-        "ReadToolCall",
-        "ReadToolArgs",
-        "ReadToolResult",
-        "ReadToolSuccess",
-        "ReadToolError",
-        "ReadRange",
-        "EditToolCall",
-        "EditArgs",
-        "EditResult",
-        "EditSuccess",
-        "EditError",
-        "EditFileNotFound",
-        "EditReadPermissionDenied",
-        "EditWritePermissionDenied",
-        "EditRejected",
-        "DeleteToolCall",
-        "DeleteArgs",
-        "GlobToolCall",
-        "GlobToolArgs",
-        "GlobToolResult",
-        "GlobToolSuccess",
-        "GlobToolError",
-        "GrepToolCall",
-        "GrepArgs",
-        "LsToolCall",
-        "LsArgs",
-        "McpToolCall",
-        "McpArgs",
-        "McpToolResult",
-        "McpToolError",
-        "McpSymbolicPathArgument",
-        "UpdateTodosToolCall",
-        "UpdateTodosArgs",
-        "UpdateTodosResult",
-        "UpdateTodosSuccess",
-        "UpdateTodosError",
-        "ReadTodosToolCall",
-        "ReadTodosArgs",
-        "ReadTodosResult",
-        "ReadTodosSuccess",
-        "ReadTodosError",
-        "ReadLintsToolCall",
-        "ReadLintsToolArgs",
-        "ReadLintsToolResult",
-        "ReadLintsToolSuccess",
-        "ReadLintsToolError",
-        "FileDiagnostics",
-        "DiagnosticItem",
-        "DiagnosticRange",
-        "RequestContextPartReferences",
-        "RequestContextRulesPart",
-        "RequestContextSkillsPart",
-        "RequestContextSubagentsPart",
-        "RequestContextMcpsPart",
-    )
-)
 SCALARS = {
     1: "double",
     2: "float",
@@ -302,7 +68,8 @@ def descriptor_array(source, start):
     raise ValueError("unterminated generated descriptor array")
 
 
-def extract(app, roots=(ROOT_TYPE,), *, transitive=True):
+def extract(app, roots):
+    """Extract only selected messages; child references do not expand the set."""
     version = plistlib.loads((app / "Contents/Info.plist").read_bytes())[
         "CFBundleShortVersionString"
     ]
@@ -343,8 +110,7 @@ def extract(app, roots=(ROOT_TYPE,), *, transitive=True):
 
     def definition(symbol):
         if symbol not in definitions:
-            # Minifier aliases may change between releases. Resolve declarations
-            # to known message types, without evaluating code or hardcoding names.
+            # Resolve minifier aliases without evaluating application code.
             targets = {
                 match[1]
                 for match in re.finditer(
@@ -365,8 +131,6 @@ def extract(app, roots=(ROOT_TYPE,), *, transitive=True):
         if kind == "scalar":
             return SCALARS[value]
         if kind == "message":
-            if transitive:
-                visit(value)
             return definition(value)[0]
         if kind == "enum":
             name, raw = enums[value]
@@ -374,10 +138,14 @@ def extract(app, roots=(ROOT_TYPE,), *, transitive=True):
             return name
         raise ValueError("unsupported descriptor kind")
 
-    def visit(symbol):
-        name, raw = definition(symbol)
-        if name in types:
-            return
+    for root in roots:
+        symbols = [key for key, value in definitions.items() if value[0] == root]
+        if not symbols:
+            if root == roots[0]:
+                raise ValueError("missing generated root message")
+            # An older editor need not implement every newer reviewed message.
+            continue
+        name, raw = definition(symbols[0])
         types[name] = []
         for field in literal(raw):
             if set(field) - {
@@ -409,15 +177,6 @@ def extract(app, roots=(ROOT_TYPE,), *, transitive=True):
                 if key in field:
                     item[key] = field[key]
             types[name].append(item)
-
-    for root in roots:
-        symbols = [key for key, value in definitions.items() if value[0] == root]
-        if not symbols:
-            if root == roots[0]:
-                raise ValueError("missing generated root message")
-            # An older editor need not implement every newer auxiliary RPC.
-            continue
-        visit(symbols[0])
     result = {
         "cursor_version": version,
         "bundle": BUNDLE,
@@ -463,24 +222,21 @@ def main():
     parser.add_argument("--check", action="store_true")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--auxiliary", action="store_true")
-    group.add_argument("--agent", action="store_true")
     group.add_argument("--control", action="store_true")
     args = parser.parse_args()
     try:
         output = AUXILIARY_OUTPUT if args.auxiliary else OUTPUT
-        roots = AUXILIARY_ROOTS if args.auxiliary else (ROOT_TYPE,)
-        if args.agent:
-            output, roots = AGENT_OUTPUT, AGENT_ROOTS
         if args.control:
-            output, roots = CONTROL_OUTPUT, CONTROL_ROOTS
-        content = extract(args.app, roots, transitive=not args.agent)
+            output = CONTROL_OUTPUT
+        baseline = json.loads(output.read_text(encoding="utf-8"))
+        root = baseline["root"]
+        roots = (root, *(name for name in baseline["messages"] if name != root))
+        content = extract(args.app, roots)
         metadata = json.loads(content)
         if args.check:
-            baseline = json.loads(output.read_text(encoding="utf-8"))
             if not compatible(baseline, metadata):
                 raise ValueError("Cursor protocol differs from the reviewed schema")
         else:
-            output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(content, encoding="utf-8")
     except (OSError, ValueError, KeyError, StopIteration) as error:
         parser.exit(1, f"Schema extraction failed: {error}\n")

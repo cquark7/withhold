@@ -556,6 +556,8 @@ func TestInferencePIIReusesScanner(t *testing.T) {
 
 func FuzzDecodeRunInference(f *testing.F) {
 	f.Add(fullRequest(textRequest("Explain this function.")))
+	f.Add(byteField(1, concat(uintField(18, 1), byteField(1, []byte("synthetic-conversation")), uintField(27, 1))))
+	f.Add(byteField(1, concat(uintField(18, 0), uintField(27, 0))))
 	f.Add([]byte{0x12, 0x80})
 	f.Fuzz(func(t *testing.T, input []byte) {
 		message, err := DecodeRunInference(input, testCap)
@@ -563,10 +565,60 @@ func FuzzDecodeRunInference(f *testing.F) {
 			return
 		}
 		output, err := message.Rewrite(message.ScanInput())
-		if err != nil || !bytes.Equal(output, input) {
-			t.Fatalf("accepted clean message did not round-trip: %v", err)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected := input
+		if run := message.root.field(1); run != nil {
+			var fields [][]byte
+			changed := false
+			for _, field := range run.child.fields {
+				raw := field.raw
+				if (field.def.Number == 18 || field.def.Number == 27) && field.uint() != 0 {
+					// Only these two capability flags may change on clean input.
+					raw = append(bytes.Clone(raw[:field.tagSize]), 0)
+					changed = true
+				}
+				fields = append(fields, raw)
+			}
+			if changed {
+				expected = append(bytes.Clone(run.raw[:run.tagSize]), protowire.AppendBytes(nil, concat(fields...))...)
+			}
+		}
+		if !bytes.Equal(output, expected) {
+			t.Fatal("clean message changed beyond the negotiated capability flags")
 		}
 	})
+}
+
+func TestEmbeddedSchemasContainOnlyReachableMessages(t *testing.T) {
+	reachable := map[string]bool{}
+	var visit func(string)
+	visit = func(name string) {
+		if reachable[name] || pinned.fields[name] == nil {
+			return
+		}
+		reachable[name] = true
+		for _, field := range pinned.fields[name] {
+			if supportedField(name, field) {
+				visit(field.Type)
+			}
+		}
+		if name == compressedRequest {
+			visit(inferenceRequest)
+		}
+	}
+	for _, route := range rpcRoutes {
+		visit(route.message)
+	}
+	for _, name := range controlRoutes {
+		visit(name)
+	}
+	for name := range pinned.Messages {
+		if !reachable[name] {
+			t.Errorf("unused embedded message: %s", name)
+		}
+	}
 }
 
 func TestEmbeddedSchemaReferences(t *testing.T) {
