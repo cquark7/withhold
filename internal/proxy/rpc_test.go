@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -176,6 +177,35 @@ func assertRPCAdmissionReleased(t *testing.T, p *Proxy) {
 	}
 }
 
+func TestRPCFindingBlockIsCountedOnceWithoutReachingUpstream(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(strconv.FormatBool(streaming), func(t *testing.T) {
+			var received atomic.Int32
+			f := newRPCFixture(t, testRPCProfile{codec: rpcCodec(streaming, streaming), mode: "block"}, redactRPCScanner(), 4096, func(w http.ResponseWriter, r *http.Request) {
+				received.Add(1)
+			}, true)
+			body := []byte(`{"text":"sentinel"}`)
+			media := "application/proto"
+			if streaming {
+				body, media = rpcFrame(t, body), "application/connect+proto"
+			}
+			response, err := f.client.Do(f.request(t, bytes.NewReader(body), media))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = io.Copy(io.Discard, response.Body)
+			_ = response.Body.Close()
+			if received.Load() != 0 {
+				t.Fatal("blocked RPC reached upstream")
+			}
+			s := f.proxy.debug.snapshot()
+			if s.Blocked != 1 || s.BlockReasons.Findings != 1 {
+				t.Fatalf("RPC block was not counted exactly once: %+v", s)
+			}
+		})
+	}
+}
+
 func TestRPCDuplexInspectsBeforeReleaseAndStreamsBeforeEOF(t *testing.T) {
 	started, release := make(chan struct{}, 2), make(chan struct{})
 	var scans atomic.Int32
@@ -332,6 +362,9 @@ func TestRPCLaterFailuresAbortResponseWithoutReleasingPayload(t *testing.T) {
 			}
 			receiveRPC(t, upDone)
 			assertRPCAdmissionReleased(t, f.proxy)
+			if s := f.proxy.debug.snapshot(); s.Blocked != 1 {
+				t.Fatalf("late RPC failure counted incorrectly: %+v", s)
+			}
 			select {
 			case <-received:
 				t.Fatal("failed later payload reached upstream")

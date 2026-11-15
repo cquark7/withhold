@@ -3,7 +3,11 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -62,6 +66,49 @@ func TestCountersDoNotRequireOrRetainFindingLogs(t *testing.T) {
 				t.Fatalf("incorrect value-free telemetry: %+v", s)
 			}
 		})
+	}
+}
+
+func TestCountersClassifyBlocksWithoutRetainingPrivateDetails(t *testing.T) {
+	d := debugLog{}
+	for _, reason := range []string{"secret-found", "unscannable-rpc-message", "transport-limit", "out-of-scope-host", "scanner-error", "unrecognized-private-detail"} {
+		r := d.begin(httptest.NewRequest("POST", "https://example.test/", nil), policy.Route{Scoped: true}, "http", "", false)
+		debugDecision(r, "scanner-error", "block", reason, nil, nil)
+	}
+	s := d.snapshot()
+	if s.Blocked != 6 || s.BlockReasons != (control.BlockReasons{Findings: 1, Unsupported: 1, Intake: 1, Suspicious: 1, Inspection: 1, Other: 1}) {
+		t.Fatalf("incorrect block categories: %+v", s)
+	}
+	data, err := json.Marshal(s)
+	if err != nil || bytes.Contains(data, []byte("unrecognized-private-detail")) {
+		t.Fatalf("unsafe counter output: %s", data)
+	}
+}
+
+func TestUpstreamCountsFinalFailuresOnceAndClassifiesWithoutRawErrors(t *testing.T) {
+	d := debugLog{}
+	r := d.begin(httptest.NewRequest("POST", "https://example.test/", nil), policy.Route{}, "http", "", false)
+	// An HTTP write attempt can fail before the final RoundTrip result.
+	debugEvent(r, "write_error", "upstream-write-failed", 0)
+	if d.snapshot().UpstreamErrors != 0 {
+		t.Fatal("intermediate HTTP write was counted as a final failure")
+	}
+	debugUpstreamError(r, "upstream_error", "upstream-roundtrip-failed", context.DeadlineExceeded)
+	debugUpstreamError(r, "upstream_error", "upstream-roundtrip-failed", errors.New("private failure"))
+	ws := d.begin(httptest.NewRequest("GET", "https://example.test/", nil), policy.Route{}, "websocket-message", "", false)
+	debugUpstreamError(ws, "write_error", "upstream-write-failed", &net.DNSError{Err: "private failure", Name: "private.example"})
+	for _, err := range []error{context.Canceled, x509.UnknownAuthorityError{}, errors.New("private network error")} {
+		request := d.begin(httptest.NewRequest("POST", "https://example.test/", nil), policy.Route{}, "http", "", false)
+		debugUpstreamError(request, "upstream_error", "upstream-roundtrip-failed", err)
+	}
+	s := d.snapshot()
+	if s.UpstreamErrors != 5 || s.UpstreamReasons.Timeout != 1 || s.UpstreamReasons.DNS != 1 ||
+		s.UpstreamReasons.Canceled != 1 || s.UpstreamReasons.TLS != 1 || s.UpstreamReasons.Other != 1 {
+		t.Fatalf("incorrect upstream categories: %+v", s)
+	}
+	data, err := json.Marshal(s)
+	if err != nil || bytes.Contains(data, []byte("private")) {
+		t.Fatalf("unsafe counter output: %s", data)
 	}
 }
 

@@ -58,7 +58,10 @@ func env(key, fallback string) string {
 }
 
 func run(args []string) int {
-	if len(args) == 0 || len(args) == 1 && (args[0] == "--help" || args[0] == "-h" || args[0] == "help") {
+	if len(args) == 0 {
+		return overview(os.Stdout)
+	}
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h" || args[0] == "help") {
 		return help(os.Stdout, "")
 	}
 	if args[0] == "help" {
@@ -114,9 +117,6 @@ func run(args []string) int {
 	}
 	if args[0] == "agents" {
 		return listAgents(os.Stdout, args[1:])
-	}
-	if args[0] == "demo" {
-		return demo(os.Stdout, args[1:])
 	}
 	if args[0] == "scan" {
 		return scan(os.Stdout, os.Stderr, os.Stdin, args[1:])
@@ -192,6 +192,7 @@ func run(args []string) int {
 		}
 	}
 	configError := ""
+	missingAgents := false
 	if loadErr != nil {
 		configError = loadErr.Error()
 	}
@@ -211,6 +212,7 @@ func run(args []string) int {
 			}
 			if err = integrations.RequireAgents(c.Agents); err != nil {
 				if configError == "" {
+					missingAgents = len(c.Agents) == 0
 					configError = err.Error()
 				}
 			} else {
@@ -325,7 +327,7 @@ func run(args []string) int {
 			}
 			return config.SaveAgents(path, c.Agents)
 		}
-		rc := session.Run(session.Options{Verb: verb, Dir: o.dir, Port: o.port, PortSet: portSet, TargetsSet: flags.NArg() > 0, JSON: o.json, Preflight: o.preflight, KeepFiles: o.keep, Debug: o.debug, TrustMode: o.trust, BinDir: o.binDir, ApplicationArgs: applicationArgs, StartupTimeout: startupTimeout, ConfigError: configError, Agents: c.Agents, SavedAgents: savedAgents, Applications: applications, LookupApplication: lookup, SaveSelection: saveSelection, Configuration: &c, EnvironmentID: configurationID(c)})
+		rc := session.Run(session.Options{Verb: verb, Dir: o.dir, Port: o.port, PortSet: portSet, TargetsSet: flags.NArg() > 0, JSON: o.json, Details: o.details, Preflight: o.preflight, KeepFiles: o.keep, Debug: o.debug, MissingAgents: missingAgents, TrustMode: o.trust, BinDir: o.binDir, ApplicationArgs: applicationArgs, StartupTimeout: startupTimeout, ConfigError: configError, Agents: c.Agents, SavedAgents: savedAgents, Applications: applications, LookupApplication: lookup, SaveSelection: saveSelection, Configuration: &c, EnvironmentID: configurationID(c)})
 		if verb == "install" && rc == 0 {
 			installConfig(os.Stdout, o)
 		}

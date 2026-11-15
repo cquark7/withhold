@@ -3,7 +3,10 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -75,6 +78,7 @@ type debugTrace struct {
 	writeResult   string
 	roundTripDone bool
 	summarized    bool
+	errorCounted  bool
 }
 type debugContextKey struct{}
 type debugConnectionKey struct{}
@@ -124,12 +128,48 @@ func trace(r *http.Request) *debugTrace {
 }
 
 func debugEvent(r *http.Request, event, reason string, status int) {
+	debugEventCategory(r, event, reason, status, "other")
+}
+
+// Only a fixed classification leaves this function; raw network errors can
+// contain private destinations and are never included in diagnostics.
+func debugUpstreamError(r *http.Request, event, reason string, err error) {
+	category := "other"
+	var netErr net.Error
+	var dnsErr *net.DNSError
+	var verifyErr *tls.CertificateVerificationError
+	var authorityErr x509.UnknownAuthorityError
+	var hostnameErr x509.HostnameError
+	var invalidErr x509.CertificateInvalidError
+	switch {
+	case errors.Is(err, context.Canceled):
+		category = "canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		category = "timeout"
+	case errors.As(err, &verifyErr), errors.As(err, &authorityErr), errors.As(err, &hostnameErr), errors.As(err, &invalidErr):
+		category = "tls"
+	case errors.As(err, &dnsErr):
+		category = "dns"
+	case errors.As(err, &netErr) && netErr.Timeout():
+		category = "timeout"
+	}
+	debugEventCategory(r, event, reason, 0, category)
+}
+
+func debugEventCategory(r *http.Request, event, reason string, status int, category string) {
 	if t := trace(r); t != nil {
 		t.mu.Lock()
 		defer t.mu.Unlock()
 		row := t.record
 		row.Event, row.Reason, row.UpstreamStatus = event, reason, status
 		t.log.count(row)
+		// HTTP write callbacks may report a failed attempt before RoundTrip
+		// retries or reports its final error. Count only the final round-trip
+		// failure; WebSocket message writes have no corresponding RoundTrip.
+		if !t.errorCounted && (event == "upstream_error" || event == "write_error" && row.Transport == "websocket-message") {
+			t.errorCounted = true
+			t.log.countUpstreamError(category)
+		}
 		switch event {
 		case "upstream_written":
 			t.writeResult = "written"
@@ -306,13 +346,43 @@ func (d *debugLog) count(row debugRecord) {
 		}
 		if row.OutboundBody == "blocked" {
 			d.status.Blocked++
+			switch row.Reason {
+			case "secret-found":
+				d.status.BlockReasons.Findings++
+			case "unknown-api-path", "unsupported-rpc-transport", "unscannable-rpc-message", "unscannable-body", "skipped-not-json", "ws-binary-unscannable", "ws-non-json-unscannable", "duplex-upstream-requires-http2":
+				d.status.BlockReasons.Unsupported++
+			case "over-cap", "over-cap-decoded", "transport-limit", "capacity-limit", "rpc-envelope-failed", "rpc-message-limit", "rpc-output-limit", "rpc-compression-missing", "rpc-upload-canceled":
+				d.status.BlockReasons.Intake++
+			case "out-of-scope-host":
+				d.status.BlockReasons.Suspicious++
+			case "scanner-error", "unscanned-residue", "finding-without-secret", "invalid-rpc-rewrite":
+				d.status.BlockReasons.Inspection++
+			default:
+				d.status.BlockReasons.Other++
+			}
 		}
 	case "upstream_written":
 		d.status.Written++
 	case "upstream_response":
 		d.status.Responses++
-	case "upstream_error", "write_error":
-		d.status.UpstreamErrors++
+	}
+}
+
+func (d *debugLog) countUpstreamError(category string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.status.UpstreamErrors++
+	switch category {
+	case "canceled":
+		d.status.UpstreamReasons.Canceled++
+	case "timeout":
+		d.status.UpstreamReasons.Timeout++
+	case "tls":
+		d.status.UpstreamReasons.TLS++
+	case "dns":
+		d.status.UpstreamReasons.DNS++
+	default:
+		d.status.UpstreamReasons.Other++
 	}
 }
 

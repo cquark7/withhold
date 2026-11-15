@@ -243,6 +243,9 @@ Restore changes only managed keys, preserving unrelated/mid-session edits;
 invalid settings/backups are preserved. Failed restore retains recovery data.
 CA files are deleted only after verified trust removal. Uninstall does not
 delete logs, application settings, or the installed executable.
+Installation refuses to replace the executable while any session record remains,
+including interrupted or unverified sessions, so the current binary remains
+available for recovery.
 
 Application settings and restart/trust requirements belong to the integration.
 The recorded resource is an absolute recovery anchor; restoration must not
@@ -304,8 +307,8 @@ builds without a module version. Usage/configuration errors return 2, operation/
 success 0, except for the documented `scan` exit codes above. `doctor --preflight`
 is silent on success and returns 2 on failure.
 JSON commands write one object: configuration schema 1 (plural `agents` and
-`applications`, with no singular compatibility fields), status schema 5, doctor
-schema 3, agent catalog schema 3, demo schema 1, and scan schema 1.
+`applications`, with no singular compatibility fields), status schema 6, doctor
+schema 4, agent catalog schema 3, and scan schema 1.
 Schema changes must be explicit.
 `config` prints a reloadable TOML snapshot of the effective public configuration,
 including adapter-owned defaults; `config --json` prints the same settings as
@@ -321,15 +324,6 @@ rejected rather than ignored. Each adapter owns its example application section.
 `config --init` accepts only agent names, `--dir`, and `--config`; it does not read an
 existing config or snapshot unrelated environment overrides.
 
-`demo` exercises the bundled scanner and the proxy's HTTPS CONNECT, redaction,
-and block paths using fixed synthetic inputs and ephemeral IPv4 loopback ports.
-It checks actual upstream bytes and the absence of an upstream blocked request.
-Its temporary CA is trusted only by the demo's in-memory clients; TLS verification
-stays enabled. It ignores existing configuration, isolates the worker's home/key,
-and removes temporary files. It never contacts a provider, changes application
-settings or trust stores, or validates actual application routing/compatibility.
-Local port, scanner, policy, TLS, verification, or cleanup failures return 1.
-
 Authenticated status exposes value-free `traffic` counters even without debug
 logging. `coverage.state` is `unavailable` without an authenticated session,
 `awaiting-traffic` before HTTP requests/WebSocket messages, `traffic-observed`
@@ -339,10 +333,26 @@ counts starts; `inspected` counts successful clean/redacted results on supported
 routes, including blocked findings and observe-mode scans. `passthrough` counts
 uninspected policy passes, including bodyless requests and integration exceptions.
 These are request/message decisions, not a percentage of all application traffic.
+`blocked` counts one decision per affected HTTP request or streaming message,
+not secrets or unique application actions. Fixed `block_reasons` distinguish
+findings, unsupported/unscannable traffic, intake/read/size limits, suspicious
+unscoped hosts, inspection failures, and other. `upstream_errors` counts failed
+HTTP round trips, WebSocket handshakes, and WebSocket message writes once each;
+fixed `upstream_reasons` distinguish cancellation, timeout, TLS verification, DNS,
+and other/unknown. Raw error text and destinations never enter these counters.
 `coverage.observe` identifies audit-only sessions; `inspected` is not a claim of
 enforcement or complete coverage. `debug` separately reports finding-log health.
-Private authenticated health uses only signed schema 4, including these counters;
+Private authenticated health uses only signed schema 5, including these counters;
 older schemas are rejected without negotiation or fallback readers.
+
+`status` marks an unreadable recovery record or a recorded session without an
+authenticated listener as a recovery problem, returns 1, and reports `ok: false`
+in JSON. `status --details` shows additional diagnostics and the latest private,
+value-free session summary. It is captured before authenticated shutdown and may
+omit late events; it is unavailable after an interrupted session or failed save.
+Starting a new session replaces the prior summary with an unavailable marker
+before application changes; unrelated or unsafe files are never overwritten.
+Snapshot write failure warns but does not prevent restoration.
 
 Scanner statuses are `clean`, `redacted`, `skipped-not-json`, `over-cap`,
 `over-cap-decoded`, `scanner-error`, and `finding-without-secret`. Successful

@@ -47,6 +47,37 @@ func TestSessionStartupCommitsOwnershipBeforeChildReads(t *testing.T) {
 	}
 }
 
+func TestFailedStartupPreservesPreviousSessionSummary(t *testing.T) {
+	o, _ := fixtureOptions(t)
+	previous := capturedSummary(Record{Configuration: o.Configuration}, &control.DebugStatus{Inspected: 3}, time.Now())
+	if err := saveSummary(o.Dir, previous); err != nil {
+		t.Fatal(err)
+	}
+	if Run(o) != 1 {
+		t.Fatal("deliberately failing child unexpectedly started")
+	}
+	got, err := loadSummary(o.Dir)
+	if err != nil || !got.Available || got.Traffic.Inspected != 3 {
+		t.Fatalf("failed startup lost the previous snapshot: %+v, %v", got, err)
+	}
+}
+
+func TestInstallRefusesConcurrentSessionChanges(t *testing.T) {
+	dir := t.TempDir()
+	unlock, err := localstate.Lock(filepath.Join(dir, "command.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	target := filepath.Join(dir, "bin")
+	if Run(Options{Verb: "install", Dir: dir, BinDir: target}) != 1 {
+		t.Fatal("installation ignored the session command lock")
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatal("concurrent installation changed the binary destination")
+	}
+}
+
 func unusedPort(t *testing.T) int {
 	t.Helper()
 	l, err := net.Listen("tcp4", "127.0.0.1:0")

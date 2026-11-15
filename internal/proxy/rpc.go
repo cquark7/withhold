@@ -32,6 +32,7 @@ type rpcFailure struct {
 	reason    string
 	transport bool
 	report    scanner.Report
+	counted   atomic.Bool
 	reported  atomic.Bool
 }
 
@@ -194,7 +195,9 @@ func failureReport(f *rpcFailure) scanner.Report {
 
 func (p *Proxy) rpcReject(w http.ResponseWriter, r *http.Request, route policy.Route, failure *rpcFailure) {
 	p.rpcAuditFailure(r, route, failure)
-	debugDecision(r, "scanner-error", "reject", failure.reason, failure.report, nil)
+	if failure.counted.CompareAndSwap(false, true) {
+		debugDecision(r, "scanner-error", "reject", failure.reason, failure.report, nil)
+	}
 	debugEvent(r, "blocked", failure.reason, 0)
 	// Transport failures are unconditional, including audit-only operation.
 	if failure.transport {
@@ -268,7 +271,9 @@ func (p *Proxy) rpcMessage(r *http.Request, route policy.Route, data []byte, t *
 		p.audit.emit(r, route, "redact", "forwarded", report, p.config.Observe, true)
 		return rewritten, nil
 	case "block":
-		return nil, &rpcFailure{reason: decision.Reason, report: report}
+		failure := &rpcFailure{reason: decision.Reason, report: report}
+		failure.counted.Store(!p.config.Observe)
+		return nil, failure
 	default:
 		// RPC capabilities never inherit JSON inspection-failure passthrough.
 		return nil, &rpcFailure{reason: "unscannable-rpc-message"}
@@ -310,6 +315,9 @@ func (b *rpcBody) fail(err error) {
 	}
 	failure := b.failed
 	b.mu.Unlock()
+	if failure.counted.CompareAndSwap(false, true) {
+		debugDecision(b.request, "scanner-error", "reject", failure.reason, failure.report, nil)
+	}
 	b.proxy.rpcAuditFailure(b.request, b.route, failure)
 	b.cancel()
 }

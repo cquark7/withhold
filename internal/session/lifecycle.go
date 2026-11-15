@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -87,19 +88,19 @@ func BuildID(binary string) (string, error) {
 }
 
 type Options struct {
-	ConfigError                                            string
-	Verb, Dir, TrustMode, BinDir                           string
-	Port                                                   int
-	PortSet, TargetsSet, JSON, Preflight, KeepFiles, Debug bool
-	ApplicationArgs                                        []string
-	StartupTimeout                                         time.Duration
-	Agents                                                 []string
-	SavedAgents                                            []string
-	EnvironmentID                                          string
-	Applications                                           map[string]integration.Application
-	LookupApplication                                      func(string) (integration.Application, error)
-	SaveSelection                                          func() error
-	Configuration                                          *config.Config
+	ConfigError                                                                    string
+	Verb, Dir, TrustMode, BinDir                                                   string
+	Port                                                                           int
+	PortSet, TargetsSet, JSON, Details, Preflight, KeepFiles, Debug, MissingAgents bool
+	ApplicationArgs                                                                []string
+	StartupTimeout                                                                 time.Duration
+	Agents                                                                         []string
+	SavedAgents                                                                    []string
+	EnvironmentID                                                                  string
+	Applications                                                                   map[string]integration.Application
+	LookupApplication                                                              func(string) (integration.Application, error)
+	SaveSelection                                                                  func() error
+	Configuration                                                                  *config.Config
 }
 
 type application struct {
@@ -173,9 +174,6 @@ func Run(o Options) int {
 		return fail(2, err)
 	}
 	o.Dir = dir
-	if o.Verb == "install" {
-		return install(o)
-	}
 	readOnly := o.Verb == "status" || o.Verb == "doctor" || o.Verb == "launch"
 	if !readOnly {
 		if err = os.MkdirAll(o.Dir, 0700); err != nil {
@@ -186,6 +184,9 @@ func Run(o Options) int {
 			return fail(1, err)
 		}
 		defer unlock()
+	}
+	if o.Verb == "install" {
+		return install(o)
 	}
 	statePath := filepath.Join(o.Dir, StateName)
 	r, recordErr := LoadRecord(statePath)
@@ -222,6 +223,20 @@ func Run(o Options) int {
 				return fail(2, err)
 			}
 		}
+		if o.TrustMode == "manual" {
+			fmt.Println("Preparing a local CA for manual trust; no trust store will be changed.")
+		} else {
+			store := "the current-user certificate trust store"
+			switch runtime.GOOS {
+			case "darwin":
+				store = "the current user's login Keychain"
+			case "linux":
+				store = "the current user's NSS certificate stores"
+			}
+			fmt.Printf("Preparing a local CA and installing its trust in %s.\n", store)
+			fmt.Println("Applications that trust this CA can accept certificates it issues; keep its private key safe.")
+		}
+		fmt.Println("Setup saves the selected agents; it does not start the proxy or change application routing.")
 		if _, err = certstore.Load(o.Dir); err != nil {
 			if err = certstore.Init(o.Dir); err != nil {
 				return fail(1, err)
@@ -235,9 +250,12 @@ func Run(o Options) int {
 				return fail(1, fmt.Errorf("CA ready, but agent selection was not saved: %w", err))
 			}
 		}
-		fmt.Printf("Local CA ready. Saved agents: %s.\nRun 'withhold on'. Follow each agent's guide for trust and restart requirements.\n", strings.Join(o.Agents, ", "))
+		fmt.Printf("Local CA ready. Saved agents: %s.\n", strings.Join(o.Agents, ", "))
 		if o.TrustMode == "manual" {
-			fmt.Printf("CA trust is manual; import %s into the application's trust store before use.\n", filepath.Join(o.Dir, "ca.crt"))
+			fmt.Printf("Next: import %s into the application's trust store; manual trust cannot be verified.\n", filepath.Join(o.Dir, "ca.crt"))
+			fmt.Println("Then run 'withhold on'. Follow each agent's guide for trust and restart requirements.")
+		} else {
+			fmt.Println("Next: run 'withhold on'. Follow each agent's guide for trust and restart requirements.")
 		}
 		return 0
 	case "on":
@@ -245,6 +263,7 @@ func Run(o Options) int {
 	case "off":
 		return off(o, apps, r, recordErr)
 	case "uninstall":
+		fmt.Println("The installed executable, configuration, logs, and session summary are not removed.")
 		rc := off(o, apps, r, recordErr)
 		s, e := readTrust(o.Dir)
 		if e == nil && s.Mode == "manual" && o.KeepFiles {
@@ -320,7 +339,7 @@ func on(o Options, apps []application, r Record, recordErr error) int {
 			if h.Build != build || r.Build != build || r.Environment != o.EnvironmentID || r.Debug != o.Debug {
 				return fail(2, errors.New("runtime or configuration changed; run 'withhold off' before 'withhold on'"))
 			}
-			fmt.Printf("withhold already running on 127.0.0.1:%d (authenticated pid %d). Agents: %s.\n", r.Port, h.PID, strings.Join(o.Agents, ", "))
+			fmt.Printf("withhold is already running. Agents: %s.\n", strings.Join(o.Agents, ", "))
 			printObserveWarning(r.Configuration.Protection.Observe)
 			return 0
 		}
@@ -344,14 +363,28 @@ func on(o Options, apps []application, r Record, recordErr error) int {
 			return fail(1, err)
 		}
 	}
+	// Mark the new session before applying settings so an old summary is
+	// never presented as the result of a later interrupted session.
+	previousSummary, err := prepareSummary(o.Dir)
+	if err != nil {
+		return fail(1, fmt.Errorf("cannot prepare the private last-session summary at %s; the existing file was preserved: %w", filepath.Join(o.Dir, summaryName), err))
+	}
+	restorePreviousSummary := func() {
+		if err := restoreSummary(o.Dir, previousSummary); err != nil {
+			fmt.Fprintln(os.Stderr, "withhold: previous last-session summary could not be restored")
+		}
+	}
 	r = Record{Schema: 2, Identity: control.Identity{Instance: control.Random(), Token: control.Random()}, Port: o.Port, Build: build, Applications: managed, Debug: o.Debug, Environment: o.EnvironmentID, Configuration: o.Configuration}
 	statePath := filepath.Join(o.Dir, StateName)
 	if err = saveRecord(statePath, r); err != nil {
+		restorePreviousSummary()
 		return fail(1, err)
 	}
 	rollback := func() {
 		if restoreApplications(o, apps) == nil {
-			_ = os.Remove(statePath)
+			if err := os.Remove(statePath); err == nil || os.IsNotExist(err) {
+				restorePreviousSummary()
+			}
 		}
 	}
 	for _, app := range apps {
@@ -382,7 +415,8 @@ func on(o Options, apps []application, r Record, recordErr error) int {
 	deadline := time.Now().Add(o.StartupTimeout)
 	for time.Now().Before(deadline) {
 		if h, e := control.Probe(o.Port, r.Identity); e == nil && h.Build == build && h.PID == r.PID {
-			fmt.Printf("withhold is running on 127.0.0.1:%d (authenticated pid %d). Agents: %s; routing configured.\nFollow each agent's guide for trust and restart requirements; startup does not prove traffic is inspected.\n", o.Port, h.PID, strings.Join(o.Agents, ", "))
+			fmt.Printf("withhold is running. Agents: %s; routing configured.\nFollow each agent's guide for trust and restart requirements; startup does not prove traffic is inspected.\n", strings.Join(o.Agents, ", "))
+			fmt.Println("Next: send a non-sensitive request, then run 'withhold status' to check inspection evidence.")
 			if h.Debug != nil && h.Debug.Enabled {
 				fmt.Printf("Debug findings: %s\nUse 'withhold status' for live traffic/redaction counters.\n", filepath.Join(o.Dir, "debug-findings.log"))
 			}
@@ -433,6 +467,7 @@ func restoreApplications(o Options, apps []application) error {
 
 func off(o Options, apps []application, r Record, recordErr error) int {
 	rc := 0
+	var summary *LastSession
 	if recordErr != nil && !os.IsNotExist(recordErr) {
 		return fail(1, recordErr)
 	}
@@ -442,11 +477,14 @@ func off(o Options, apps []application, r Record, recordErr error) int {
 			rc = 1
 		}
 		o.Port = r.Port
-		state, _ := ownership(o.Port, r)
+		state, health := ownership(o.Port, r)
 		if state == "ours" {
+			snapshot := capturedSummary(r, health.Debug, time.Now())
 			if err := control.Shutdown(o.Port, r.Identity); err != nil {
 				fmt.Fprintln(os.Stderr, "withhold: authenticated shutdown failed")
 				rc = 1
+			} else {
+				summary = &snapshot
 			}
 		}
 		deadline := time.Now().Add(5 * time.Second)
@@ -474,6 +512,11 @@ func off(o Options, apps []application, r Record, recordErr error) int {
 		rc = 1
 	}
 	if rc == 0 {
+		if summary != nil {
+			if err := saveSummary(o.Dir, *summary); err != nil {
+				fmt.Fprintln(os.Stderr, "withhold: settings restored, but the last-session summary could not be saved")
+			}
+		}
 		if err := os.Remove(filepath.Join(o.Dir, StateName)); err != nil && !os.IsNotExist(err) {
 			return fail(1, err)
 		}

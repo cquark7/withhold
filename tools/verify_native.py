@@ -205,7 +205,7 @@ def smoke(destination: Path, target: str, version: str):
                     raise ValueError("extracted executable version mismatch")
                 if args[0] == "doctor":
                     report = json.loads(result.stdout)
-                    if report.get("schema") != 3 or not report.get("ok"):
+                    if report.get("schema") != 4 or not report.get("ok"):
                         raise ValueError("extracted executable failed native doctor")
 
 

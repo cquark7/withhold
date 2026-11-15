@@ -22,10 +22,9 @@ containers, browser editors, and separate user-data stores need their own setup.
 Token exchange passes through uninspected; chat, inline, and embeddings policies
 are described in the traffic contract below.
 
-After setup, use `withhold status` and audit surfaces to confirm inspection of
-your editor's traffic. `demo` checks the local scanner/proxy pipeline; `doctor`
-checks local configuration and trust metadata. Real routing depends on the
-editor's networking runtime and certificate trust.
+After setup, use `withhold status` and audit surfaces to check for inspection
+evidence. `doctor` checks local configuration and trust metadata. Real routing
+depends on the editor's networking runtime and certificate trust.
 
 ### Configure and start
 

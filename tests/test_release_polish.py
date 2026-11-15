@@ -2,6 +2,7 @@
 
 import json
 import os
+import socket
 import subprocess
 import tempfile
 import tomllib
@@ -40,7 +41,7 @@ class ReleasePolishTests(unittest.TestCase):
             WITHHOLD_PII="invalid",
             WITHHOLD_EDITOR_SETTINGS_DIR="../invalid",
             WITHHOLD_MAX_BYTES="invalid",
-            WITHHOLD_PLACEHOLDER_KEY="private-user-key-not-for-demo",
+            WITHHOLD_PLACEHOLDER_KEY="private-user-key",
             WITHHOLD_INTERNAL_DEBUG_FINDINGS="1",
             HTTP_PROXY="http://127.0.0.1:1",
             HTTPS_PROXY="http://127.0.0.1:1",
@@ -56,30 +57,6 @@ class ReleasePolishTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
         return result
-
-    def test_demo_is_local_isolated_and_cleans_up_with_broken_current_config(self):
-        for args in (("demo",), ("demo", "--json")):
-            result = self.command(*args)
-            detail = result.stdout
-            if "--json" in args:
-                report = json.loads(result.stdout)
-                detail = report["checks"][0]["detail"]
-                self.assertEqual(report["schema"], 1)
-                self.assertTrue(report["ok"])
-                self.assertEqual(report["scope"], "synthetic-loopback-only")
-                self.assertEqual(
-                    [row["name"] for row in report["checks"]], ["redact", "block"]
-                )
-                self.assertTrue(all(row["ok"] for row in report["checks"]))
-            else:
-                self.assertIn("[PASS] redact", result.stdout)
-                self.assertIn("[PASS] block", result.stdout)
-                self.assertIn("does not verify application routing", result.stdout)
-            self.assertIn("<WITHHELD_", detail)
-            self.assertNotIn("AKIA4X7Q2W8K9MNDZZZZ", result.stdout + result.stderr)
-            self.assertNotIn("private-user-key", result.stdout + result.stderr)
-            self.assertEqual(list(self.home.iterdir()), [])
-            self.assertEqual(list(self.scratch.iterdir()), [])
 
     def test_toml_starter_does_not_read_config_write_state_or_export_overrides(self):
         result = self.command("config", "--example", "vscode-copilot")
@@ -105,16 +82,44 @@ class ReleasePolishTests(unittest.TestCase):
         self.assertEqual(list(self.home.iterdir()), [])
 
     def test_onboarding_help_completion_and_option_errors_are_read_only(self):
-        for command in ("demo", "config"):
+        overview = self.command().stdout
+        self.assertIn("withhold agents", overview)
+        self.assertIn("withhold setup AGENT", overview)
+        self.assertIn("All commands: withhold --help", overview)
+        self.assertNotIn("withhold demo", overview)
+        self.assertNotIn("init-ca", overview)
+        self.assertIn("init-ca", self.command("--help").stdout)
+        for command in ("agents", "config"):
             self.command(command, "--help")
         self.assertIn("--example", self.command("_complete", "config", "--ex").stdout)
-        self.assertIn("demo", self.command("_complete", "de").stdout)
-        self.command("demo", "--config", "ignored.toml", expected=2)
+        self.assertEqual("", self.command("_complete", "de").stdout)
+        self.command("demo", expected=2)
         self.command("config", "--example", "--max-bytes", "1m", expected=2)
         self.command("config", "--example", "unknown", expected=2)
         self.command("config", "--init", "unknown", expected=2)
         self.assertEqual(list(self.home.iterdir()), [])
         self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_fresh_status_and_doctor_lead_to_agent_selection(self):
+        env = {
+            key: value
+            for key, value in self.env.items()
+            if not key.startswith("WITHHOLD_")
+        }
+        env["WITHHOLD_DIR"] = str(self.home / "state")
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            port = str(listener.getsockname()[1])
+        status = self.command("status", "--port", port, env=env)
+        self.assertIn("withhold agents", status.stdout)
+        self.assertNotIn("coverage:", status.stdout)
+        self.assertNotIn("debug:", status.stdout)
+        doctor = self.command("doctor", "--port", port, env=env, expected=1)
+        self.assertTrue(doctor.stdout.startswith("[FAIL] agents"), doctor.stdout)
+        self.assertIn("CA and trust not checked", doctor.stdout)
+        self.assertNotIn("[FAIL] ca-files", doctor.stdout)
+        self.assertNotIn("[FAIL] request-cap", doctor.stdout)
+        self.assertEqual(list(self.home.iterdir()), [])
 
     def test_no_implicit_agent_or_legacy_selector(self):
         env = {
@@ -207,6 +212,10 @@ class ReleasePolishTests(unittest.TestCase):
         result = self.command("setup", "cursor", "--trust", "manual", env=env)
         self.assertIn("Saved agents: cursor", result.stdout)
         self.assertIn("'withhold on'", result.stdout)
+        self.assertLess(
+            result.stdout.index("import "), result.stdout.index("'withhold on'")
+        )
+        self.assertIn("manual trust cannot be verified", result.stdout)
 
     def test_effective_toml_and_json_show_overrides_without_writing(self):
         env = {

@@ -15,7 +15,7 @@ import (
 
 type cliOptions struct {
 	dir, trust, binDir, chat, inline, max, audit, hint, upstreamCA string
-	json, preflight, keep, observe, debug, example, init           bool
+	json, details, preflight, keep, observe, debug, example, init  bool
 	port                                                           int
 	timeout                                                        time.Duration
 	hosts, patterns                                                stringsFlag
@@ -47,6 +47,7 @@ func (o *cliOptions) flags(command string) *flag.FlagSet {
 	f.Var(&o.exclude, "exclude", "exclude a file or directory subtree, relative to the working directory (repeatable)")
 	f.BoolVar(&o.noDefaultExcludes, "no-default-excludes", false, "include paths excluded by the bundled Betterleaks prefilter")
 	f.BoolVar(&o.json, "json", o.json, "emit one versioned JSON object")
+	f.BoolVar(&o.details, "details", o.details, "show diagnostic details and the last-session summary")
 	f.BoolVar(&o.example, "example", o.example, "print a commented TOML starter without reading configuration or writing files")
 	f.BoolVar(&o.init, "init", o.init, "create a default-inheriting TOML config without overwriting a file")
 	f.BoolVar(&o.preflight, "preflight", o.preflight, "print only failures; exit 2 if checks fail")

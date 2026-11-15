@@ -148,6 +148,7 @@ func TestCompletionUsesCommandOptionsAndRespectsValues(t *testing.T) {
 		{[]string{"on", "--chat-mode", "b"}, []string{"block"}},
 		{[]string{"on", "--chat-mode=b"}, []string{"--chat-mode=block"}},
 		{[]string{"status", "--o"}, nil},
+		{[]string{"status", "--de"}, []string{"--details"}},
 		{[]string{"on", "--bi"}, nil},
 		{[]string{"doctor", "--max"}, []string{"--max-bytes"}},
 		{[]string{"on", "--dir", "--h"}, nil},

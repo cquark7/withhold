@@ -45,11 +45,10 @@ func install(o Options) int {
 		fmt.Println("Native executable is already installed at", target)
 		return 0
 	}
-	// Running session upgrades require an explicit off; installation never kills processes.
-	if r, e := LoadRecord(filepath.Join(o.Dir, StateName)); e == nil {
-		if state, _ := ownership(r.Port, r); state == "ours" {
-			return fail(1, errors.New("run 'withhold off' before upgrading the executable"))
-		}
+	// A new binary may not understand an older session's authenticated
+	// protocol. Preserve the executable needed to stop or recover it.
+	if _, e := LoadRecord(filepath.Join(o.Dir, StateName)); e == nil {
+		return fail(1, errors.New("run 'withhold off' with the current executable to restore the recorded session before upgrading"))
 	} else if !os.IsNotExist(e) {
 		return fail(1, e)
 	}

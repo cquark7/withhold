@@ -19,7 +19,7 @@ curl -fsSL --connect-timeout 10 --max-time 120 --proto '=https' \
   https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 withhold version
-withhold demo
+withhold agents
 ```
 
 The README's short command uses curl's default timeout and redirect behavior and
@@ -213,24 +213,6 @@ environment overrides do not apply.
 
 ## Start and stop
 
-### Try the local pipeline first
-
-```sh
-withhold demo
-withhold demo --json
-```
-
-No account or setup is required. The demo sends a fixed synthetic value through
-the bundled scanner and an HTTPS proxy to a local receiver. It verifies a
-`<WITHHELD_…>` replacement and a blocked request that never reaches that receiver.
-It uses ephemeral loopback ports, an isolated worker, and a temporary CA trusted
-only in memory, then removes its temporary files. No provider, editor settings,
-or real trust store is used. A failure returns 1, not a simulated success.
-
-This demonstrates local enforcement, **not** editor routing, real-provider
-compatibility, WebSocket coverage, or every supported payload format. See the
-selected agent guide for its validation record.
-
 ### Configure the application
 
 ```sh
@@ -299,6 +281,7 @@ for precedence, custom paths, and privacy considerations.
 
 ```sh
 withhold on --pii email,phone
+withhold status --details
 withhold status --json
 withhold doctor --json
 ```
@@ -321,16 +304,44 @@ result on a supported route. `passthrough` includes uninspected policy passes
 and bodyless requests. Observe mode may inspect but forwards original sensitive
 content: `coverage.observe` makes this explicit. Review integration exceptions,
 especially embeddings and token exchange; do not infer full coverage from counts.
-Status JSON schema 5 separates `saved_agents`, `active_agents`, per-agent
-`applications` settings/backups, `coverage`, `traffic`, and finding-log `debug`
-health. Counters describe the whole proxy session, not the originating agent.
+The default human view explains blocked decisions using fixed categories:
+findings, unsupported/unscannable traffic, intake/read/size limits, suspicious
+unscoped hosts, inspection failures, and other. A block does not necessarily mean
+a secret was detected. Upstream failures are counted once per failed HTTP round
+trip, WebSocket handshake, or WebSocket message write; classified causes are
+cancellation, timeout, TLS verification, DNS, or other/unknown. Ordinary HTTP
+response status codes alone are not counted as upstream failures; rejected
+WebSocket handshakes are. Counts cover this proxy session, not the originating
+agent or all application traffic.
+
+`status --details` adds diagnostic counters and settings paths. After a clean
+authenticated shutdown it shows a value-free last-session snapshot captured
+**before** shutdown; events arriving afterward may be omitted. If the session
+ended unexpectedly or a snapshot could not be saved, the summary is unavailable.
+The private `last-session.json` contains counters, fixed categories, agent IDs,
+observe mode, and capture time—not request contents, hosts, paths, or raw errors.
+A new session replaces the previous snapshot with an unavailable marker before
+applying settings so an interrupted session cannot be confused with the previous one.
+If startup fails and settings are successfully rolled back, the previous snapshot
+is restored.
+Activation refuses to overwrite an unrelated or unsafe summary file. Failure to
+save a shutdown snapshot warns but does not prevent settings restoration.
+
+Status JSON schema 6 separates `saved_agents`, `active_agents`, per-agent
+`applications` settings/backups, `coverage`, `traffic`, `last_session`, and
+finding-log `debug` health. `ca.trust_mode` describes recorded trust, not a live
+verification; `doctor` cannot verify manual imports. An unreadable recovery
+record, a recorded session without an authenticated listener, or another
+reported status error sets `ok` to false and exits 1. Keep the recovery record
+and backups; run `off` to attempt restoration when the record is valid, or
+`doctor` when it cannot be read.
 `doctor` uses the active session when present, otherwise saved defaults;
-`doctor AGENT...` explicitly checks only those agents (JSON schema 3).
+`doctor AGENT...` explicitly checks only those agents (JSON schema 4).
 
 For temporary debugging, run `withhold off`, then `withhold on --debug`:
 
 ```sh
-withhold status
+withhold status --details
 tail -F "${WITHHOLD_DIR:-$HOME/.config/withhold}/debug-findings.log"
 ```
 
@@ -346,14 +357,16 @@ prints bash/zsh/fish/PowerShell completion without editing shell configuration.
 
 ## Upgrade and rollback
 
-For an upgrade that changes state/configuration formats, use the installed
-executable and original state directory to run `off` and `uninstall` before
-setting up the replacement. Preserve state/backups until settings restoration
-and trust removal succeed.
+Always use the current executable and original state directory to run `off`
+before upgrading; a replacement may not authenticate an older running session.
+Installation refuses any recorded session, including one needing recovery. For
+an upgrade that changes state/configuration formats, also run `uninstall` with
+the current executable before setting up the replacement. Preserve the previous
+binary, state, and backups until settings restoration and trust removal succeed.
 
 1. Quit the integrated application and run `withhold off`. Keep state and the previous executable.
 2. Verify the replacement, then run its `install` command (or the pinned installer)
-   using the same state/binary directories. Installation refuses active sessions.
+   using the same state/binary directories.
 3. Run `withhold version`, `withhold doctor`, and `withhold on`; restart the application as its guide requires.
 4. To roll back, stop the session, reinstall the previous verified binary, and
    repeat doctor/on. Do not delete CA or recovery state during an upgrade.

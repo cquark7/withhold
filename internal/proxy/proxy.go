@@ -462,7 +462,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 			p.rpcReject(w, r, body.route, body.failure())
 			return
 		}
-		debugEvent(r, "upstream_error", "upstream-roundtrip-failed", 0)
+		debugUpstreamError(r, "upstream_error", "upstream-roundtrip-failed", err)
 		http.Error(w, "upstream connection failed", 502)
 		return
 	}
