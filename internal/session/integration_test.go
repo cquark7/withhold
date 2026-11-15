@@ -17,6 +17,7 @@ import (
 	"github.com/cquark7/withhold/internal/config"
 	"github.com/cquark7/withhold/internal/control"
 	"github.com/cquark7/withhold/internal/integration"
+	"github.com/cquark7/withhold/internal/localstate"
 	"github.com/cquark7/withhold/internal/testintegration"
 )
 
@@ -211,6 +212,72 @@ func TestRecoveryUsesRecordedIntegrationAndResourceDespiteBrokenDiscovery(t *tes
 	got, _ := os.ReadFile(app.Path)
 	if !strings.Contains(string(got), "mid-session=preserved") || !strings.Contains(string(got), "endpoint=original") {
 		t.Fatal("recovery lost unrelated edits")
+	}
+}
+
+func TestOffRestoresOtherApplicationsWhenSettingsLockFails(t *testing.T) {
+	o, first := fixtureOptions(t)
+	second := &testintegration.Application{Path: filepath.Join(o.Dir, "second.ini")}
+	if err := os.WriteFile(second.Path, []byte("endpoint=second-original\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	o.Agents = []string{"fixture", "second"}
+	o.Configuration.Agents = o.Agents
+	o.LookupApplication = func(id string) (integration.Application, error) {
+		switch id {
+		case "fixture":
+			return first, nil
+		case "second":
+			return second, nil
+		default:
+			return nil, errors.New("unknown agent")
+		}
+	}
+	var managed []ManagedApplication
+	for i, app := range []*testintegration.Application{first, second} {
+		target, err := app.Resolve()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := app.Apply(target, integration.SetupOptions{Port: o.Port, CADir: o.Dir}); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target.Resource+".withhold-session", []byte(o.Dir), 0600); err != nil {
+			t.Fatal(err)
+		}
+		managed = append(managed, ManagedApplication{Agent: o.Agents[i], Target: target})
+	}
+	record := Record{Schema: 2, Identity: control.Identity{Instance: control.Random(), Token: control.Random()}, Port: o.Port, Applications: managed, Configuration: o.Configuration}
+	if err := saveRecord(filepath.Join(o.Dir, StateName), record); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := localstate.Lock(first.Path + ".withhold-lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	o.Verb = "off"
+	if Run(o) != 1 {
+		t.Fatal("off must report the lock failure")
+	}
+	if first.Restored != 0 || second.Restored != 1 {
+		t.Fatalf("restore counts: locked=%d, available=%d", first.Restored, second.Restored)
+	}
+	if got, err := os.ReadFile(second.Path); err != nil || !strings.Contains(string(got), "endpoint=second-original") {
+		t.Fatalf("available application not restored: %s, %v", got, err)
+	}
+	if _, err := LoadRecord(filepath.Join(o.Dir, StateName)); err != nil {
+		t.Fatal("lock failure lost the recovery record:", err)
+	}
+	unlock()
+	if Run(o) != 0 {
+		t.Fatal("retry did not complete recovery")
+	}
+	if got, err := os.ReadFile(first.Path); err != nil || !strings.Contains(string(got), "endpoint=original") {
+		t.Fatalf("locked application not restored on retry: %s, %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(o.Dir, StateName)); !os.IsNotExist(err) {
+		t.Fatal("completed recovery left a stale record")
 	}
 }
 

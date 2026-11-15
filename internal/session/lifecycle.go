@@ -459,13 +459,15 @@ func off(o Options, apps []application, r Record, recordErr error) int {
 	for _, app := range ordered {
 		unlock, err := settingsLock(app.Target.Resource)
 		if err != nil {
-			return fail(1, err)
+			fmt.Fprintf(os.Stderr, "withhold: %s settings lock failed: %v\n", app.Agent, err)
+			rc = 1
+			continue
 		}
-		defer unlock()
-	}
-	// Restore even when authentication or shutdown fails.
-	if restoreApplications(o, apps) != nil {
-		rc = 1
+		// Restore even when authentication, shutdown, or another lock fails.
+		if restoreApplications(o, []application{app}) != nil {
+			rc = 1
+		}
+		unlock()
 	}
 	if listening(o.Port) {
 		fmt.Fprintln(os.Stderr, "withhold: port remains held; no foreign process was signalled")
