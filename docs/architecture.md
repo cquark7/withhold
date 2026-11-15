@@ -1,8 +1,8 @@
 # Architecture
 
 withhold is a single Go executable with process-isolated scanning. Its core is
-provider- and harness-independent; only the VS Code/Copilot adapter is registered. There is
-no dynamically loaded plugin system or general multi-agent support claim.
+provider- and harness-independent; Cursor and VS Code/Copilot are registered with
+explicit traffic scopes. There is no dynamically loaded plugin system.
 
 ```text
 CLI/config → integration registry → managed session or foreground proxy
@@ -18,6 +18,7 @@ request → transport intake → scanner pool → policy → upstream or local e
 | --- | --- |
 | `cmd/withhold`, `internal/config` | CLI composition, strict TOML config and precedence. |
 | `internal/proxy` | Bounded HTTP/TLS/WebSocket transport, forwarding, audit/findings. |
+| `internal/connectrpc` | Application-independent Connect header/envelope validation and bounded frame I/O. |
 | `internal/policy` | Traffic contracts and shared enforcement decisions. |
 | `internal/scanner` | JSON extraction, rewriting, placeholders, residue verification. |
 | `internal/detector`, `internal/pii` | Offline secret and selected PII recognizers. |
@@ -25,7 +26,9 @@ request → transport intake → scanner pool → policy → upstream or local e
 | `internal/worker`, `internal/scanpool` | Private process protocol, key resolution, admission/deadlines. |
 | `internal/session`, `internal/control` | Harness-independent sessions, authenticated ownership, trust/recovery. |
 | `internal/integration` | Reversible application-setup and optional-launch contracts. |
+| `internal/editorsettings` | Shared VS Code-family JSONC backup/managed-key restoration, platform settings roots, and shell-free editor launching. |
 | `internal/integrations/copilot` | Copilot routes/errors, typed VS Code config, settings, and optional launch. |
+| `internal/integrations/cursor` | Bounded Cursor protobuf routes, typed settings, and reversible application setup. |
 | `internal/integrations` | Single explicit registry: factories, settings normalization, catalog metadata. |
 | `internal/certstore`, `internal/localstate`, `internal/jsonmeta` | CA issuance, private files, bounded metadata extraction. |
 
@@ -47,12 +50,27 @@ Import-boundary tests protect this separation.
   protocol-compatible errors, typed application settings, and reversible setup.
   Core transport owns admission/TLS/forwarding; policy owns decisions; scanners
   see bytes and injected detector options, never a harness ID.
+- **Explicit message codecs.** A route's optional `policy.RPCCodec` selects unary,
+  streaming, or duplex Connect transport. The adapter supplies bounded decode,
+  scanner projection, verified write-back, and content-vs-control classification.
+  Clean messages also pass through write-back, allowing an adapter to negotiate
+  full requests instead of content-omitting cache optimizations. Other clean bytes
+  are preserved; observe mode does not rewrite handshakes.
+  Shared transport owns framing, admission, compression, deadlines, cancellation,
+  backpressure, and scan-before-release. No Cursor RPC names or schema parsing
+  enter the proxy, scanner, or session manager. Existing JSON routes need no codec.
+  Each message is decoded independently; there is no content cache or reference
+  resolution across envelopes. Only complete envelopes hold intake jobs.
+- **Reuse at actual boundaries.** Copilot and Cursor share editor-settings and
+  launch mechanics, not traffic schemas or setup discovery. Each adapter owns its
+  store, additional managed keys, executable metadata, and normalized options.
+  A CLI harness need not depend on editor machinery to reuse proxy/scanner policy.
 - **One registry, one CLI.** New integrations register once in
   `internal/integrations/registry.go`. The catalog and completion consume it;
-  help points to it. Keep the lifecycle commands and `--integration` selector
+  help points to it. Keep lifecycle commands and positional agent targets
   consistent rather than adding per-agent verbs or boolean selectors.
-  Recovery commands use the recorded integration, not a new selector.
-- **Adapter-owned configuration.** `[application]` is opaque to shared config
+   Recovery commands use every recorded agent/resource, not new targets.
+- **Adapter-owned configuration.** `[applications.AGENT]` is opaque to shared config
   but strictly decoded into an adapter's typed settings. Defaults and only that
   adapter's environment overrides normalize before fingerprinting and persistence.
   Children consume frozen settings without rereading overrides. New settings
@@ -71,8 +89,8 @@ Import-boundary tests protect this separation.
   launch-only or native-hook lifecycle should add a focused capability with tests
   when required, not pretend the existing proxy covers it.
 - **Static, reviewed integrations.** No dynamic plugin loader, arbitrary setup
-  scripts, auto-detection, hot reload, or concurrent multi-agent supervisor.
-  Single-integration sessions keep ownership and recovery understandable. State
+   scripts, auto-detection, hot reload, or independent per-agent daemons.
+   One shared proxy and pinned agent set keep ownership and recovery understandable. State
   lives under `~/.config/withhold`; `_session-serve` consumes a complete frozen
   session record, not replayed CLI flags. Session-only debug is an explicit field.
   The child waits for a one-byte commit signal (`0x01`) on its inherited stdin

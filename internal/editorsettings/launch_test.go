@@ -1,4 +1,4 @@
-package copilot
+package editorsettings
 
 import (
 	"os"
@@ -12,7 +12,8 @@ func TestWindowsEditorShimUsesBundledCLIWithoutAShell(t *testing.T) {
 	shim := filepath.Join(root, "bin", "code.cmd")
 	exe := filepath.Join(root, "Code.exe")
 	cli := filepath.Join(root, "resources", "app", "out", "cli.js")
-	if _, _, err := editorInvocation(shim, "windows"); err == nil {
+	executables := map[string]string{"code": "Code.exe"}
+	if _, _, err := editorInvocation(shim, "windows", executables); err == nil {
 		t.Fatal("incomplete editor accepted")
 	}
 	for _, file := range []string{shim, exe, cli} {
@@ -23,14 +24,14 @@ func TestWindowsEditorShimUsesBundledCLIWithoutAShell(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	binary, args, err := editorInvocation(shim, "windows")
+	binary, args, err := editorInvocation(shim, "windows", executables)
 	if err != nil || binary != exe || !reflect.DeepEqual(args, []string{cli}) {
 		t.Fatalf("invocation: %q %q %v", binary, args, err)
 	}
-	if binary, args, err = editorInvocation(exe, "windows"); err != nil || binary != exe || len(args) != 0 {
+	if binary, args, err = editorInvocation(exe, "windows", executables); err != nil || binary != exe || len(args) != 0 {
 		t.Fatal("native executable changed")
 	}
-	if _, _, err := editorInvocation(filepath.Join(root, "bin", "unknown.cmd"), "windows"); err == nil {
+	if _, _, err := editorInvocation(filepath.Join(root, "bin", "unknown.cmd"), "windows", executables); err == nil {
 		t.Fatal("arbitrary shell shim accepted")
 	}
 }

@@ -6,7 +6,7 @@ Questions, reproducible bug reports, and focused contributions are welcome.
 ## Start here
 
 1. Run `withhold version`, `withhold status`, and `withhold doctor`.
-2. Check the [integration guide](docs/integrations/vscode-copilot.md) for trust,
+2. Check the [VS Code + Copilot agent guide](docs/integrations/vscode-copilot.md) for trust,
    restart, and platform requirements.
 3. Search [existing issues](https://github.com/cquark7/withhold/issues).
 4. Open a [bug report](https://github.com/cquark7/withhold/issues/new?template=bug_report.yml)

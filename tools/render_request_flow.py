@@ -2,8 +2,8 @@
 """Render the README animation with Pillow: python3 tools/render_request_flow.py.
 
 This optional development tool needs Pillow (python3 -m pip install Pillow).
-The example credential and placeholder use the same synthetic values as the
-local demo. Font substitutions on other platforms can change the rendering.
+The example credential and placeholder are synthetic. Font substitutions on
+other platforms can change the rendering.
 """
 
 import hashlib

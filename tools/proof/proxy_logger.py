@@ -7,14 +7,14 @@ CONNECT host:port without touching TLS bytes.
 This is a development diagnostic, not a scanner or proof of body inspection.
 Logs contain connection metadata and error text; use synthetic traffic only.
 
-- Listens on 127.0.0.1:PORT (default 8080).
+- Listens on 127.0.0.1:PORT (default 8451).
 - Handles `CONNECT host:port` by TCP-tunneling to upstream and relaying bytes.
 - Non-CONNECT requests get 400 (Copilot traffic is HTTPS => CONNECT only).
 - Logs JSONL events: connect_attempt / connect_ok / connect_fail / close / bad_request.
 - Never logs Proxy-Authorization values (presence boolean only).
 
 Usage:
-    python3 tools/proof/proxy_logger.py --port 8080 --log /tmp/proxy.jsonl
+    python3 tools/proof/proxy_logger.py --port 8451 --log /tmp/proxy.jsonl
 """
 
 import argparse
@@ -276,7 +276,7 @@ async def main_async(args):
 def main():
     ap = argparse.ArgumentParser(description="CONNECT-only logging proxy (no MITM)")
     ap.add_argument("--bind", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8080)
+    ap.add_argument("--port", type=int, default=8451)
     ap.add_argument("--log", default="/tmp/copilot-proxy.jsonl")
     args = ap.parse_args()
     try:

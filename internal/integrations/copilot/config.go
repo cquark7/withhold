@@ -11,14 +11,14 @@ import (
 	"github.com/cquark7/withhold/internal/config"
 )
 
-var Example = fmt.Sprintf(`[application]
+var Example = fmt.Sprintf(`[applications.vscode-copilot]
 # These overrides select a local VS Code installation, not another supported editor.
 binary = "code"
 settings_dir = "Code"
 
 # Path patterns use full-path Go RE2 matching, without a query string.
 # Add paths instead of replacing defaults to keep future built-in updates.
-[application.traffic]
+[applications.vscode-copilot.traffic]
 hosts = %s
 host_suffixes = %s
 chat_paths = %s

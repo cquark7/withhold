@@ -182,7 +182,7 @@ EOF
         *":$bin_dir:"*) ;;
         *) printf 'Add the install directory to PATH (no shell files were edited):\n  export PATH="%s:$PATH"\n' "$bin_dir" ;;
     esac
-    printf '\nNext: review local HTTPS inspection, then run:\n  withhold setup\n  withhold doctor\n  withhold on\nOpen VS Code normally. Restart it once after initial certificate setup.\n'
+    printf '\nNext: review local HTTPS inspection and choose your agents:\n  withhold agents\n  withhold setup AGENT...\n  withhold doctor\n  withhold on\nFollow each agent guide for certificate trust and restart requirements.\n'
 )
 
 # Keep execution last so a truncated bootstrap download cannot start installation.

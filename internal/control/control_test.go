@@ -66,7 +66,7 @@ func TestDebugTelemetryRequiresAuthenticatedProbeAndIsSigned(t *testing.T) {
 
 func TestProbeRejectsUnsignedAndTamperedTelemetry(t *testing.T) {
 	identity := Identity{Random(), Random()}
-	for _, kind := range []string{"current", "no telemetry", "schema 1", "schema 2", "schema 3", "unsigned", "tampered", "downgraded"} {
+	for _, kind := range []string{"current", "no telemetry", "schema 1", "schema 2", "schema 3", "schema 4", "unsigned", "tampered", "downgraded"} {
 		t.Run(kind, func(t *testing.T) {
 			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				h := Health{Schema: healthSchema, Instance: identity.Instance, PID: 123, Build: "test", Challenge: r.Header.Get("X-Withhold-Challenge"), Debug: &DebugStatus{Enabled: true, Received: 42}}
@@ -79,6 +79,8 @@ func TestProbeRejectsUnsignedAndTamperedTelemetry(t *testing.T) {
 					h.Schema = 2
 				case "schema 3":
 					h.Schema = 3
+				case "schema 4":
+					h.Schema = 4
 				}
 				h.Proof = sign(identity.Token, h.signed())
 				switch kind {

@@ -5,45 +5,65 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/cquark7/withhold/internal/doclink"
+	"github.com/cquark7/withhold/internal/integrations"
 )
 
-var commandOrder = []string{"setup", "on", "off", "status", "doctor", "scan", "demo", "integrations", "uninstall", "install", "launch", "serve", "init-ca", "config", "completion", "version"}
+var commandOrder = []string{"agents", "setup", "on", "status", "off", "scan", "doctor", "uninstall", "install", "launch", "serve", "init-ca", "config", "completion", "version"}
 var commands = map[string]string{
-	"setup":        "Create the private CA and configure user-scope certificate trust.",
-	"on":           "Configure application routing and start an authenticated background proxy.",
-	"off":          "Stop withhold and restore managed settings, preserving other edits.",
-	"status":       "Report session, traffic inspection evidence, and recovery state.",
-	"doctor":       "Check the bundled scanner, configuration, settings, and trust.",
-	"demo":         "Demonstrate redaction and blocking locally, without a provider or setup.",
-	"scan":         "Find secrets and selected PII in local text, files, or directories without rewriting.",
-	"launch":       "Launch the selected application, if its integration supports it.",
-	"uninstall":    "Restore settings and remove verified certificate trust.",
-	"install":      "Copy this standalone executable into a per-user binary directory.",
-	"serve":        "Run the proxy in the foreground, without changing application settings.",
-	"init-ca":      "Create CA files only; do not install trust or change settings.",
-	"completion":   "Print shell completion for bash, zsh, fish, or powershell.",
-	"version":      "Print the native build and bundled detector versions.",
-	"config":       "View effective settings or create a user-editable TOML configuration.",
-	"integrations": "List the built-in integrations and their documentation.",
+	"setup":      "Prepare the local CA and certificate trust for selected agents; save them as defaults.",
+	"on":         "Configure application routing and start an authenticated background proxy.",
+	"off":        "Stop withhold and restore managed settings, preserving other edits.",
+	"status":     "Report session, traffic inspection evidence, and recovery state.",
+	"doctor":     "Check the bundled scanner, configuration, settings, and trust.",
+	"scan":       "Find secrets and selected PII in local text, files, or directories without rewriting.",
+	"launch":     "Launch the selected agent's application, when supported.",
+	"uninstall":  "Restore settings and remove verified certificate trust; leave the binary and logs.",
+	"install":    "Copy this standalone executable into a per-user binary directory.",
+	"serve":      "Run the proxy in the foreground, without changing application settings.",
+	"init-ca":    "Create CA files only; do not install trust or change settings.",
+	"completion": "Print shell completion for bash, zsh, fish, or powershell.",
+	"version":    "Print the native build and bundled detector versions.",
+	"config":     "View effective settings or create a user-editable TOML configuration.",
+	"agents":     "List supported agents and print clickable setup-guide URLs.",
 }
 
 var examples = map[string]string{
-	"setup":        "withhold setup\n  withhold setup --trust manual",
-	"on":           "withhold on\n  withhold on --port 8090 --chat-mode block\n  withhold on --debug",
-	"off":          "withhold off",
-	"status":       "withhold status\n  withhold status --json",
-	"doctor":       "withhold doctor\n  withhold doctor --json\n  withhold doctor --max-bytes 16m --chat-mode block",
-	"demo":         "withhold demo\n  withhold demo --json",
-	"scan":         "withhold scan .env\n  withhold scan . --pii email,phone\n  withhold scan . --secrets=false --pii all\n  withhold scan - < message.txt\n  withhold scan --text 'dev@example.com' --pii email\n  withhold scan . --exclude ./generated --json\n  withhold scan . --no-default-excludes",
-	"launch":       "withhold launch -- .\n  withhold launch -- /path/to/project",
-	"uninstall":    "withhold uninstall\n  withhold uninstall --keep-files",
-	"install":      "withhold install\n  withhold install --bin-dir /path/to/bin",
-	"serve":        "withhold serve --port 8090\n  withhold serve --observe\n  withhold serve --debug",
-	"init-ca":      "withhold init-ca --dir /path/to/private-state",
-	"completion":   "withhold completion bash\n  withhold completion zsh\n  withhold completion fish\n  withhold completion powershell",
-	"version":      "withhold version",
-	"config":       "withhold config\n  withhold config --init\n  withhold config --example\n  withhold config --json",
-	"integrations": "withhold integrations\n  withhold integrations --json",
+	"setup":      "withhold setup cursor\n  withhold setup cursor vscode-copilot --trust manual",
+	"on":         "withhold on\n  withhold on cursor vscode-copilot\n  withhold on cursor --port 8090 --chat-mode block\n  withhold on --debug",
+	"off":        "withhold off",
+	"status":     "withhold status\n  withhold status --details\n  withhold status --json",
+	"doctor":     "withhold doctor\n  withhold doctor cursor --json\n  withhold doctor --max-bytes 16m --chat-mode block",
+	"scan":       "withhold scan .env\n  withhold scan . --pii email,phone\n  withhold scan . --secrets=false --pii all\n  withhold scan - < message.txt\n  withhold scan --text 'dev@example.com' --pii email\n  withhold scan . --exclude ./generated --json\n  withhold scan . --no-default-excludes",
+	"launch":     "withhold launch cursor -- .\n  withhold launch vscode-copilot -- /path/to/project",
+	"uninstall":  "withhold uninstall\n  withhold uninstall --keep-files",
+	"install":    "withhold install\n  withhold install --bin-dir /path/to/bin",
+	"serve":      "withhold serve cursor --port 8090\n  withhold serve cursor --observe\n  withhold serve cursor --debug",
+	"init-ca":    "withhold init-ca --dir /path/to/private-state",
+	"completion": "withhold completion bash\n  withhold completion zsh\n  withhold completion fish\n  withhold completion powershell",
+	"version":    "withhold version",
+	"config":     "withhold config\n  withhold config --init\n  withhold config cursor --example\n  withhold config --json",
+	"agents":     "withhold agents\n  withhold agents --json",
+}
+
+func overview(w io.Writer) int {
+	fmt.Fprintln(w, `withhold — catch secrets before they become AI context
+
+Get started:
+  withhold agents           See supported agents
+  withhold setup AGENT...   Prepare and save your agents
+  withhold on               Start the proxy and configure routing
+  withhold status           Check inspection evidence
+  withhold off              Stop and restore application settings
+
+Also:
+  withhold scan PATH        Scan local files without changing them
+  withhold doctor           Diagnose setup and recovery problems
+
+Only supported request bodies routed through withhold are inspected.
+All commands: withhold --help`)
+	return 0
 }
 
 func help(w io.Writer, command string) int {
@@ -52,13 +72,13 @@ func help(w io.Writer, command string) int {
 		for _, group := range []struct {
 			title string
 			names []string
-		}{{"Everyday commands", commandOrder[:6]}, {"Installation and advanced commands", commandOrder[6:]}} {
+		}{{"Getting started and everyday commands", commandOrder[:7]}, {"Installation and advanced commands", commandOrder[7:]}} {
 			fmt.Fprintln(w, "\n"+group.title+":")
 			for _, name := range group.names {
 				fmt.Fprintf(w, "  %-12s %s\n", name, commands[name])
 			}
 		}
-		fmt.Fprintln(w, "\nGet started:\n  withhold integrations\n  withhold setup\n  withhold doctor\n  withhold on --integration NAME\n\nFollow the selected integration's trust, routing, and restart instructions.\nStop and restore settings: withhold off\n\nUse 'withhold help COMMAND' for options and examples.\nSetup creates an HTTPS inspection CA and configures current-user trust.\nOnly supported request bodies routed through the proxy are inspected.")
+		fmt.Fprintln(w, "\nGet started:\n  withhold agents\n  withhold setup AGENT...\n  withhold on\n  withhold status\n  withhold off\n\nSetup saves your selected agents and prepares certificate trust; it does not\nstart the proxy or configure routing. Follow each agent's trust and restart guide.\nOnly supported request bodies routed through withhold are inspected.\n\nUse 'withhold help COMMAND' for options and examples.")
 		return 0
 	}
 	description, ok := commands[command]
@@ -73,9 +93,9 @@ func help(w io.Writer, command string) int {
 	case "completion":
 		usage = "SHELL"
 	case "launch":
-		usage += " [-- APPLICATION-ARGS...]"
-	case "on", "serve":
-		usage += " [PORT]"
+		usage = "[AGENT] [OPTIONS] [-- APPLICATION-ARGS...]"
+	case "setup", "on", "serve", "doctor", "config":
+		usage = "[AGENT...] [OPTIONS]"
 	case "scan":
 		usage += " [PATH...]"
 	}
@@ -102,35 +122,50 @@ func help(w io.Writer, command string) int {
 	case "scan":
 		fmt.Fprintln(w, "\nPaths may be files or recursive directories; - reads stdin once. Without a path\nor --text, redirected stdin is read; interactive use requires a target. Options\nmay follow paths; -- makes subsequent paths literal. --text selects only its\nliteral value, ignores implicit stdin, and cannot be combined with path arguments.\nPrefer files/stdin for sensitive data: literal arguments can enter shell history.\n\nUses configured PII (off by default); secrets default on. Both cannot be off.\nThe bundled Betterleaks path prefilter skips dependency/generated paths such as\nnode_modules and common lockfiles, including explicit targets and PII-only scans.\n--no-default-excludes disables that prefilter, not .git pruning or --exclude.\nOther hidden/gitignored text is included; symlinks, nonregular files, and\nunsupported binary/document/archive content are skipped during traversal.\nExplicit unsupported inputs and read/size/timeout/scanner failures are errors.\nExclusions are literal paths, not globs. Skips count entries/subtree roots.\n\nOutput contains rule IDs and original line/byte-column locations, not values\nor source excerpts. --json streams one schema-1 object with a final complete\nsummary. This scans literal UTF-8 text, not the proxy's JSON extraction or routing.\nNo setup, active session, certificate trust, editor, or placeholder key is needed.")
 		fmt.Fprintln(w, "\n--confidence low|medium|high sets Betterleaks' minimum for offline secrets only.\nIt overrides [scan].confidence; --confidence= clears the minimum (the default).\nUnclassified findings and components of accepted findings remain included.\nPII and proxy protection are unchanged. Higher thresholds can hide real secrets.")
-	case "demo":
-		fmt.Fprintln(w, "\nUses synthetic values, ephemeral IPv4 loopback ports, a temporary CA, and the\nbundled scanner. TLS verification stays enabled. No provider, editor settings,\ntrust stores, or existing configuration are used. Temporary files are removed.\nThis demonstrates the local pipeline, not application routing or live compatibility.")
+	case "status":
+		fmt.Fprintln(w, "\nCounters describe this proxy session, not individual agents or all traffic.\n--details shows diagnostic counters and, when stopped, the last-session snapshot.\nThe snapshot is captured before shutdown and may omit late events.")
 	case "config":
-		fmt.Fprintln(w, "\nConfig prints effective TOML as a reloadable snapshot; it may include private\npaths and pins defaults if saved. --json prints the same settings as JSON.\n--init creates a new file with defaults commented out and never overwrites an\nexisting file; it accepts --dir, --config and --integration. --example prints\nTOML defaults without reading or writing files; it accepts only --integration.")
+		fmt.Fprintln(w, "\nConfig prints effective TOML as a reloadable snapshot; it may include private\npaths and pins defaults if saved. --json prints the same settings as JSON.\nAgent names override the saved selection for this view only.\n--init creates a default-inheriting file without overwriting; it accepts agent\nnames, --dir and --config. --example ignores config and environment; it accepts\nonly agent names. Neither supplies an implicit default agent.")
 	case "launch":
-		fmt.Fprintln(w, "\nLaunch is optional and integration-specific. Arguments after -- stay literal;\nthe application's exit status is preserved. Follow its integration guide for\nproxy/CA environment and process-restart requirements.")
+		fmt.Fprintln(w, "\nLaunching is optional and only supported for some agents. Arguments after --\nstay literal; the application's exit status is preserved. Follow the selected\nagent's guide for proxy/CA environment and process-restart requirements.")
 	case "setup":
-		fmt.Fprintln(w, "\nSystem mode changes current-user certificate trust. Linux requires NSS certutil;\nNSS alone may not cover the application's networking runtime. Manual mode prints\nthe CA path. Trust guide:\nhttps://github.com/cquark7/withhold/blob/main/docs/usage.md#certificate-trust")
+		fmt.Fprintln(w, "\nSupported agents:")
+		_ = writeAgentChoices(w, integrations.List(), false)
+		fmt.Fprintln(w, "Run 'withhold agents' for clickable guide URLs.")
+		fmt.Fprintln(w, "\nNamed agents replace the saved default set after successful setup. Without\nnames, setup reuses the saved set; if none is saved, choose one or more names\nabove. An initial setup with no names prints the choices and makes no changes.\nSetup does not start the proxy or configure application routing.")
+		fmt.Fprintf(w, "\nSystem mode changes current-user certificate trust. Linux requires NSS certutil;\nNSS alone may not cover the application's networking runtime. Manual mode prints\nthe CA path. Trust guide:\n%s\n", doclink.URL("usage.md#certificate-trust"))
 	case "on", "serve":
 		if command == "on" {
-			fmt.Fprintln(w, "\nApplication setup and coverage depend on the selected integration.\nRun 'withhold integrations' to find its routing, trust, and restart guide.")
+			fmt.Fprintln(w, "\nWithout agent names, use the saved set. Explicit names replace that set for this\nsession only; they do not save defaults or append targets. Run 'withhold agents'\nfor supported agents and guide URLs. Missing setup never silently changes\ncertificate trust. The active set is pinned; run 'withhold off' before changing it.")
 		}
-		fmt.Fprintln(w, "\nObserve mode can forward secrets unchanged. Stop with 'withhold off' before\nchanging a background session's options. Foreground serve stops with Ctrl-C.")
+		if command == "on" {
+			fmt.Fprintln(w, "\nObserve mode can forward secrets unchanged. Stop with 'withhold off' before\nchanging a background session's options.")
+		} else {
+			fmt.Fprintln(w, "\nObserve mode can forward secrets unchanged. Stop foreground serve with Ctrl-C.")
+		}
 		fmt.Fprintln(w, "\nPII is off by default. Use --pii all or comma-separated categories:\naadhaar,credit-card,email,ip-address,phone,us-ssn. See CONTRACTS.md for limits.")
 		fmt.Fprintln(w, "\n--debug writes masked findings and send/block outcomes to DIR/debug-findings.log.\nMasks show the first 3 Unicode characters; very short values are fully masked.\nClean traffic and routine connection events are omitted, as are bodies, headers,\nand URL paths. Use 'withhold status' for counters and logging health.\nUse temporarily, then delete the findings file and its .1 backup.")
 	case "doctor":
-		fmt.Fprintln(w, "\nPolicy, cap, integration, and upstream TLS options are the same as 'withhold on'.\nPass the intended startup options when checking a nondefault configuration.")
+		fmt.Fprintln(w, "\nWithout names, diagnose the recorded active session, otherwise the saved set.\nExplicit names diagnose just those agents. Policy, cap, and upstream TLS options\nmatch 'withhold on'. Pass intended startup options for a nondefault check.")
 	}
 	if allowedFlag(command, "config") {
 		if command == "scan" {
-			fmt.Fprintln(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nPrecedence: flags > WITHHOLD_PII / WITHHOLD_MAX_BYTES > file > defaults.\nOnly detection settings and scan limits apply; editor/proxy environment is ignored.\nReference: https://github.com/cquark7/withhold/blob/main/docs/usage.md#scan-local-text")
+			fmt.Fprintf(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nPrecedence: flags > WITHHOLD_PII / WITHHOLD_MAX_BYTES > file > defaults.\nOnly detection settings and scan limits apply; editor/proxy environment is ignored.\nReference: %s\n", doclink.URL("usage.md#scan-local-text"))
+		} else if command == "status" {
+			fmt.Fprintf(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nThe running session retains its recorded settings even if configuration changes.\nReference: %s\n", doclink.URL("usage.md#configuration-and-diagnostics"))
 		} else {
-			fmt.Fprintln(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nPrecedence: flags > environment > file > defaults; extra hosts/patterns merge.\nView settings with 'withhold config'. Reference:\nhttps://github.com/cquark7/withhold/blob/main/docs/configuration.md")
+			fmt.Fprintf(w, "\nConfiguration: DIR/config.toml, or --config / WITHHOLD_CONFIG (TOML only).\nPrecedence: flags > environment > file > defaults; extra hosts/patterns merge.\nView settings with 'withhold config'. Reference:\n%s\n", doclink.URL("configuration.md"))
 		}
 	}
 	if command == "scan" {
 		fmt.Fprintln(w, "\nExit codes: 0 complete without findings; 1 complete with findings;\n2 invalid usage/configuration or incomplete/failed scan. Errors take precedence.")
 	} else {
-		fmt.Fprintln(w, "\nExit codes: 0 success; 1 operation/check failed; 2 invalid usage/configuration.\nDoctor --preflight returns 2 for failed checks. Launch preserves application exit codes.")
+		fmt.Fprintln(w, "\nExit codes: 0 success; 1 operation/check failed; 2 invalid usage/configuration.")
+		if command == "doctor" {
+			fmt.Fprintln(w, "Doctor --preflight returns 2 for failed checks.")
+		} else if command == "launch" {
+			fmt.Fprintln(w, "Launch preserves application exit codes.")
+		}
 	}
 	return 0
 }
@@ -151,8 +186,6 @@ func flagValueName(name string) string {
 		return "HOSTS"
 	case "extra-host-regex":
 		return "REGEX"
-	case "integration":
-		return "NAME"
 	case "pii":
 		return "TYPES"
 	case "confidence":
@@ -174,7 +207,7 @@ func allowedFlag(command, name string) bool {
 		}
 		return false
 	}
-	if command == "integrations" || command == "demo" {
+	if command == "agents" {
 		return name == "json"
 	}
 	if command == "version" || command == "completion" {
@@ -191,12 +224,12 @@ func allowedFlag(command, name string) bool {
 		return command != "init-ca" && command != "install"
 	case "json":
 		return command == "status" || command == "doctor" || command == "config"
+	case "details":
+		return command == "status"
 	case "preflight":
 		return command == "doctor"
 	case "trust":
 		return command == "setup"
-	case "integration":
-		return command == "setup" || command == "launch" || command == "on" || command == "serve" || command == "doctor" || command == "config"
 	case "bin-dir":
 		return command == "install"
 	case "keep-files":

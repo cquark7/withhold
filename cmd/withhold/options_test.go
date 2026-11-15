@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"flag"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/cquark7/withhold/internal/integrations"
 )
 
 func TestParseOptionsPreservesValuesAndEditorArguments(t *testing.T) {
@@ -17,13 +20,14 @@ func TestParseOptionsPreservesValuesAndEditorArguments(t *testing.T) {
 		port          int
 		dir           string
 		editorArgs    []string
+		targets       []string
 	}{
-		{name: "port among flags", command: "on", args: []string{"8090", "--chat-mode", "block", "--port=8091", "8092"}, port: 8092},
+		{name: "agents among flags", command: "on", args: []string{"cursor", "--chat-mode", "block", "--port=8091", "vscode-copilot"}, port: 8091, targets: []string{"cursor", "vscode-copilot"}},
 		{name: "numeric flag value", command: "on", args: []string{"--max-bytes", "1024", "--port", "8093"}, port: 8093},
-		{name: "on rejects end-of-options", command: "on", args: []string{"--", "--port", "8094"}, wantError: "unexpected argument"},
+		{name: "removed selector flag", command: "on", args: []string{"--integration", "cursor"}, wantError: "not defined"},
 		{name: "help", command: "on", args: []string{"--help"}, wantHelp: true},
-		{name: "help is a value", command: "init-ca", args: []string{"--dir", "--help"}, dir: "--help", port: 8080},
-		{name: "literal editor args", command: "launch", args: []string{"--", "project with spaces", "--help", "x&echo unsafe"}, editorArgs: []string{"project with spaces", "--help", "x&echo unsafe"}, port: 8080},
+		{name: "help is a value", command: "init-ca", args: []string{"--dir", "--help"}, dir: "--help", port: 8451},
+		{name: "literal editor args", command: "launch", args: []string{"--", "project with spaces", "--help", "x&echo unsafe"}, editorArgs: []string{"project with spaces", "--help", "x&echo unsafe"}, port: 8451},
 		{name: "missing value", command: "on", args: []string{"--port"}, wantError: "needs an argument"},
 		{name: "unexpected argument", command: "status", args: []string{"something"}, wantError: "unexpected argument"},
 		{name: "unknown flag", command: "on", args: []string{"--porrt", "8090"}, wantError: "not defined"},
@@ -37,7 +41,8 @@ func TestParseOptionsPreservesValuesAndEditorArguments(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			o := defaultOptions("~")
-			got, showHelp, err := parseOptions(o.flags(test.command), test.command, test.args)
+			f := o.flags(test.command)
+			got, showHelp, err := parseOptions(f, test.command, test.args)
 			if test.wantError != "" {
 				if err == nil || !strings.Contains(err.Error(), test.wantError) {
 					t.Fatalf("error = %v, want %q", err, test.wantError)
@@ -50,7 +55,7 @@ func TestParseOptionsPreservesValuesAndEditorArguments(t *testing.T) {
 			if showHelp {
 				return
 			}
-			if o.port != test.port || test.dir != "" && o.dir != test.dir || !reflect.DeepEqual(got, test.editorArgs) {
+			if o.port != test.port || test.dir != "" && o.dir != test.dir || !reflect.DeepEqual(got, test.editorArgs) || !slices.Equal(f.Args(), test.targets) {
 				t.Fatalf("options=%+v editor=%q", o, got)
 			}
 		})
@@ -69,18 +74,27 @@ func TestDebugFlagIsRestrictedToProxyCommands(t *testing.T) {
 	}
 }
 
-func TestGettingStartedUsesIntegrationDiscoveryNotHarnessAssumptions(t *testing.T) {
+func TestGettingStartedUsesAgentSelectionNotHarnessAssumptions(t *testing.T) {
 	var out bytes.Buffer
 	if help(&out, "") != 0 {
 		t.Fatal("help failed")
 	}
 	_, start, ok := strings.Cut(out.String(), "Get started:")
-	if !ok || strings.Contains(start, "withhold launch") || strings.Contains(start, "VS Code") || !strings.Contains(start, "withhold integrations") || !strings.Contains(start, "--integration NAME") {
+	if !ok || strings.Contains(start, "withhold launch") || strings.Contains(start, "VS Code") || !strings.Contains(start, "withhold agents") || !strings.Contains(start, "withhold setup AGENT...") {
 		t.Fatal(out.String())
 	}
 	out.Reset()
-	if help(&out, "launch") != 0 || !strings.Contains(out.String(), "Launch is optional and integration-specific") {
+	if help(&out, "launch") != 0 || !strings.Contains(out.String(), "Launching is optional and only supported for some agents") || strings.Contains(out.String(), "integration") {
 		t.Fatal(out.String())
+	}
+	out.Reset()
+	if help(&out, "setup") != 0 {
+		t.Fatal("setup help failed")
+	}
+	for _, entry := range integrations.List() {
+		if !strings.Contains(out.String(), entry.ID) || !strings.Contains(out.String(), entry.Name) {
+			t.Errorf("setup help omitted %s: %s", entry.ID, out.String())
+		}
 	}
 }
 
@@ -134,12 +148,15 @@ func TestCompletionUsesCommandOptionsAndRespectsValues(t *testing.T) {
 		{[]string{"on", "--chat-mode", "b"}, []string{"block"}},
 		{[]string{"on", "--chat-mode=b"}, []string{"--chat-mode=block"}},
 		{[]string{"status", "--o"}, nil},
+		{[]string{"status", "--de"}, []string{"--details"}},
 		{[]string{"on", "--bi"}, nil},
 		{[]string{"doctor", "--max"}, []string{"--max-bytes"}},
 		{[]string{"on", "--dir", "--h"}, nil},
 		{[]string{"launch", "--", "--h"}, nil},
 		{[]string{"completion", "z"}, []string{"zsh"}},
 		{[]string{"help", "ser"}, []string{"serve"}},
+		{[]string{"on", "cursor", "vscode"}, []string{"vscode-copilot"}},
+		{[]string{"on", "cursor", "c"}, nil},
 	} {
 		if got := candidates(test.args); !reflect.DeepEqual(got, test.want) {
 			t.Errorf("candidates(%q)=%q, want %q", test.args, got, test.want)

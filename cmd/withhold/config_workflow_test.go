@@ -18,21 +18,21 @@ func TestStarterInheritsDefaultsAndNeverOverwrites(t *testing.T) {
 	cleanConfigEnvironment(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	if err := createConfig(path, integrations.Default, false); err != nil {
+	if err := createConfig(path, nil); err != nil {
 		t.Fatal(err)
 	}
 	original, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := config.Load(path, true, config.Defaults(integrations.Default, runtime.GOOS))
-	if err != nil || !reflect.DeepEqual(c, config.Defaults(integrations.Default, runtime.GOOS)) {
+	c, err := config.Load(path, true, config.Defaults(runtime.GOOS))
+	if err != nil || !reflect.DeepEqual(c, config.Defaults(runtime.GOOS)) {
 		t.Fatalf("starter pinned built-in settings: %+v %v", c, err)
 	}
-	if !strings.Contains(string(original), "# [application.traffic]") || !strings.Contains(string(original), "# extra_chat_paths = []") {
-		t.Fatal("starter does not expose adapter customization")
+	if !strings.Contains(string(original), "# agents = []") {
+		t.Fatal("starter silently selected an agent")
 	}
-	if err := createConfig(path, integrations.Default, false); !os.IsExist(err) {
+	if err := createConfig(path, nil); !os.IsExist(err) {
 		t.Fatalf("second init did not refuse overwrite: %v", err)
 	}
 	if after, _ := os.ReadFile(path); !bytes.Equal(original, after) {
@@ -46,10 +46,10 @@ func TestStarterInheritsDefaultsAndNeverOverwrites(t *testing.T) {
 }
 
 func TestEffectiveTOMLRoundTripsNormalizedSettings(t *testing.T) {
-	c := config.Defaults(integrations.Default, runtime.GOOS)
-	c.Application = json.RawMessage(`{"binary":"code","settings_dir":"Code","traffic":{"extra_chat_paths":["/v2/chat"]}}`)
-	var err error
-	c.Application, err = integrations.Configure(c.Integration, c.Application, nil)
+	c := config.Defaults(runtime.GOOS)
+	c.Agents = []string{"vscode-copilot"}
+	c.Applications["vscode-copilot"] = json.RawMessage(`{"binary":"code","settings_dir":"Code","traffic":{"extra_chat_paths":["/v2/chat"]}}`)
+	err := integrations.Normalize(&c, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,11 +65,11 @@ func TestEffectiveTOMLRoundTripsNormalizedSettings(t *testing.T) {
 	if err = os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := config.Load(path, true, config.Defaults(integrations.Default, runtime.GOOS))
+	got, err := config.Load(path, true, config.Defaults(runtime.GOOS))
 	if err != nil {
 		t.Fatalf("TOML snapshot cannot be reloaded: %v\n%s", err, data)
 	}
-	got.Application, err = integrations.Configure(got.Integration, got.Application, nil)
+	err = integrations.Normalize(&got, nil)
 	if err != nil || !reflect.DeepEqual(got, c) {
 		t.Fatalf("TOML snapshot changed settings: %+v %v\n%s", got, err, data)
 	}

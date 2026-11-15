@@ -1,30 +1,43 @@
-# Integrations
+# Supported agents
 
-An integration pairs a **coding harness** (its setup, trust, and lifecycle) with
-a **traffic profile** (provider hosts, APIs, and error protocol). Sharing an API
-or being a VS Code fork does not make an agent supported automatically.
+Each supported agent combines a **coding harness** (its setup, trust, and
+lifecycle) with a **tested traffic scope** (provider hosts, APIs, and error
+protocol). Sharing an API or being a VS Code fork does not make an agent
+supported automatically.
 
-| Integration ID | Harness | Platforms | Contract and setup |
+| Agent ID | Harness | Platforms | Contract and setup |
 | --- | --- | --- | --- |
-| `vscode-copilot` (default) | Desktop VS Code + GitHub Copilot | macOS, Linux, Windows; [trust requirements](vscode-copilot.md#validation-and-support-matrix) | [Guide](vscode-copilot.md) |
+| `cursor` | Cursor desktop, bounded local Agent/Auto egress | Live validation recorded for macOS Apple silicon; other platforms not recorded | [Guide](cursor.md) |
+| `vscode-copilot` | Desktop VS Code + GitHub Copilot | macOS, Linux, Windows; [trust requirements](vscode-copilot.md#validation-and-support-matrix) | [Guide](vscode-copilot.md) |
 
-Only this integration is currently shipped. Codex, Cursor, OpenCode, remote
-extension hosts, WSL, containers, and browser editors are not established
-integrations. No dynamic plugins are loaded.
+Codex, OpenCode, remote extension hosts, WSL, containers, and browser editors
+are not currently supported agents. No dynamic plugins are loaded.
+
+Cursor support is deliberately limited; see its guide for the validated workflow
+and fail-closed exclusions.
 
 ```sh
-withhold integrations             # Available in this build; no setup required.
-withhold integrations --json      # Versioned machine-readable catalog.
-withhold setup --integration vscode-copilot
-withhold doctor --integration vscode-copilot
-withhold on --integration vscode-copilot
-withhold off                     # Restores the recorded integration/resource.
+withhold agents                      # Supported in this build; no setup required.
+withhold agents --json               # Versioned machine-readable catalog.
+withhold setup cursor vscode-copilot # Prepare and save the default set.
+withhold on                          # Enable that set on one shared proxy.
+withhold doctor                      # Diagnose the active set, otherwise saved.
+withhold off                         # Restore all recorded application resources.
+withhold on cursor                   # Session-only replacement; defaults unchanged.
 ```
 
-Set `integration` in the [user config](../configuration.md) to avoid repeating
-the selector. One integration runs per state directory; stop before switching.
-Foreground `serve` uses the same selector but does not configure the application.
-It does not establish routing or trust by itself.
+There is no implicit default agent or installation-based detection. Selection is
+an explicit set: named targets replace, never append. Setup saves `agents` in
+the [user config](../configuration.md); application overrides live under
+`[applications.AGENT]`. One active set runs per state directory; stop before
+changing it. Repeating `on` with the same set and settings is idempotent.
+Foreground `serve AGENT...` uses the same selection but does not configure
+applications or trust.
 
-Every integration contract supplements the [shared contract](../../CONTRACTS.md).
-For implementing one, see [Adding an integration](../adding-integrations.md).
+All agent profiles enforce their own boundaries on the shared proxy. Overlapping
+route claims fail closed rather than selecting a profile by order. One adapter's
+passthrough cannot override another adapter's guarded or suspicious host.
+Session-wide inspection counters are not attribution to individual agents.
+
+Each agent's documented scope supplements the [shared contract](../../CONTRACTS.md).
+For adding agent support, see [Adding an integration](../adding-integrations.md).

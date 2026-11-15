@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,23 +28,71 @@ type check struct {
 }
 
 func exists(path string) bool { _, err := os.Stat(path); return err == nil }
-func status(o Options, e integration.Target, r Record, recordErr error) int {
+
+func printTraffic(t *Traffic) {
+	fmt.Printf("Inspected: %d supported bodies/messages\n", t.Inspected)
+	fmt.Printf("Redacted:  %d decisions\n", t.Redacted)
+	fmt.Printf("Blocked:   %d decisions\n", t.Blocked)
+	if t.Blocked != 0 {
+		for _, row := range []struct {
+			label string
+			count uint64
+		}{
+			{"findings", t.BlockReasons.Findings},
+			{"unsupported or unscannable", t.BlockReasons.Unsupported},
+			{"intake, read, or size limits", t.BlockReasons.Intake},
+			{"suspicious unscoped hosts", t.BlockReasons.Suspicious},
+			{"inspection failures", t.BlockReasons.Inspection},
+			{"other", t.BlockReasons.Other},
+		} {
+			if row.count != 0 {
+				fmt.Printf("  %s: %d\n", row.label, row.count)
+			}
+		}
+	}
+	if t.UpstreamErrors != 0 {
+		fmt.Printf("Upstream failures: %d\n", t.UpstreamErrors)
+		for _, row := range []struct {
+			label string
+			count uint64
+		}{
+			{"canceled", t.UpstreamReasons.Canceled},
+			{"timeout", t.UpstreamReasons.Timeout},
+			{"TLS verification", t.UpstreamReasons.TLS},
+			{"DNS", t.UpstreamReasons.DNS},
+			{"other or unknown", t.UpstreamReasons.Other},
+		} {
+			if row.count != 0 {
+				fmt.Printf("  %s: %d\n", row.label, row.count)
+			}
+		}
+	}
+}
+
+func printTrafficDetails(t *Traffic) {
+	fmt.Printf("Traffic: connections=%d received=%d scan_attempts=%d passthrough=%d detected=%d upstream_written=%d responses=%d\n",
+		t.Connections, t.Received, t.ScanAttempts, t.Passthrough, t.Detected, t.Written, t.Responses)
+	fmt.Println("Counters are session-wide, not attribution to individual agents. Passthrough includes bodyless requests.")
+}
+
+func status(o Options, apps []application, r Record, recordErr error) int {
 	state, h := ownership(o.Port, r)
 	var pid any
 	if h != nil {
 		pid = h.PID
 	}
-	settings := map[string]any{"path": e.Resource, "http_proxy": nil, "clean": true, "error": nil}
-	if recordErr == nil {
-		e.Resource = r.Resource
-		settings["path"] = e.Resource
-	}
-	appState, err := o.Application.Read(e)
-	if err != nil {
-		settings["error"] = err.Error()
-	} else if appState.Proxy != nil {
-		settings["http_proxy"] = appState.Proxy
-		settings["clean"] = false
+	applicationReports := []map[string]any{}
+	settingsError := false
+	for _, app := range apps {
+		settings := map[string]any{"path": app.Target.Resource, "http_proxy": nil, "clean": true, "error": nil}
+		appState, err := app.adapter.Read(app.Target)
+		if err != nil {
+			settings["error"] = err.Error()
+			settingsError = true
+		} else if appState.Proxy != nil {
+			settings["http_proxy"], settings["clean"] = appState.Proxy, false
+		}
+		applicationReports = append(applicationReports, map[string]any{"agent": app.Agent, "settings": settings, "backup": map[string]any{"path": appState.BackupPath, "present": appState.BackupPresent}})
 	}
 	debugPath := filepath.Join(o.Dir, "debug-findings.log")
 	debugEnabled := false
@@ -53,73 +102,171 @@ func status(o Options, e integration.Target, r Record, recordErr error) int {
 		debugEnabled = live.Enabled
 	}
 	debug := map[string]any{"enabled": debugEnabled, "path": debugPath, "healthy": nil, "summaries_written": nil, "write_failures": nil}
-	coverage := map[string]any{"state": coverageState(live), "observe": nil, "integration": nil}
+	coverage := map[string]any{"state": coverageState(live), "observe": nil, "agents": []string{}}
 	if live != nil {
 		debug["healthy"], debug["summaries_written"], debug["write_failures"] = live.Healthy, live.EventsWritten, live.WriteFailures
-		coverage["observe"], coverage["integration"] = r.Configuration.Protection.Observe, r.Integration
+		coverage["observe"], coverage["agents"] = r.Configuration.Protection.Observe, r.Configuration.Agents
 	}
-	payload := map[string]any{"schema": 4, "verb": "status", "ok": true, "port": o.Port, "runtime": "native", "proxy": map[string]any{"state": state, "pid": pid, "authenticated": state == "ours", "record": filepath.Join(o.Dir, StateName)}, "settings": settings, "backup": map[string]any{"path": appState.BackupPath, "present": appState.BackupPresent}, "ca": map[string]any{"dir": o.Dir, "files_present": exists(filepath.Join(o.Dir, "ca.crt")) && exists(filepath.Join(o.Dir, "ca.key")), "trust_state": exists(filepath.Join(o.Dir, "trust-state.json"))}, "debug": debug, "coverage": coverage, "traffic": trafficReport(live)}
-	if recordErr != nil && !os.IsNotExist(recordErr) {
+	active := []string{}
+	if state == "ours" {
+		active = r.Configuration.Agents
+	}
+	brokenRecord := recordErr != nil && !os.IsNotExist(recordErr)
+	recoveryNeeded := recordErr == nil && state != "ours"
+	trust, trustErr := readTrust(o.Dir)
+	var trustMode any
+	if trustErr == nil {
+		switch trust.Mode {
+		case "manual":
+			trustMode = "manual"
+		case "", "system":
+			trustMode = "system"
+		default:
+			trustErr = fmt.Errorf("invalid trust metadata")
+		}
+	}
+	var last *LastSession
+	var summaryErr error
+	if os.IsNotExist(recordErr) {
+		last, summaryErr = loadSummary(o.Dir)
+	}
+	badSummary := summaryErr != nil && !os.IsNotExist(summaryErr)
+	badTrust := live != nil && trustErr != nil
+	ok := !brokenRecord && !recoveryNeeded && state != "foreign" && o.ConfigError == "" && !settingsError && !badSummary && !badTrust
+	ca := map[string]any{"dir": o.Dir, "files_present": exists(filepath.Join(o.Dir, "ca.crt")) && exists(filepath.Join(o.Dir, "ca.key")), "trust_state": exists(filepath.Join(o.Dir, "trust-state.json")), "trust_mode": trustMode}
+	if badTrust {
+		ca["trust_error"] = "trust metadata unavailable"
+	}
+	payload := map[string]any{"schema": 6, "verb": "status", "ok": ok, "port": o.Port, "runtime": "native", "agents": o.Agents, "saved_agents": o.SavedAgents, "active_agents": active, "applications": applicationReports, "proxy": map[string]any{"state": state, "pid": pid, "authenticated": state == "ours", "record": filepath.Join(o.Dir, StateName)}, "recovery_needed": recoveryNeeded || brokenRecord, "ca": ca, "debug": debug, "coverage": coverage, "traffic": trafficReport(live), "last_session": last}
+	if brokenRecord {
 		payload["record_error"] = recordErr.Error()
+	}
+	if badSummary {
+		payload["summary_error"] = "last-session summary is unreadable"
+	}
+	if o.ConfigError != "" {
+		payload["config_error"] = o.ConfigError
+		payload["saved_agents"] = nil
 	}
 	if o.JSON {
 		_ = json.NewEncoder(os.Stdout).Encode(payload)
 	} else {
-		switch state {
-		case "ours":
-			fmt.Printf("withhold is running on 127.0.0.1:%d (authenticated pid %d).\n", o.Port, h.PID)
-		case "foreign":
-			fmt.Printf("No authenticated withhold session; port %d is held by an unverified listener.\n", o.Port)
-		default:
-			fmt.Printf("withhold is off; no listener on 127.0.0.1:%d.\n", o.Port)
-		}
-		fmt.Printf("settings: %s\nbackup: %v\n", e.Resource, appState.BackupPresent)
-		fmt.Printf("coverage: %s\n", coverageState(live))
-		if live != nil {
-			fmt.Printf("traffic: connects=%d received=%d scan_attempts=%d inspected=%d passthrough=%d detected=%d redacted=%d blocked=%d upstream_written=%d responses=%d upstream_errors=%d\n", live.Connections, live.Received, live.Scanned, live.Inspected, live.Passthrough, live.Detected, live.Redacted, live.Blocked, live.Written, live.Responses, live.UpstreamErrors)
-			if live.Received == 0 {
-				fmt.Println("No HTTP requests or WebSocket messages observed this session. Check application routing/trust; CONNECT alone does not prove body inspection.")
-			} else if live.Inspected == 0 {
-				fmt.Println("Traffic observed, but no supported body has completed inspection. Scan attempts and passthrough are not successful inspections.")
+		switch {
+		case brokenRecord:
+			fmt.Printf("withhold: cannot read the recovery record: %s\n", recordErr)
+			fmt.Println("Keep the state and backups. Run 'withhold doctor'; no process will be stopped automatically.")
+		case recoveryNeeded:
+			fmt.Println("withhold is not running or cannot be authenticated.")
+			fmt.Println("Recovery needed: recorded application settings may still point to the proxy.")
+			if state == "foreign" {
+				fmt.Printf("Port %d has an unverified listener; it will not be stopped.\n", o.Port)
+			}
+			fmt.Println("Next: run 'withhold off' to attempt to restore the recorded settings.")
+		case state == "foreign":
+			fmt.Printf("withhold is off; port %d is held by an unverified listener.\n", o.Port)
+			fmt.Println("Next: release the port or choose another with 'withhold on --port PORT'.")
+		case live != nil:
+			fmt.Println("withhold is running.")
+			fmt.Printf("Agents: %s\n", strings.Join(active, ", "))
+			if !slices.Equal(o.SavedAgents, active) && o.ConfigError == "" {
+				fmt.Printf("Saved agents: %s\n", strings.Join(o.SavedAgents, ", "))
+			}
+			pii := "off"
+			if len(r.Configuration.Protection.PII) != 0 {
+				pii = strings.Join(r.Configuration.Protection.PII, ", ")
+			}
+			if r.Configuration.Protection.Observe {
+				fmt.Println("Mode: observe (sensitive content can be forwarded unchanged)")
 			} else {
-				fmt.Println("Supported bodies inspected this session; this does not establish coverage of all application traffic.")
+				fmt.Println("Mode: enforce")
+			}
+			if trustMode == "manual" {
+				fmt.Println("CA trust: manual (not verified)")
+			} else if trustErr != nil {
+				fmt.Println("CA trust: metadata unavailable; run 'withhold doctor'.")
+			}
+			fmt.Printf("Policy: chat %s; inline %s; PII %s\n\n", r.Configuration.Protection.Chat, r.Configuration.Protection.Inline, pii)
+			printTraffic(trafficReport(live))
+			if live.Received == 0 {
+				fmt.Println("\nNo HTTP requests or WebSocket messages observed this session.")
+				fmt.Println("Next: restart the agent if needed, send a non-sensitive request, then check 'withhold status'.")
+			} else if live.Inspected == 0 {
+				fmt.Println("\nTraffic arrived, but no supported body or message completed inspection.")
+				fmt.Println("Next: check application routing and trust with 'withhold doctor' and the agent guide.")
 			}
 			printObserveWarning(r.Configuration.Protection.Observe)
-			fmt.Println("Limits: headers, URL queries, responses, and opaque attachments are not inspected. Integration-specific passthrough is not protected; review its guide.")
+			fmt.Println("\nOnly supported routed bodies/messages are inspected; headers, URL queries, responses, opaque attachments, and passthrough are not.")
+		default:
+			fmt.Println("withhold is off.")
+			if o.ConfigError == "" && len(o.SavedAgents) != 0 {
+				fmt.Printf("Saved agents: %s\nStart: withhold on\n", strings.Join(o.SavedAgents, ", "))
+			} else if o.ConfigError == "" {
+				fmt.Println("Next: run 'withhold agents' and choose agents with 'withhold setup AGENT...'.")
+			}
 		}
-		if debugEnabled {
-			fmt.Println("debug: on —", debugPath)
+		if o.ConfigError != "" {
+			fmt.Printf("Saved agents unavailable: %s\n", o.ConfigError)
+			fmt.Println("Next: correct the configuration; 'withhold off' can still restore recorded settings.")
+		}
+		if badSummary {
+			fmt.Println("Last session: summary is unreadable; keep the state file for diagnosis.")
+		}
+		for _, app := range applicationReports {
+			settings := app["settings"].(map[string]any)
+			backup := app["backup"].(map[string]any)
+			if o.Details {
+				fmt.Printf("%s settings: %q\n  backup present: %v\n", app["agent"], settings["path"], backup["present"])
+			}
+			if settings["error"] != nil {
+				fmt.Printf("WARNING: %s settings could not be read: %v\n", app["agent"], settings["error"])
+			}
+		}
+		if live != nil && o.Details {
+			fmt.Printf("\nProxy: 127.0.0.1:%d (authenticated pid %d)\n", o.Port, h.PID)
+			printTrafficDetails(trafficReport(live))
+		}
+		if debugEnabled && o.Details {
+			fmt.Println("Debug findings:", debugPath)
 			if runtime.GOOS == "windows" {
 				fmt.Printf("Follow findings: Get-Content -Wait -LiteralPath '%s'\n", strings.ReplaceAll(debugPath, "'", "''"))
 			} else {
 				fmt.Printf("Follow findings: tail -F '%s'\n", strings.ReplaceAll(debugPath, "'", "'\\''"))
 			}
-			fmt.Printf("debug log: healthy=%v summaries_written=%d lost_summaries=%d\n", live.Healthy, live.EventsWritten, live.WriteFailures)
-			if !live.Healthy {
-				fmt.Println("WARNING: debug log writes are failing; check permissions and disk space.")
+			fmt.Printf("Debug log: healthy=%v summaries_written=%d lost_summaries=%d\n", live.Healthy, live.EventsWritten, live.WriteFailures)
+		}
+		if debugEnabled && !live.Healthy {
+			fmt.Println("WARNING: debug log writes are failing; check permissions and disk space.")
+		}
+		if debugEnabled && live.WriteFailures > 0 {
+			fmt.Println("WARNING: some finding summaries were lost; the findings log is incomplete.")
+		}
+		if o.Details && live == nil && !recoveryNeeded && !brokenRecord && !badSummary {
+			switch {
+			case last == nil:
+				fmt.Println("\nLast session: no summary available.")
+			case !last.Available:
+				fmt.Println("\nLast session: summary unavailable; the session may have stopped unexpectedly.")
+			default:
+				fmt.Printf("\nLast session: %s (snapshot before shutdown; late events may be omitted)\n", last.CapturedAt)
+				fmt.Printf("Agents: %s\n", strings.Join(last.Agents, ", "))
+				if last.Observe {
+					fmt.Println("OBSERVE mode: sensitive content could be forwarded unchanged.")
+				}
+				printTraffic(last.Traffic)
+				printTrafficDetails(last.Traffic)
 			}
-			if live.WriteFailures > 0 {
-				fmt.Println("WARNING: some finding summaries were lost; the findings log is incomplete.")
-			}
-		} else {
-			fmt.Println("debug: off — enable with 'withhold off', then 'withhold on --debug'")
 		}
-		if err != nil {
-			fmt.Fprintln(os.Stdout, "settings error:", err)
-		}
-		switch state {
-		case "ours":
-			fmt.Fprintf(os.Stdout, "Next: follow the %s integration guide to verify traffic is routed and inspected.\n", o.Application.Name())
-		case "foreign":
-			fmt.Fprintln(os.Stdout, "Next: release this port or choose another with 'withhold on --port PORT'.")
-		default:
-			fmt.Fprintln(os.Stdout, "Next: 'withhold doctor' checks setup; 'withhold on' starts a session.")
-		}
+	}
+	if !ok {
+		return 1
 	}
 	return 0
 }
-func doctor(o Options, e integration.Target, r Record, recordErr error) int {
+func doctor(o Options, apps []application, r Record, recordErr error) int {
 	rows := []check{{"native-runtime", "PASS", "standalone native executable", ""}}
+	if o.MissingAgents {
+		rows = append([]check{{"agents", "FAIL", "no agents selected", "run 'withhold agents', then 'withhold setup AGENT...'"}}, rows...)
+	}
 	binary, err := os.Executable()
 	if err == nil {
 		environment := os.Environ()
@@ -146,67 +293,75 @@ func doctor(o Options, e integration.Target, r Record, recordErr error) int {
 		row.Fix = "reinstall the matching native executable"
 	}
 	rows = append(rows, row)
-	_, err = certstore.Load(o.Dir)
-	row = check{"ca-files", "PASS", "valid private P-256 CA", ""}
-	if err != nil {
-		row.Status = "FAIL"
-		row.Detail = err.Error()
-		row.Fix = "withhold setup"
-	}
-	rows = append(rows, row)
-	s, err := readTrust(o.Dir)
-	row = check{"ca-trust", "PASS", "OS trust verified", ""}
-	if err == nil {
-		data, e := os.ReadFile(filepath.Join(o.Dir, "ca.crt"))
-		if e != nil || certFingerprint(data) != s.Fingerprint {
-			err = fmt.Errorf("CA and trust metadata differ")
-		} else {
-			err = SystemTrust().Check(s, filepath.Join(o.Dir, "ca.crt"))
+	if o.MissingAgents {
+		rows = append(rows, check{"setup", "WARN", "CA and trust not checked until an agent is selected", ""})
+	} else {
+		_, err = certstore.Load(o.Dir)
+		row = check{"ca-files", "PASS", "valid private P-256 CA", ""}
+		if err != nil {
+			row.Status = "FAIL"
+			row.Detail = err.Error()
+			row.Fix = "withhold setup " + strings.Join(o.Agents, " ")
 		}
-	}
-	if err != nil {
-		row.Status = "FAIL"
-		row.Detail = "CA trust verification failed"
-		row.Fix = "withhold setup"
-	} else if s.Mode == "manual" {
-		row.Status = "WARN"
-		row.Detail = "manual trust; import ca.crt into the application trust store"
-	}
-	rows = append(rows, row)
-	if launcher, ok := o.Application.(integration.Launcher); ok {
-		row = check{"application-cli", "PASS", e.Binary, ""}
-		if _, err := exec.LookPath(e.Binary); err != nil {
+		rows = append(rows, row)
+		s, err := readTrust(o.Dir)
+		row = check{"ca-trust", "PASS", "OS trust verified", ""}
+		if err == nil {
+			data, e := os.ReadFile(filepath.Join(o.Dir, "ca.crt"))
+			if e != nil || certFingerprint(data) != s.Fingerprint {
+				err = fmt.Errorf("CA and trust metadata differ")
+			} else {
+				err = SystemTrust().Check(s, filepath.Join(o.Dir, "ca.crt"))
+			}
+		}
+		if err != nil {
+			row.Status = "FAIL"
+			row.Detail = "CA trust verification failed"
+			row.Fix = "withhold setup " + strings.Join(o.Agents, " ")
+		} else if s.Mode == "manual" {
 			row.Status = "WARN"
-			row.Detail = "optional application launcher is unavailable: " + e.Binary
-			row.Fix = launcher.MissingCLI()
+			row.Detail = "manual trust is not verified; import ca.crt into the application trust store"
 		}
 		rows = append(rows, row)
 	}
-	rows = append(rows, check{"application-restart", "WARN", "follow the integration guide for application trust and restart requirements", ""})
-	if recordErr == nil {
-		e.Resource = r.Resource
+	for _, app := range apps {
+		e := app.Target
+		if launcher, ok := app.adapter.(integration.Launcher); ok {
+			row = check{"application-cli", "PASS", e.Binary, ""}
+			if _, err := exec.LookPath(e.Binary); err != nil {
+				row.Status = "WARN"
+				row.Detail = "optional application launcher is unavailable: " + e.Binary
+				row.Fix = launcher.MissingCLI()
+			}
+			row.ID = app.Agent + "/" + row.ID
+			rows = append(rows, row)
+		}
+		rows = append(rows, check{"application-restart", "WARN", "follow the agent guide for application trust and restart requirements", ""})
+		row = check{"backup", "WARN", "created by withhold on", ""}
+		appState, settingsErr := app.adapter.Read(e)
+		if appState.BackupPresent {
+			row.Status = "PASS"
+			row.Detail = appState.BackupPath
+		}
+		row.ID = app.Agent + "/" + row.ID
+		rows = append(rows, row)
+		row = check{"settings", "PASS", e.Resource, ""}
+		if app.resolveError != nil {
+			row = check{"settings", "FAIL", app.resolveError.Error(), "correct namespaced application settings"}
+		} else if settingsErr != nil {
+			row.Status = "FAIL"
+			row.Detail = settingsErr.Error()
+			row.Fix = "repair application settings before continuing"
+		}
+		row.ID = app.Agent + "/" + row.ID
+		rows = append(rows, row)
 	}
-	row = check{"backup", "WARN", "created by withhold on", ""}
-	appState, settingsErr := o.Application.Read(e)
-	if appState.BackupPresent {
-		row.Status = "PASS"
-		row.Detail = appState.BackupPath
+	if len(o.Agents) == 0 && !o.MissingAgents && o.ConfigError == "" {
+		rows = append(rows, check{"agents", "FAIL", "no agents selected", "run 'withhold setup AGENT...' to save a default set; use 'withhold agents' to list choices"})
 	}
-	rows = append(rows, row)
-	row = check{"settings", "PASS", e.Resource, ""}
-	if e.Resource == "" {
-		row = check{"settings", "FAIL", "application settings could not be resolved", "correct integration/application configuration"}
-	} else if settingsErr != nil {
-		row.Status = "FAIL"
-		row.Detail = err.Error()
-		row.Fix = "repair application settings before continuing"
-	}
-	rows = append(rows, row)
 	row = check{"request-cap", "PASS", "validated native cap; 6 jobs / 64 MiB intake and scan admission", ""}
-	if o.ConfigError != "" {
-		row.Status = "FAIL"
-		row.Detail = o.ConfigError
-		row.Fix = "correct TOML configuration, WITHHOLD_* overrides, or startup flags"
+	if o.ConfigError != "" && !o.MissingAgents {
+		row = check{"configuration", "FAIL", o.ConfigError, "correct TOML configuration, WITHHOLD_* overrides, or startup flags"}
 	}
 	rows = append(rows, row)
 	state, _ := ownership(o.Port, r)
@@ -217,7 +372,11 @@ func doctor(o Options, e integration.Target, r Record, recordErr error) int {
 	}
 	rows = append(rows, row)
 	if recordErr != nil && !os.IsNotExist(recordErr) {
-		rows = append(rows, check{"ownership-record", "FAIL", recordErr.Error(), "repair the private runtime record; no process will be signalled"})
+		rows = append(rows, check{"ownership-record", "FAIL", recordErr.Error(), "keep state and backups; consult the recovery guide; no process will be signalled"})
+	}
+	if _, err := loadSummary(o.Dir); err != nil && !os.IsNotExist(err) {
+		rows = append(rows, check{"last-session", "FAIL", "last-session summary is unreadable or unsafe",
+			fmt.Sprintf("inspect %q; the existing file is preserved", filepath.Join(o.Dir, summaryName))})
 	}
 	ok := true
 	for _, row := range rows {
@@ -226,10 +385,22 @@ func doctor(o Options, e integration.Target, r Record, recordErr error) int {
 		}
 	}
 	if o.JSON {
-		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"schema": 2, "verb": "doctor", "runtime": "native", "ok": ok, "checks": rows})
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"schema": 4, "verb": "doctor", "runtime": "native", "agents": o.Agents, "ok": ok, "checks": rows})
 	} else {
 		counts := map[string]int{}
-		for _, row := range rows {
+		display := slices.Clone(rows)
+		if !ok {
+			slices.SortStableFunc(display, func(a, b check) int {
+				if a.Status == "FAIL" && b.Status != "FAIL" {
+					return -1
+				}
+				if a.Status != "FAIL" && b.Status == "FAIL" {
+					return 1
+				}
+				return 0
+			})
+		}
+		for _, row := range display {
 			counts[row.Status]++
 			if o.Preflight && row.Status != "FAIL" {
 				continue

@@ -1,9 +1,10 @@
 # Using withhold
 
-withhold is a local privacy guard with explicit coding-agent integrations. Builds
-target macOS, Linux, and Windows on x64/ARM64. Currently only
-[desktop VS Code + GitHub Copilot](integrations/vscode-copilot.md) is integrated.
-Use the [integration catalog](integrations/README.md) for support and setup. Read the
+withhold is a local privacy guard for supported coding agents. Builds target
+macOS, Linux, and Windows on x64/ARM64. It supports
+[desktop VS Code + GitHub Copilot](integrations/vscode-copilot.md) and a
+[bounded Cursor Agent/Auto workflow](integrations/cursor.md). Use the
+[agent catalog](integrations/README.md) for support and setup. Read the
 [protection limits](../CONTRACTS.md#scope-and-traffic-policy) before setup.
 
 ## Installation
@@ -18,7 +19,7 @@ curl -fsSL --connect-timeout 10 --max-time 120 --proto '=https' \
   https://github.com/cquark7/withhold/releases/latest/download/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 withhold version
-withhold demo
+withhold agents
 ```
 
 The README's short command uses curl's default timeout and redirect behavior and
@@ -212,40 +213,37 @@ environment overrides do not apply.
 
 ## Start and stop
 
-### Try the local pipeline first
-
-```sh
-withhold demo
-withhold demo --json
-```
-
-No account or setup is required. The demo sends a fixed synthetic value through
-the bundled scanner and an HTTPS proxy to a local receiver. It verifies a
-`<WITHHELD_…>` replacement and a blocked request that never reaches that receiver.
-It uses ephemeral loopback ports, an isolated worker, and a temporary CA trusted
-only in memory, then removes its temporary files. No provider, editor settings,
-or real trust store is used. A failure returns 1, not a simulated success.
-
-This demonstrates local enforcement, **not** editor routing, real-provider
-compatibility, WebSocket coverage, or every supported payload format. See the
-[integration validation matrix](integrations/vscode-copilot.md#validation-and-support-matrix).
-
 ### Configure the application
 
 ```sh
-withhold setup
+withhold agents
+withhold setup cursor vscode-copilot
 withhold doctor
 withhold on
-# Follow your integration's application startup/restart instructions.
+# Follow each selected agent's application startup/restart instructions.
 withhold status
 withhold off
 ```
 
-These commands use the configured integration (default `vscode-copilot`). Run
-`withhold integrations` to list this build's adapters. Select one with
-`--integration NAME` or the [user config](configuration.md); stop the current
-session before switching. Application settings, coverage, and restart requirements
-belong to its [integration guide](integrations/README.md), not the shared proxy.
+`withhold agents` lists supported IDs, names, and clickable guide URLs;
+`withhold setup --help` also lists the supported IDs and names. If no saved
+default set exists, bare `withhold setup` prints the choices and exits without
+changing trust or local state. Choose an agent explicitly, for example
+`withhold setup cursor`.
+
+Choose only the agents you use. `setup AGENT...` prepares prerequisites and saves
+the default set without starting the proxy or changing application routing.
+`on` uses that set; `on cursor` replaces it for one session without saving.
+Names can appear before or after options. There is no implicit default agent,
+auto-detection, positional port, or selector flag; use `--port PORT`.
+
+One shared proxy serves the selected set. Changing the set or effective settings
+requires `off` before `on`; repeating the same set/settings is idempotent.
+Activation validates every application before changing settings and attempts
+rollback on failure. Failed restoration retains the complete recovery record.
+`off` restores all recorded resources even with changed or broken configuration.
+Application coverage and restart requirements are documented in each
+[agent guide](integrations/README.md).
 
 The guard does not restart at login/reboot. If its process exits, settings remain
 managed until `off` restores them. Restart applications after toggling if connections
@@ -260,12 +258,13 @@ check the provider/surface in audit records.
 | Linux | Current user's NSS databases; requires NSS `certutil` (e.g. `libnss3-tools`). |
 | Windows | Manual CA import; setup prints the certificate path. |
 
-`withhold setup --trust manual` creates the CA without installing trust.
+`withhold setup AGENT... --trust manual` creates the CA without installing trust
+and saves the chosen set.
 Import `ca.crt` into the appropriate user/application trust store, subject to your
 organization's policy. Protect `ca.key`: the CA can intercept traffic that trusts it.
 
-OS trust does not necessarily cover a harness's networking runtime. Follow its
-integration guide for additional roots or launch-time configuration; never
+OS trust does not necessarily cover an agent's networking runtime. Follow its
+guide for additional roots or launch-time configuration; never
 disable TLS verification as a workaround. `doctor` cannot verify manual imports.
 
 ## Configuration and diagnostics
@@ -282,6 +281,7 @@ for precedence, custom paths, and privacy considerations.
 
 ```sh
 withhold on --pii email,phone
+withhold status --details
 withhold status --json
 withhold doctor --json
 ```
@@ -304,12 +304,44 @@ result on a supported route. `passthrough` includes uninspected policy passes
 and bodyless requests. Observe mode may inspect but forwards original sensitive
 content: `coverage.observe` makes this explicit. Review integration exceptions,
 especially embeddings and token exchange; do not infer full coverage from counts.
-Status JSON schema 4 separates `coverage`, `traffic`, and finding-log `debug` health.
+The default human view explains blocked decisions using fixed categories:
+findings, unsupported/unscannable traffic, intake/read/size limits, suspicious
+unscoped hosts, inspection failures, and other. A block does not necessarily mean
+a secret was detected. Upstream failures are counted once per failed HTTP round
+trip, WebSocket handshake, or WebSocket message write; classified causes are
+cancellation, timeout, TLS verification, DNS, or other/unknown. Ordinary HTTP
+response status codes alone are not counted as upstream failures; rejected
+WebSocket handshakes are. Counts cover this proxy session, not the originating
+agent or all application traffic.
+
+`status --details` adds diagnostic counters and settings paths. After a clean
+authenticated shutdown it shows a value-free last-session snapshot captured
+**before** shutdown; events arriving afterward may be omitted. If the session
+ended unexpectedly or a snapshot could not be saved, the summary is unavailable.
+The private `last-session.json` contains counters, fixed categories, agent IDs,
+observe mode, and capture time—not request contents, hosts, paths, or raw errors.
+A new session replaces the previous snapshot with an unavailable marker before
+applying settings so an interrupted session cannot be confused with the previous one.
+If startup fails and settings are successfully rolled back, the previous snapshot
+is restored.
+Activation refuses to overwrite an unrelated or unsafe summary file. Failure to
+save a shutdown snapshot warns but does not prevent settings restoration.
+
+Status JSON schema 6 separates `saved_agents`, `active_agents`, per-agent
+`applications` settings/backups, `coverage`, `traffic`, `last_session`, and
+finding-log `debug` health. `ca.trust_mode` describes recorded trust, not a live
+verification; `doctor` cannot verify manual imports. An unreadable recovery
+record, a recorded session without an authenticated listener, or another
+reported status error sets `ok` to false and exits 1. Keep the recovery record
+and backups; run `off` to attempt restoration when the record is valid, or
+`doctor` when it cannot be read.
+`doctor` uses the active session when present, otherwise saved defaults;
+`doctor AGENT...` explicitly checks only those agents (JSON schema 4).
 
 For temporary debugging, run `withhold off`, then `withhold on --debug`:
 
 ```sh
-withhold status
+withhold status --details
 tail -F "${WITHHOLD_DIR:-$HOME/.config/withhold}/debug-findings.log"
 ```
 
@@ -325,14 +357,16 @@ prints bash/zsh/fish/PowerShell completion without editing shell configuration.
 
 ## Upgrade and rollback
 
-For an upgrade that changes state/configuration formats, use the installed
-executable and original state directory to run `off` and `uninstall` before
-setting up the replacement. Preserve state/backups until settings restoration
-and trust removal succeed.
+Always use the current executable and original state directory to run `off`
+before upgrading; a replacement may not authenticate an older running session.
+Installation refuses any recorded session, including one needing recovery. For
+an upgrade that changes state/configuration formats, also run `uninstall` with
+the current executable before setting up the replacement. Preserve the previous
+binary, state, and backups until settings restoration and trust removal succeed.
 
 1. Quit the integrated application and run `withhold off`. Keep state and the previous executable.
 2. Verify the replacement, then run its `install` command (or the pinned installer)
-   using the same state/binary directories. Installation refuses active sessions.
+   using the same state/binary directories.
 3. Run `withhold version`, `withhold doctor`, and `withhold on`; restart the application as its guide requires.
 4. To roll back, stop the session, reinstall the previous verified binary, and
    repeat doctor/on. Do not delete CA or recovery state during an upgrade.
@@ -345,7 +379,7 @@ and trust removal succeed.
 | Verification failure | Stop; check the expected tag and checksum. For provenance failures, check the commit and GitHub CLI version. Do not bypass verification. |
 | Certificate errors | Check `doctor` and the integration trust guide. Private upstream PKI uses `--upstream-ca FILE`. |
 | Port occupied | Check `status`; stop your session or choose `on --port 8090`. Foreign listeners are never stopped. |
-| Running, no expected traffic | Check application routing, host scope, and runtime location against the integration guide. |
+| Running, no expected traffic | Check application routing, host scope, and runtime location against the agent guide. |
 | Startup/restore failure | Keep state/backups, inspect `proxy.log`, repair invalid application settings, and retry `off`. |
 
 Run `withhold off`, then `withhold uninstall` to restore settings and remove

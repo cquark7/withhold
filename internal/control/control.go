@@ -18,7 +18,7 @@ import (
 )
 
 const Prefix = "/_withhold/v1/"
-const healthSchema = 4
+const healthSchema = 5
 
 type Identity struct {
 	Instance string `json:"instance"`
@@ -34,25 +34,45 @@ type Health struct {
 	Debug     *DebugStatus `json:"debug"`
 }
 
+// BlockReasons and UpstreamReasons contain only fixed, value-free categories.
+type BlockReasons struct {
+	Findings    uint64 `json:"findings"`
+	Unsupported uint64 `json:"unsupported"`
+	Intake      uint64 `json:"intake"`
+	Suspicious  uint64 `json:"suspicious"`
+	Inspection  uint64 `json:"inspection"`
+	Other       uint64 `json:"other"`
+}
+
+type UpstreamReasons struct {
+	Canceled uint64 `json:"canceled"`
+	Timeout  uint64 `json:"timeout"`
+	TLS      uint64 `json:"tls"`
+	DNS      uint64 `json:"dns"`
+	Other    uint64 `json:"other"`
+}
+
 // DebugStatus contains value-free traffic counters and finding-log health.
 // Counters are collected without debug logging, only for authenticated probes.
 type DebugStatus struct {
-	Enabled        bool   `json:"enabled"`
-	Healthy        bool   `json:"healthy"`
-	Connections    uint64 `json:"connections"`
-	Received       uint64 `json:"received"`
-	Scanned        uint64 `json:"scanned"`
-	Inspected      uint64 `json:"inspected"`
-	Passthrough    uint64 `json:"passthrough"`
-	Detected       uint64 `json:"detected"`
-	Redacted       uint64 `json:"redacted"`
-	Blocked        uint64 `json:"blocked"`
-	Written        uint64 `json:"written"`
-	Responses      uint64 `json:"responses"`
-	UpstreamErrors uint64 `json:"upstream_errors"`
-	EventsWritten  uint64 `json:"events_written"`
-	WriteFailures  uint64 `json:"write_failures"`
-	LastEvent      string `json:"last_event,omitempty"`
+	Enabled         bool            `json:"enabled"`
+	Healthy         bool            `json:"healthy"`
+	Connections     uint64          `json:"connections"`
+	Received        uint64          `json:"received"`
+	Scanned         uint64          `json:"scanned"`
+	Inspected       uint64          `json:"inspected"`
+	Passthrough     uint64          `json:"passthrough"`
+	Detected        uint64          `json:"detected"`
+	Redacted        uint64          `json:"redacted"`
+	Blocked         uint64          `json:"blocked"`
+	BlockReasons    BlockReasons    `json:"block_reasons"`
+	Written         uint64          `json:"written"`
+	Responses       uint64          `json:"responses"`
+	UpstreamErrors  uint64          `json:"upstream_errors"`
+	UpstreamReasons UpstreamReasons `json:"upstream_reasons"`
+	EventsWritten   uint64          `json:"events_written"`
+	WriteFailures   uint64          `json:"write_failures"`
+	LastEvent       string          `json:"last_event,omitempty"`
 }
 
 func Random() string {

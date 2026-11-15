@@ -1,0 +1,136 @@
+{
+  "cursor_version": "3.30.14",
+  "bundle": "Contents/Resources/app/out/vs/workbench/workbench.desktop.main.js",
+  "bundle_sha256": "0de545c34e8cc715ac4fd0ea97ad987b88720539979e9f7cede61df08a687b80",
+  "root": "aiserver.v1.GetTeamAdminSettingsRequest",
+  "enums": {"aiserver.v1.AvailableModelsScope": [0, 1, 2, 3], "aiserver.v1.ClientOS": [0, 1, 2, 3, 4, 5], "aiserver.v1.ClientSurface": [0, 1, 2], "aiserver.v1.InAppAdTrigger": [0, 1, 2, 3, 4, 5], "aiserver.v1.RemoteConnectionType": [0, 1, 2, 3, 4, 5, 6], "aiserver.v1.ScmConnectAdConnectionState": [0, 1, 2, 3], "aiserver.v1.ScmConnectAdProvider": [0, 1, 2]},
+  "messages": {
+    "aiserver.v1.AvailableModelsRequest": [
+      {"number": 1, "name": "is_nightly", "type": "bool"},
+      {"number": 2, "name": "include_long_context_models", "type": "bool"},
+      {"number": 3, "name": "exclude_max_named_models", "type": "bool"},
+      {"number": 4, "name": "additional_model_names", "type": "string", "repeated": true},
+      {"number": 5, "name": "use_model_parameters", "type": "bool", "opt": true},
+      {"number": 6, "name": "include_hidden_models", "type": "bool", "opt": true},
+      {"number": 7, "name": "do_not_use_markdown", "type": "bool", "opt": true},
+      {"number": 8, "name": "variants_will_be_shown_in_exploded_list", "type": "bool", "opt": true},
+      {"number": 9, "name": "for_automations", "type": "bool", "opt": true},
+      {"number": 10, "name": "scope", "type": "aiserver.v1.AvailableModelsScope", "opt": true},
+      {"number": 11, "name": "use_react_model_picker", "type": "bool", "opt": true},
+      {"number": 12, "name": "use_cloud_agent_effort_modes", "type": "bool", "opt": true},
+      {"number": 15, "name": "use_parameterized_automations_models", "type": "bool", "opt": true},
+      {"number": 13, "name": "admin_settings_group_public_id", "type": "string", "opt": true},
+      {"number": 16, "name": "expected_scope", "type": "aiserver.v1.CloudAgentRequestScope"},
+      {"number": 17, "name": "client_llm_gateway_credential", "type": "agent.v1.ClientLlmGatewayCredential", "opt": true},
+      {"number": 18, "name": "refresh_llm_gateway_models", "type": "bool", "opt": true},
+      {"number": 19, "name": "include_cloud_agent_default_model", "type": "bool", "opt": true}
+    ],
+    "aiserver.v1.BootstrapStatsigRequest": [
+      {"number": 1, "name": "ignore_dev_status", "type": "bool", "opt": true},
+      {"number": 2, "name": "operating_system", "type": "aiserver.v1.ClientOS", "opt": true},
+      {"number": 3, "name": "device_model", "type": "string", "opt": true},
+      {"number": 4, "name": "os_version", "type": "string", "opt": true},
+      {"number": 5, "name": "form_factor", "type": "string", "opt": true},
+      {"number": 6, "name": "stable_id", "type": "string", "opt": true},
+      {"number": 7, "name": "client_channel", "type": "string", "opt": true},
+      {"number": 8, "name": "bundle_id", "type": "string", "opt": true},
+      {"number": 9, "name": "mobile_app_store_country", "type": "string", "opt": true},
+      {"number": 10, "name": "native_build", "type": "string", "opt": true},
+      {"number": 11, "name": "ota_update_id", "type": "string", "opt": true},
+      {"number": 12, "name": "ota_runtime_version", "type": "string", "opt": true},
+      {"number": 13, "name": "ota_embedded_launch", "type": "bool", "opt": true},
+      {"number": 14, "name": "previous_response_hash", "type": "string", "opt": true},
+      {"number": 15, "name": "name_filter", "type": "aiserver.v1.BootstrapStatsigRequest.NameFilter"}
+    ],
+    "aiserver.v1.BootstrapStatsigRequest.NameFilter": [
+      {"number": 1, "name": "gates", "type": "string", "repeated": true},
+      {"number": 2, "name": "configs", "type": "string", "repeated": true},
+      {"number": 3, "name": "layers", "type": "string", "repeated": true}
+    ],
+    "aiserver.v1.CloudAgentPersonalScope": [
+    ],
+    "aiserver.v1.CloudAgentRequestScope": [
+      {"number": 1, "name": "personal", "type": "aiserver.v1.CloudAgentPersonalScope", "oneof": "scope"},
+      {"number": 2, "name": "team_id", "type": "int32", "oneof": "scope"}
+    ],
+    "aiserver.v1.DevEnvironment": [
+      {"number": 1, "name": "has_alternative_cli", "type": "bool"},
+      {"number": 2, "name": "has_cursor_agent_cli", "type": "bool"}
+    ],
+    "aiserver.v1.GetEffectiveUserAgentStoreSkillsSettingsRequest": [
+    ],
+    "aiserver.v1.GetEffectiveUserPluginsRequest": [
+      {"number": 1, "name": "use_replica", "type": "bool", "opt": true},
+      {"number": 2, "name": "team_id", "type": "int32", "opt": true},
+      {"number": 4, "name": "exclude_configured_variables", "type": "bool"}
+    ],
+    "aiserver.v1.GetKnownServersRequest": [
+    ],
+    "aiserver.v1.GetManagedSkillsRequest": [
+      {"number": 1, "name": "supported_canvas_kits", "type": "string", "repeated": true},
+      {"number": 2, "name": "bc_id", "type": "string", "opt": true}
+    ],
+    "aiserver.v1.GetMeRequest": [
+      {"number": 1, "name": "team_id", "type": "int32", "opt": true},
+      {"number": 2, "name": "source_site_hostname", "type": "string", "opt": true},
+      {"number": 3, "name": "include_mobile_app_status", "type": "bool", "opt": true}
+    ],
+    "aiserver.v1.GetRealtimeVoiceRequest": [
+    ],
+    "aiserver.v1.GetScmConnectionStatusRequest": [
+      {"number": 1, "name": "ghe_application", "type": "string", "opt": true},
+      {"number": 2, "name": "team_id", "type": "int32", "opt": true},
+      {"number": 3, "name": "user_scoped", "type": "bool", "opt": true}
+    ],
+    "aiserver.v1.GetServerConfigRequest": [
+      {"number": 1, "name": "telem_enabled", "type": "bool"},
+      {"number": 2, "name": "bug_bot_dismissed_notification_last_10_times_unix_ms", "type": "double", "repeated": true},
+      {"number": 3, "name": "bug_bot_viewed_notification_last_10_times_unix_ms", "type": "double", "repeated": true},
+      {"number": 4, "name": "os_stats", "type": "aiserver.v1.VscodeOSStatistics"},
+      {"number": 5, "name": "os_properties", "type": "aiserver.v1.VscodeOSProperties"},
+      {"number": 6, "name": "remote_authority", "type": "aiserver.v1.RemoteAuthority"},
+      {"number": 7, "name": "in_app_ad_trigger", "type": "aiserver.v1.InAppAdTrigger"},
+      {"number": 8, "name": "dev_environment", "type": "aiserver.v1.DevEnvironment"},
+      {"number": 9, "name": "client_surface", "type": "aiserver.v1.ClientSurface"},
+      {"number": 10, "name": "scm_connect_ad_context", "type": "aiserver.v1.ScmConnectAdContext"}
+    ],
+    "aiserver.v1.GetTeamAdminSettingsRequest": [
+      {"number": 1, "name": "team_id", "type": "int32", "opt": true},
+      {"number": 2, "name": "supports_host_mcp_bridge_exemption", "type": "bool", "opt": true}
+    ],
+    "aiserver.v1.GetTeamReposRequest": [
+      {"number": 1, "name": "team_id", "type": "int32"}
+    ],
+    "aiserver.v1.ListMarketplacesRequest": [
+    ],
+    "aiserver.v1.RemoteAuthority": [
+      {"number": 1, "name": "connection_type", "type": "aiserver.v1.RemoteConnectionType"}
+    ],
+    "aiserver.v1.ScmConnectAdContext": [
+      {"number": 1, "name": "provider", "type": "aiserver.v1.ScmConnectAdProvider"},
+      {"number": 2, "name": "remote_url", "type": "string"},
+      {"number": 3, "name": "connection_state", "type": "aiserver.v1.ScmConnectAdConnectionState"}
+    ],
+    "aiserver.v1.UpdateVscodeProfileRequest": [
+      {"number": 1, "name": "machine_id", "type": "string"},
+      {"number": 2, "name": "workspace_extensions", "type": "string", "repeated": true},
+      {"number": 3, "name": "extensions", "type": "string", "repeated": true}
+    ],
+    "aiserver.v1.VscodeCPUProperties": [
+      {"number": 1, "name": "model", "type": "string"},
+      {"number": 2, "name": "speed", "type": "double"}
+    ],
+    "aiserver.v1.VscodeOSProperties": [
+      {"number": 1, "name": "type", "type": "string"},
+      {"number": 2, "name": "release", "type": "string"},
+      {"number": 3, "name": "arch", "type": "string"},
+      {"number": 4, "name": "platform", "type": "string"},
+      {"number": 5, "name": "cpus", "type": "aiserver.v1.VscodeCPUProperties", "repeated": true}
+    ],
+    "aiserver.v1.VscodeOSStatistics": [
+      {"number": 1, "name": "totalmem", "type": "double"},
+      {"number": 2, "name": "freemem", "type": "double"},
+      {"number": 3, "name": "loadavg", "type": "double", "repeated": true}
+    ]
+  }
+}

@@ -38,7 +38,7 @@ func (p *Proxy) websocket(w http.ResponseWriter, r *http.Request, route policy.R
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
-		debugEvent(r, "upstream_error", "websocket-handshake-failed", 0)
+		debugUpstreamError(r, "upstream_error", "websocket-handshake-failed", err)
 		http.Error(w, "upstream WebSocket connection failed", 502)
 		return
 	}
@@ -140,7 +140,7 @@ func (p *Proxy) websocket(w http.ResponseWriter, r *http.Request, route policy.R
 				_ = up.SetWriteDeadline(time.Now().Add(30 * time.Second))
 				err = up.WriteMessage(kind, body)
 				if err != nil {
-					debugEvent(message, "write_error", "upstream-write-failed", 0)
+					debugUpstreamError(message, "write_error", "upstream-write-failed", err)
 				} else {
 					debugEvent(message, "upstream_written", "", 0)
 				}

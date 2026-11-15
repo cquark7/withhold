@@ -1,4 +1,5 @@
-// Package proxy inspects request bodies before opening an upstream request.
+// Package proxy inspects finite bodies before opening upstream and duplex
+// messages before releasing their payload bytes.
 package proxy
 
 import (
@@ -213,7 +214,7 @@ func (p *Proxy) block(w http.ResponseWriter, r *http.Request, route policy.Route
 		return false
 	}
 	debugEvent(r, "blocked", reason, 0)
-	response := p.config.Scope.Block(reason, report["wants_stream"] == true)
+	response := p.blockResponse(r, route, reason, report["wants_stream"] == true)
 	for key, values := range response.Header {
 		w.Header()[key] = values
 	}
@@ -222,9 +223,23 @@ func (p *Proxy) block(w http.ResponseWriter, r *http.Request, route policy.Route
 	return true
 }
 
+func (p *Proxy) blockResponse(r *http.Request, route policy.Route, reason string, stream bool) policy.Response {
+	protocol := p.config.Scope
+	if route.Profile != nil {
+		protocol = route.Profile
+	}
+	if profile, ok := protocol.(policy.RequestBlocker); ok {
+		return profile.BlockRequest(r, route, reason)
+	}
+	return protocol.Block(reason, stream)
+}
+
 func (p *Proxy) request(w http.ResponseWriter, r *http.Request) {
 	route := p.config.Scope.Classify(r.URL.Host, r.URL.RequestURI())
-	if isWebSocket(r) {
+	if route.Ambiguous && p.block(w, r, route, "ambiguous-route", nil) {
+		return
+	}
+	if isWebSocket(r) && route.Codec == nil {
 		p.websocket(w, r, route)
 		return
 	}
@@ -236,6 +251,10 @@ func (p *Proxy) request(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		p.forward(w, r)
+		return
+	}
+	if route.Codec != nil {
+		p.rpc(w, r, route)
 		return
 	}
 	scanBody := r.Method == "POST" && (route.AllowNonJSON || strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "json"))
@@ -317,7 +336,11 @@ func (p *Proxy) inspect(w http.ResponseWriter, r *http.Request, route policy.Rou
 		}
 		// Stream-specific block framing belongs to the selected integration,
 		// not to the scanner worker's report.
-		report["wants_stream"] = p.config.Scope.WantsStream(decoded)
+		protocol := p.config.Scope
+		if route.Profile != nil {
+			protocol = route.Profile
+		}
+		report["wants_stream"] = protocol.WantsStream(decoded)
 	}
 	status, _ := report["status"].(string)
 	decision := policy.Evaluate(route, status, residue(report) > 0, false)
@@ -435,12 +458,20 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 	debugEvent(r, "forward_attempt", "", 0)
 	resp, err := p.transport.RoundTrip(out)
 	if err != nil {
-		debugEvent(r, "upstream_error", "upstream-roundtrip-failed", 0)
+		if body, ok := r.Body.(*rpcBody); ok && body.failure() != nil {
+			p.rpcReject(w, r, body.route, body.failure())
+			return
+		}
+		debugUpstreamError(r, "upstream_error", "upstream-roundtrip-failed", err)
 		http.Error(w, "upstream connection failed", 502)
 		return
 	}
 	debugEvent(r, "upstream_response", "", resp.StatusCode)
 	defer resp.Body.Close()
+	if body, ok := r.Body.(*rpcBody); ok && body.failure() != nil {
+		p.rpcReject(w, r, body.route, body.failure())
+		return
+	}
 	stripHop(resp.Header)
 	for k, vs := range resp.Header {
 		for _, v := range vs {
@@ -455,6 +486,12 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 	buf := make([]byte, 32*1024)
 	for {
 		n, e := resp.Body.Read(buf)
+		if body, ok := r.Body.(*rpcBody); ok && body.failure() != nil {
+			// A response may be in the middle of a binary envelope. Injecting a
+			// local error into that byte stream could look like valid upstream
+			// content. Abort/reset instead of manufacturing a successful EOF.
+			panic(http.ErrAbortHandler)
+		}
 		if n > 0 {
 			if _, err = w.Write(buf[:n]); err != nil {
 				debugEvent(r, "response_error", "client-response-write-failed", 0)

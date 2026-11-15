@@ -12,14 +12,15 @@ default filenames or working-directory files are discovered or auto-edited.
 
 For an existing installation, create the file with `withhold config --init`.
 It will not overwrite a file, even if it is invalid. It honors `--dir`,
-`--config FILE`, and `WITHHOLD_CONFIG`; `--integration NAME` or
-`WITHHOLD_INTEGRATION` selects and saves the adapter. Edit the printed path and
+`--config FILE`, and `WITHHOLD_CONFIG`; positional agent names select and save
+the default set. Edit the printed path and
 uncomment the sections and settings you want to change. Omitted values follow
 the built-in defaults, including future updates.
 
 ```sh
 withhold config --init        # Only needed if the file does not already exist.
-withhold config               # Effective TOML, including integration defaults.
+withhold config               # Effective TOML, including selected-agent defaults.
+withhold config cursor --init # Optionally select agents in a new file.
 withhold config --json        # Machine-readable JSON.
 ```
 
@@ -32,16 +33,16 @@ and prevents those defaults from updating automatically. It can include private
 local paths and provider names; review before sharing. JSON remains available for
 scripts and internal state, but is not accepted as a configuration file.
 
-Get a standalone TOML example with `withhold config --example`. It prints defaults
-for the current platform and selected integration, not your effective settings.
-Use `--integration NAME` (or `WITHHOLD_INTEGRATION`) to select an adapter without
-reading an existing config. Other overrides are rejected with `--example`.
+Get a standalone TOML example with `withhold config cursor --example`. It prints
+defaults for the current platform and named agents, not your effective settings.
+It reads neither an existing config nor environment selection. Other overrides
+are rejected with `--example`; without names it selects no agents.
 It contains active default values, so saving it pins those values. For an
 inheriting file prefer `--init`; do not overwrite an existing config.
 
 ```toml
 schema = 1
-integration = "vscode-copilot"
+agents = ["cursor", "vscode-copilot"]
 
 [protection]
 chat = "redact"
@@ -49,19 +50,28 @@ inline = "block" # Avoid inserting placeholders into code.
 pii = ["email"] # Optional; secrets always stay enabled.
 
 [proxy]
-port = 8080
+port = 8451
 max_bytes = "32m"
 scan_timeout = "10s"
 
 [scan]
 confidence = "medium" # Optional minimum for offline secrets only; default is "".
+
+[applications.cursor]
+settings_dir = "Cursor"
 ```
 
 Precedence is **explicit flags → environment → file → defaults**. Extra hosts
 and regexes merge across sources. `withhold config` prints normalized effective
-settings, including selected-integration defaults. Stop with `off` and restart
+settings, including selected-agent defaults. Stop with `off` and restart
 with `on` to change a session.
 Recovery uses recorded integration/resource details even with broken config.
+
+Agent selection is **positional names → saved `agents` → no selection**.
+There is no environment selector, implicit default agent, or auto-detection.
+`setup AGENT...` saves the exact set after successful setup, preserving other
+config settings and comments. `on AGENT...` overrides only that session.
+Sets are deduplicated and sorted; changing order does not change session identity.
 
 ## Shared file fields
 
@@ -73,30 +83,32 @@ use strings for durations and paths. Omitted fields use defaults.
 | Field | Default and accepted values |
 | --- | --- |
 | `schema` | Required: integer `1`. |
-| `integration` | `"vscode-copilot"`; list available IDs with `withhold integrations`. |
+| `agents` | `[]`; explicit agent IDs. List supported IDs with `withhold agents`. |
 | `protection.chat` | `"redact"` (redact/forward); also `"block"`. |
 | `protection.inline` | `"block"`; also `"redact"`, which can insert placeholders into code. |
 | `protection.observe` | `false`; `true` forwards original sensitive content. |
 | `protection.pii` | `[]` (off); categories below, `["all"]`, or `["off"]`. |
 | `scan.confidence` | `""` (no minimum); `"low"`, `"medium"`, or `"high"`. Offline secrets only, not proxy protection or PII. |
-| `proxy.port` | `8080`; loopback port from 1 to 65535. |
+| `proxy.port` | `8451`; loopback port from 1 to 65535. |
 | `proxy.max_bytes` | `"32m"`; positive bytes or binary `k`/`m`/`g` suffix, at most `"128m"`. |
 | `proxy.scan_timeout` | `"10s"`; positive Go duration, including queue/worker startup. |
 | `proxy.extra_hosts` | `[]`; additional bare provider hostnames. |
 | `proxy.extra_host_regex` | `[]`; full-host Go RE2 patterns. |
-| `proxy.suspicion_pattern` | Selected traffic profile's default; pattern for unscoped provider-looking hosts. |
+| `proxy.suspicion_pattern` | Unset: each profile uses its own default. An explicit pattern overrides every selected profile. |
 | `proxy.upstream_ca` | Unset; additional PEM roots, without disabling TLS verification. |
-| `application` | Selected integration's typed settings; see its [guide](integrations/README.md). |
+| `applications.AGENT` | That agent's typed settings; see its [guide](integrations/README.md). |
 | `trust` | `"system"` (current-user trust) on macOS/Linux, `"manual"` on Windows. |
 | `startup_timeout` | `"60s"`; duration from 1 to 600 seconds. |
 | `audit`, `hint` | `WITHHOLD_DIR/audit.jsonl`, `WITHHOLD_DIR/hints.log`. |
 
-Integration-specific settings live under `[application]`, not in shared policy
-or proxy fields. The selected adapter owns their schema/defaults and rejects
+Agent-specific settings live under `[applications.AGENT]`, not in shared policy
+or proxy fields. Each adapter owns its schema/defaults and rejects
 unknown fields. For example, the [Copilot guide](integrations/vscode-copilot.md#custom-traffic-endpoints)
 describes adding or replacing its host/path rules. There are no per-agent
-top-level flags, arbitrary plugin paths, includes, or file inheritance. One
-selected integration per file/session keeps precedence clear.
+top-level flags, arbitrary plugin paths, includes, or file inheritance.
+Settings for supported but inactive agents may remain in the file. Each selected
+agent must resolve to a distinct application resource. Prefer namespaced settings
+over global editor environment overrides when using multiple editors.
 
 PII categories are `aadhaar`, `credit-card`, `email`, `ip-address`, `phone`, and
 `us-ssn`; read their [format limits](../CONTRACTS.md#pii-coverage).
@@ -110,23 +122,23 @@ minimum; confidence affects offline secrets only, not PII or proxy detection. Se
 [local text inspection](usage.md#scan-local-text) for usage and limits.
 
 Prefer absolute paths for logs, config, and upstream roots: relative paths use
-the invoking working directory. Application resource paths follow the selected
-integration's documented rules.
+the invoking working directory. Application resource paths follow each selected
+agent's documented rules.
 
 ## Flags and environment
 
-Use `withhold help COMMAND` for applicable flags. `--integration NAME` selects
-an adapter for `setup`, `on`, `serve`, `doctor`, `config`, and optional `launch`.
-`off` restores the recorded session, not a newly selected integration.
+Use `withhold help COMMAND` for applicable flags. Positional names select agents
+for `setup`, `on`, `serve`, `doctor`, `config`, and optional `launch`.
+`launch` accepts exactly one agent (or a one-agent saved set); arguments after
+`--` remain literal. `off` accepts no agent names and restores the recorded set.
 `scan` accepts `--dir`, `--config`, `--pii`, `--confidence`, `--max-bytes`, and
-`--scan-timeout`, but not integration, routing, trust, or redact/block options.
+`--scan-timeout`, but not agent selection, routing, trust, or redact/block options.
 `--debug` is session-only on `on`/`serve`, not a file field.
 
 | Variable | Setting |
 | --- | --- |
 | `WITHHOLD_DIR` | State/CA/log/config directory; `--dir`. |
 | `WITHHOLD_CONFIG` | Explicit config file; `--config` overrides it. |
-| `WITHHOLD_INTEGRATION` | Integration ID; `--integration` overrides it. |
 | `WITHHOLD_PII` | `off`, `all`, or comma-separated categories; `--pii`. |
 | `WITHHOLD_ENFORCE` | `observe` selects audit-only policy; other values enforce. Prefer the file boolean. |
 | `WITHHOLD_MAX_BYTES` | Body cap; `--max-bytes`. |
@@ -137,12 +149,12 @@ an adapter for `setup`, `on`, `serve`, `doctor`, `config`, and optional `launch`
 | `WITHHOLD_PLACEHOLDER_KEY` | Secret HMAC-key override; never log/share it. |
 
 Harness-specific environment overrides are documented in the
-[integration guides](integrations/README.md).
+[agent guides](integrations/README.md).
 
 ## Local state
 
 The default state directory is `~/.config/withhold`. `session.json` records
-authenticated ownership, the integration, the absolute managed resource, and
+authenticated ownership, the agent set, every absolute managed resource, and
 frozen effective configuration. `proxy.log` holds background process diagnostics.
 Application backups and ownership markers use `.withhold-*` suffixes.
 

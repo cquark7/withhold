@@ -5,16 +5,18 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/cquark7/withhold/internal/config"
+	"github.com/cquark7/withhold/internal/doclink"
 	"github.com/cquark7/withhold/internal/integration"
 	"github.com/cquark7/withhold/internal/policy"
 	"github.com/cquark7/withhold/internal/testintegration"
 )
 
 func TestOnlyReviewedBuiltInIsSelectable(t *testing.T) {
-	for _, id := range []string{"fixture", "cursor", "codex", "opencode", "unknown"} {
+	for _, id := range []string{"fixture", "codex", "opencode", "unknown"} {
 		if _, err := Traffic(id, policy.ScopeOptions{}, nil); err == nil {
 			t.Fatal("unregistered traffic integration accepted")
 		}
@@ -33,7 +35,12 @@ func TestCatalogHasUniqueCompleteRegistrationsAndExistingGuides(t *testing.T) {
 			t.Fatal("incomplete or duplicate integration metadata")
 		}
 		seen[entry.ID] = true
-		if _, err := os.Stat(filepath.Join(root, entry.Documentation)); err != nil {
+		prefix := doclink.URL("")
+		if prefix == "" || !strings.HasPrefix(entry.Documentation, prefix) {
+			t.Fatalf("catalog guide is not a clickable HTTPS URL: %q", entry.Documentation)
+		}
+		path := strings.TrimPrefix(entry.Documentation, prefix)
+		if _, err := os.Stat(filepath.Join(root, "docs", path)); err != nil {
 			t.Fatal("catalog guide is missing:", err)
 		}
 		d, err := lookup(entry.ID)
@@ -41,13 +48,36 @@ func TestCatalogHasUniqueCompleteRegistrationsAndExistingGuides(t *testing.T) {
 			t.Fatal("integration lacks a required contract")
 		}
 	}
-	if !seen[Default] {
-		t.Fatal("default integration is not registered")
+	if !seen["cursor"] || !seen["vscode-copilot"] {
+		t.Fatal("reviewed agents are missing")
 	}
 	entries := List()
 	entries[0].ID = "mutated-copy"
 	if List()[0].ID == "mutated-copy" {
 		t.Fatal("catalog callers can mutate registrations")
+	}
+}
+
+func TestCursorRegistrationUsesItsBoundedTrafficAndApplication(t *testing.T) {
+	settings, err := Configure("cursor", nil, nil)
+	if err != nil || string(settings) != `{"binary":"cursor","settings_dir":"Cursor"}` {
+		t.Fatalf("Cursor settings were not normalized: %s %v", settings, err)
+	}
+	profile, err := Traffic("cursor", policy.ScopeOptions{}, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := profile.Classify("agentn.global.api5.cursor.sh:443", "/aiserver.v1.InferenceService/RunInference")
+	if !route.Scoped || route.Unknown || route.Codec == nil || !route.Codec.Streaming || !route.Codec.Duplex {
+		t.Fatal("Cursor model traffic did not select its duplex codec")
+	}
+	unknown := profile.Classify("agentn.global.api5.cursor.sh:443", "/new.Service/Method")
+	if !unknown.Scoped || !unknown.Unknown || unknown.Codec == nil {
+		t.Fatal("unknown Cursor traffic did not remain fail-closed")
+	}
+	app, err := Application("cursor", integration.ApplicationOptions{Settings: settings})
+	if err != nil || app.Name() != "Cursor" {
+		t.Fatalf("Cursor application was not selectable: %v", err)
 	}
 }
 
@@ -62,7 +92,7 @@ func TestOneRegistrationSupportsIndependentTypedOptionsAndNoLauncher(t *testing.
 	}
 	builtins = append(append([]definition{}, before...), definition{
 		Description: Description{ID: "fixture", Name: "Fixture Client", Documentation: "test-only"},
-		example:     "[application]\nworkspace = \"example\"\nenabled = true\n",
+		example:     "[applications.fixture]\nworkspace = \"example\"\nenabled = true\n",
 		configure: func(data json.RawMessage, get func(string) string) (json.RawMessage, error) {
 			s := settings{Workspace: "default"}
 			if len(data) > 0 {
@@ -90,7 +120,7 @@ func TestOneRegistrationSupportsIndependentTypedOptionsAndNoLauncher(t *testing.
 			return &testintegration.Application{Path: filepath.Join(o.Home, s.Workspace+".ini")}, nil
 		},
 	})
-	if example, err := Example("fixture"); err != nil || example != "[application]\nworkspace = \"example\"\nenabled = true\n" {
+	if example, err := Example("fixture"); err != nil || example != "[applications.fixture]\nworkspace = \"example\"\nenabled = true\n" {
 		t.Fatal("starter configuration did not use the registered adapter's example")
 	}
 	data, err := Configure("fixture", json.RawMessage(`{"workspace":"file","enabled":true}`), func(string) string { return "env" })

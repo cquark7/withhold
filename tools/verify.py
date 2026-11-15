@@ -44,7 +44,10 @@ def main():
                     env=dict(environment, CGO_ENABLED="0"),
                 )
                 environment[variable] = str(binary)
-            run(["go", "test", *(["-race"] if args.race else []), "./..."])
+            run(
+                ["go", "test", *(["-race"] if args.race else []), "./..."],
+                env=environment,
+            )
             run(["go", "vet", "./..."])
             unformatted = subprocess.check_output(
                 ["gofmt", "-l", "cmd", "internal", "tests/nativefixture"],

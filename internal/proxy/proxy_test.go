@@ -24,6 +24,7 @@ import (
 	"github.com/cquark7/withhold/internal/integrations/copilot"
 	"github.com/cquark7/withhold/internal/policy"
 	"github.com/cquark7/withhold/internal/scanner"
+	"github.com/cquark7/withhold/internal/testintegration"
 	"github.com/gorilla/websocket"
 )
 
@@ -45,7 +46,7 @@ func newTestProxy(t *testing.T, scan fakeScanner) (*Proxy, *atomic.Int32) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	p, err := New(Config{CA: &certstore.CA{}, Scope: scope, Scanner: scan, MaxBytes: 4096, ScanTimeout: 50 * time.Millisecond, AuditPath: filepath.Join(dir, "audit"), HintPath: filepath.Join(dir, "hint")})
+	p, err := New(Config{CA: &certstore.CA{}, Scope: policy.Compose(scope, testintegration.Profile{Host: "unrelated.test", Mode: "redact"}), Scanner: scan, MaxBytes: 4096, ScanTimeout: 50 * time.Millisecond, AuditPath: filepath.Join(dir, "audit"), HintPath: filepath.Join(dir, "hint")})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,7 +7,10 @@ import (
 	"os/exec"
 )
 
-type Target struct{ Resource, Binary string }
+type Target struct {
+	Resource string `json:"resource"`
+	Binary   string `json:"binary,omitempty"`
+}
 
 type State struct {
 	Proxy         any

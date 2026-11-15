@@ -1,6 +1,6 @@
 # VS Code + GitHub Copilot
 
-Integration ID: `vscode-copilot` (default).
+Agent ID: `vscode-copilot`. Select agents explicitly; there is no implicit default.
 
 This is the supported **desktop VS Code** integration, not a general Copilot
 provider switch. Other editors, remote extension hosts, separate user-data
@@ -22,10 +22,9 @@ containers, browser editors, and separate user-data stores need their own setup.
 Token exchange passes through uninspected; chat, inline, and embeddings policies
 are described in the traffic contract below.
 
-After setup, use `withhold status` and audit surfaces to confirm inspection of
-your editor's traffic. `demo` checks the local scanner/proxy pipeline; `doctor`
-checks local configuration and trust metadata. Real routing depends on the
-editor's networking runtime and certificate trust.
+After setup, use `withhold status` and audit surfaces to check for inspection
+evidence. `doctor` checks local configuration and trust metadata. Real routing
+depends on the editor's networking runtime and certificate trust.
 
 ### Configure and start
 
@@ -35,9 +34,9 @@ changes current-user certificate trust on macOS/Linux. Review
 [certificate trust](../usage.md#certificate-trust) first.
 
 ```sh
-withhold setup --integration vscode-copilot
-withhold doctor --integration vscode-copilot
-withhold on --integration vscode-copilot
+withhold setup vscode-copilot
+withhold doctor
+withhold on
 # Open VS Code normally; restart it once after initial CA setup.
 withhold status
 withhold off
@@ -51,7 +50,7 @@ Reload windows after toggling if connections are cached. A listener or an empty
 findings log does not prove Copilot traffic is inspected; check audit surfaces.
 
 Linux NSS trust may cover Chromium but not Node-based extensions. Configure
-their trusted roots or use `withhold launch -- .`, which supplies proxy and
+their trusted roots or use `withhold launch vscode-copilot -- .`, which supplies proxy and
 `NODE_EXTRA_CA_CERTS` environment. Fully quit VS Code first so the environment
 takes effect; restart normally after `off` to clear it. On Windows, import the
 CA into the current user's trusted root store before use. Never disable TLS
@@ -60,13 +59,13 @@ verification. `doctor` cannot verify manual imports.
 ## Application configuration
 
 The shared [config envelope](../configuration.md) accepts these fields under
-`application` **only when this integration is selected**:
+`applications.vscode-copilot`:
 
 ```toml
 schema = 1
-integration = "vscode-copilot"
+agents = ["vscode-copilot"]
 
-[application]
+[applications.vscode-copilot]
 binary = "code"
 settings_dir = "Code"
 ```
@@ -85,12 +84,13 @@ Environment overrides take precedence over file settings:
 
 | Variable | Setting |
 | --- | --- |
-| `WITHHOLD_EDITOR_BIN` | `application.binary`. |
-| `WITHHOLD_EDITOR_SETTINGS_DIR` | `application.settings_dir`. |
+| `WITHHOLD_EDITOR_BIN` | `applications.vscode-copilot.binary`. |
+| `WITHHOLD_EDITOR_SETTINGS_DIR` | `applications.vscode-copilot.settings_dir`. |
 
-`proxy.suspicion_pattern` defaults to case-insensitive `copilot`. Select this
-integration with `integration = "vscode-copilot"`, `WITHHOLD_INTEGRATION`, or
-`--integration`; there is no separate provider/editor-profile selector.
+The traffic profile's suspicion pattern defaults to case-insensitive `copilot`.
+Select it with `withhold setup vscode-copilot`, `withhold on vscode-copilot`,
+or `agents = ["vscode-copilot"]`. For multiple editors, prefer namespaced config
+over global editor environment overrides; duplicate settings resources fail.
 
 Managed keys are `http.proxy`, `http.proxySupport`, `http.proxyStrictSSL`,
 `http.noProxy`, `http.systemCertificates`, `http.fetchAdditionalSupport`, and
@@ -100,17 +100,17 @@ entries. Bypass lists are loopback-only; TLS verification stays enabled.
 
 ### Custom traffic endpoints
 
-The installed config has commented examples under `[application.traffic]`.
-Use `withhold config` to see the effective built-in hosts and path
+Use `withhold config vscode-copilot --example` for a standalone example under
+`[applications.vscode-copilot.traffic]`, or `withhold config` for effective hosts and path
 patterns. These rules belong to this adapter; future adapters may define their
 own settings. For example, to recognize a new reviewed Copilot host and chat or
 inline paths without replacing the current defaults:
 
 ```toml
 schema = 1
-integration = "vscode-copilot"
+agents = ["vscode-copilot"]
 
-[application.traffic]
+[applications.vscode-copilot.traffic]
 extra_hosts = ["new-copilot.example"]
 extra_chat_paths = ["/v2/chat"]
 extra_inline_paths = ["/v2/inline"]
@@ -125,7 +125,7 @@ path, without query strings; escape regex metacharacters as needed. An inline
 match takes precedence over a chat match. A matching chat path on a `proxy.*`
 host still uses inline policy. Unknown paths on these guarded hosts fail closed.
 
-`application.traffic.extra_hosts` uses those same strict path rules. In contrast,
+`applications.vscode-copilot.traffic.extra_hosts` uses those same strict path rules. In contrast,
 the shared `proxy.extra_hosts` and `proxy.extra_host_regex` allow otherwise
 unknown paths under chat policy. The fixed `api.github.com` token exchange
 remains uninspected; it cannot be added as a traffic host. The fixed embeddings

@@ -45,11 +45,10 @@ func install(o Options) int {
 		fmt.Println("Native executable is already installed at", target)
 		return 0
 	}
-	// Running session upgrades require an explicit off; installation never kills processes.
-	if r, e := LoadRecord(filepath.Join(o.Dir, StateName)); e == nil {
-		if state, _ := ownership(r.Port, r); state == "ours" {
-			return fail(1, errors.New("run 'withhold off' before upgrading the executable"))
-		}
+	// A new binary may not understand an older session's authenticated
+	// protocol. Preserve the executable needed to stop or recover it.
+	if _, e := LoadRecord(filepath.Join(o.Dir, StateName)); e == nil {
+		return fail(1, errors.New("run 'withhold off' with the current executable to restore the recorded session before upgrading"))
 	} else if !os.IsNotExist(e) {
 		return fail(1, e)
 	}
@@ -68,10 +67,15 @@ func install(o Options) int {
 	fmt.Printf("Installed %s. Add %s to PATH.\n", target, dir)
 	return 0
 }
-func launch(o Options, e integration.Target, r Record, recordErr error) int {
-	launcher, ok := o.Application.(integration.Launcher)
+func launch(o Options, apps []application, r Record, recordErr error) int {
+	if len(apps) != 1 {
+		return fail(2, errors.New("launch requires one agent; use 'withhold launch AGENT -- ARGS...'"))
+	}
+	app := apps[0]
+	e := app.Target
+	launcher, ok := app.adapter.(integration.Launcher)
 	if !ok {
-		return fail(2, errors.New("selected integration does not support launch; follow its integration guide"))
+		return fail(2, errors.New("launch is not supported for this agent; see its guide for supported launch options"))
 	}
 	if recordErr != nil {
 		return fail(1, errors.New("run 'withhold on' before launching the application"))
@@ -79,8 +83,12 @@ func launch(o Options, e integration.Target, r Record, recordErr error) int {
 	if state, _ := ownership(o.Port, r); state != "ours" {
 		return fail(1, errors.New("application launch requires an authenticated guard listener"))
 	}
-	if e.Resource != r.Resource || o.Integration != r.Integration {
-		return fail(1, errors.New("application settings differ from the running session; run 'withhold off' before changing integrations or settings"))
+	matched := false
+	for _, managed := range r.Applications {
+		matched = matched || managed.Agent == app.Agent && managed.Target.Resource == e.Resource
+	}
+	if !matched {
+		return fail(1, errors.New("application settings differ from the running session; run 'withhold off' before changing agents or settings"))
 	}
 	if _, err := certstore.Load(o.Dir); err != nil {
 		return fail(1, err)

@@ -26,9 +26,9 @@ before forwarding it to the provider.
   <br>
 </p>
 
-**Works with desktop VS Code + GitHub Copilot.** See the
-[integration guide](docs/integrations/vscode-copilot.md) for setup and platform
-requirements. Want another coding agent? [Help build an integration](#contribute).
+**Supports desktop VS Code + GitHub Copilot and bounded local Cursor Agent/Auto
+egress.** See the [agent catalog](docs/integrations/README.md) for exact scope and
+platform requirements. Want another agent? [Help build an integration](#contribute).
 
 ## Why withhold
 
@@ -117,12 +117,13 @@ Setup creates a local certificate authority
 sent. **Setup changes current-user certificate trust on macOS/Linux.** Windows
 uses manual trust. Review
 [certificate trust](docs/usage.md#certificate-trust) and the
-[integration guide](docs/integrations/vscode-copilot.md) first.
+[VS Code + Copilot agent guide](docs/integrations/vscode-copilot.md) first.
 
 ```sh
-withhold setup
+withhold agents
+withhold setup vscode-copilot
 withhold doctor
-withhold on --integration vscode-copilot
+withhold on
 # Open VS Code normally; restart it once after initial CA setup.
 withhold status
 ```
@@ -134,6 +135,10 @@ a running proxy alone does not prove the editor is routing supported traffic.
 ```sh
 withhold off       # Stop the session and restore managed settings.
 ```
+
+Use multiple agents with `withhold setup cursor vscode-copilot`, then `withhold on`.
+Setup saves the default set; `withhold on cursor` overrides it for one session
+without changing your defaults. `off` restores all applications in that session.
 
 See [recovery and removal](docs/usage.md#recovery-and-removal) for interrupted
 sessions and CA cleanup. withhold does not restart automatically at login/reboot.
@@ -176,7 +181,7 @@ overwriting anything. See the [configuration reference](docs/configuration.md).
 ## Privacy and limits
 
 - Inspection covers supported bodies **routed through the proxy**. Deliberate
-  bypass, integration-specific passthrough, and unrelated hosts are outside it.
+  bypass, agent-specific passthrough, and unrelated hosts are outside it.
 - Headers, URL queries, responses, and opaque media/document/archive attachments
   are not scanned. There is no OCR or document extraction.
 - Detection can miss values or produce false positives. PII patterns are not
@@ -204,7 +209,7 @@ new integrations, detection cases, clearer docs, and focused fixes.
 
 ## Documentation
 
-- [Usage and recovery](docs/usage.md) · [Integration catalog](docs/integrations/README.md)
+- [Usage and recovery](docs/usage.md) · [Agent catalog](docs/integrations/README.md)
 - [Configuration](docs/configuration.md) · [Protection contract](CONTRACTS.md)
 - [Architecture](docs/architecture.md) · [Adding an integration](docs/adding-integrations.md)
 - [Development](CONTRIBUTING.md) · [Release verification](docs/releasing.md)
