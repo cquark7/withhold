@@ -39,10 +39,13 @@ func SaveAgents(path string, agents []string) error {
 	} else if err != nil {
 		return err
 	} else {
-		defer f.Close()
 		data, err = io.ReadAll(io.LimitReader(f, (1<<20)+1))
+		closeErr := f.Close()
 		if err != nil {
 			return err
+		}
+		if closeErr != nil {
+			return closeErr
 		}
 	}
 	if len(data) > 1<<20 {
@@ -94,5 +97,6 @@ func SaveAgents(path string, agents []string) error {
 	if len(out) > 1<<20 {
 		return errors.New("config exceeds read limit")
 	}
+	// Windows cannot replace the destination while its read handle is open.
 	return localstate.Write(path, out, false)
 }

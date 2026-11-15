@@ -129,7 +129,7 @@ func TestApplicationUsesSeparateStoreAndRestoresRecordedAnchor(t *testing.T) {
 
 func TestLaunchPreservesArgumentsAndVerifiedProxyEnvironment(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "editor path")
+	binary := filepath.Join(dir, "editor path.exe")
 	if err := os.WriteFile(binary, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
