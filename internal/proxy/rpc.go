@@ -86,11 +86,19 @@ func (p *Proxy) rpc(w http.ResponseWriter, r *http.Request, route policy.Route) 
 	body.request, body.stopUpload = r.WithContext(uploadContext), stopUpload
 	// Closing a response/connection or canceling an upload must interrupt an
 	// outstanding client read, not leave an intake job alive until EOF.
+	cleanupDone := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
+		defer close(cleanupDone)
 		_ = rc.SetReadDeadline(time.Now())
 		_ = body.source.Close()
 	})
-	defer stop()
+	defer func() {
+		// Stopping an already-started callback does not wait for it. The
+		// response controller must not outlive this HTTP handler.
+		if !stop() {
+			<-cleanupDone
+		}
+	}()
 	defer body.Close()
 	// Inspect the first message before opening upstream. Later reads are driven
 	// by upstream backpressure, not an unbounded producer goroutine or queue.
@@ -297,6 +305,7 @@ type rpcBody struct {
 	messages   int
 	mu         sync.Mutex
 	readMu     sync.Mutex
+	closeMu    sync.Mutex
 	stopUpload context.CancelFunc
 	closed     bool
 	failed     *rpcFailure
@@ -456,6 +465,10 @@ func (b *rpcBody) Read(data []byte) (n int, err error) {
 }
 
 func (b *rpcBody) Close() error {
+	// The transport may close the upload concurrently with handler cleanup.
+	// Every caller must wait until reads and controller operations have ended.
+	b.closeMu.Lock()
+	defer b.closeMu.Unlock()
 	b.mu.Lock()
 	already := b.closed
 	b.closed = true

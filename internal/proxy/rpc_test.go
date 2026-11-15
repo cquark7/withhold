@@ -177,6 +177,60 @@ func assertRPCAdmissionReleased(t *testing.T, p *Proxy) {
 	}
 }
 
+type gatedRPCResponseWriter struct {
+	*httptest.ResponseRecorder
+	deadlineStarted chan struct{}
+	releaseDeadline chan struct{}
+	expired         atomic.Bool
+}
+
+func (w *gatedRPCResponseWriter) SetReadDeadline(deadline time.Time) error {
+	if !deadline.After(time.Now()) && w.expired.CompareAndSwap(false, true) {
+		close(w.deadlineStarted)
+		<-w.releaseDeadline
+	}
+	return nil
+}
+
+func (w *gatedRPCResponseWriter) WriteHeader(status int) {
+	// Hold the rejection until the cancellation callback is inside the writer.
+	<-w.deadlineStarted
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func TestRPCHandlerWaitsForCancellationCleanup(t *testing.T) {
+	p, upstream := newTestProxy(t, redactRPCScanner())
+	profile := testRPCProfile{codec: rpcCodec(true, true), mode: "block"}
+	p.config.Scope = policy.Compose(profile)
+	w := &gatedRPCResponseWriter{
+		ResponseRecorder: httptest.NewRecorder(),
+		deadlineStarted:  make(chan struct{}),
+		releaseDeadline:  make(chan struct{}),
+	}
+	r := httptest.NewRequest("POST", "http://rpc.test/service/Method",
+		bytes.NewReader(rpcFrame(t, []byte(`{"text":"sentinel"}`))))
+	r.ProtoMajor, r.ProtoMinor = 2, 0
+	r.Header.Set("Content-Type", "application/connect+proto")
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.ServeHTTP(w, r)
+	}()
+	t.Cleanup(func() {
+		close(w.releaseDeadline)
+		receiveRPC(t, done)
+	})
+	receiveRPC(t, w.deadlineStarted)
+	select {
+	case <-done:
+		t.Fatal("handler returned while cancellation still used its response writer")
+	case <-time.After(50 * time.Millisecond):
+	}
+	if upstream.Load() != 0 {
+		t.Fatal("blocked RPC reached upstream")
+	}
+}
+
 func TestRPCFindingBlockIsCountedOnceWithoutReachingUpstream(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		t.Run(strconv.FormatBool(streaming), func(t *testing.T) {
