@@ -151,6 +151,17 @@ func TestLongLeafPreservesMultipartContextAcrossReaderBoundary(t *testing.T) {
 	}
 }
 
+func TestDenseSingleLineExhaustsDetectorWorkBudget(t *testing.T) {
+	s := syntheticScanner(t)
+	const token = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
+	input := strings.Repeat(token+" ", 3072) + strings.Repeat("ordinary text. ", 1<<17)
+	report := scanSynthetic(t, s, map[string]string{"input": input}, "scanner-error")
+	if report["reason"] != "detector line work exceeds limit" || report["body_base64"] != nil {
+		t.Fatal("the long-line budget did not refuse the incomplete scan")
+	}
+	scanSynthetic(t, s, map[string]string{"input": token}, "redacted")
+}
+
 func TestMultipartCombinationLimitFailsClosed(t *testing.T) {
 	s := syntheticScanner(t)
 	var input strings.Builder

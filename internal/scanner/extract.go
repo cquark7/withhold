@@ -27,11 +27,11 @@ type unit struct {
 }
 
 type extraction struct {
-	units   []unit
-	stats   map[string]int
-	minimum int
-	bytes   int
-	overCap bool
+	units, literal []unit
+	stats          map[string]int
+	minimum        int
+	bytes          int
+	overCap        bool
 }
 
 func opaque(meta string) bool {
@@ -165,16 +165,20 @@ func decodedBytes(text string) ([]byte, bool) {
 	return data, err == nil
 }
 
-func (e *extraction) add(u unit) {
+func (e *extraction) add(u unit, literal bool) {
 	e.bytes += len(u.text) + len(separator)
 	if e.bytes > maxScanBytes {
 		e.overCap = true
 		return
 	}
-	e.units = append(e.units, u)
+	if literal {
+		e.literal = append(e.literal, u)
+	} else {
+		e.units = append(e.units, u)
+	}
 }
 
-func (e *extraction) addCredentialProjection(name, value string, sibling bool) {
+func (e *extraction) addCredentialProjection(name, value string, sibling, literal bool) {
 	if name == "" || len(name) > 64 {
 		return
 	}
@@ -194,7 +198,20 @@ func (e *extraction) addCredentialProjection(name, value string, sibling bool) {
 		projection = append(projection, '}')
 	}
 	e.add(unit{text: string(projection), kind: "json-projection", keyStart: len(head) + 1,
-		keyEnd: keyEnd, prefix: valueStart, suffix: len(projection) - valueEnd})
+		keyEnd: keyEnd, prefix: valueStart, suffix: len(projection) - valueEnd}, literal)
+}
+
+func (e *extraction) addLeaf(text, kind string, target, parent *node, key, parentKey string, literal bool) {
+	if key != "" && len(key) <= kvMax && utf8.RuneCountInString(text) <= kvMax {
+		e.add(unit{text: key + ": " + text, kind: "projection", keyEnd: len(key), prefix: len(key) + 2}, literal)
+		if key == "value" {
+			e.addCredentialProjection(parentKey, text, false, literal)
+			if name := parent.get("name"); name != nil && name.kind == 's' && len(name.text) <= 64 && !opaqueLeaf(name.text) {
+				e.addCredentialProjection(name.text, text, true, literal)
+			}
+		}
+	}
+	e.add(unit{text: text, kind: kind, target: target}, literal)
 }
 
 func (e *extraction) walk(target, parent *node, key, parentKey string) {
@@ -231,16 +248,11 @@ func (e *extraction) walk(target, parent *node, key, parentKey string) {
 				e.stats["sweep_unrewritable"]++
 			}
 		}
-		if key != "" && len(key) <= kvMax && utf8.RuneCountInString(scanText) <= kvMax {
-			e.add(unit{text: key + ": " + scanText, kind: "projection", target: target, keyEnd: len(key), prefix: len(key) + 2})
-			if key == "value" {
-				e.addCredentialProjection(parentKey, scanText, false)
-				if name := parent.get("name"); name != nil && name.kind == 's' && len(name.text) <= 64 && !opaqueLeaf(name.text) {
-					e.addCredentialProjection(name.text, scanText, true)
-				}
-			}
+		if kind == "b64" {
+			// The wire value can be a credential in its own right.
+			e.addLeaf(text, "", target, parent, key, parentKey, true)
 		}
-		e.add(unit{text: scanText, kind: kind, target: target})
+		e.addLeaf(scanText, kind, target, parent, key, parentKey, false)
 	case '[':
 		for _, child := range target.array {
 			e.walk(child, parent, key, parentKey)
@@ -249,7 +261,7 @@ func (e *extraction) walk(target, parent *node, key, parentKey string) {
 		for _, item := range target.members {
 			item.value.opaque = item.value.kind == 's' && opaqueField(target, item.key)
 			if utf8.RuneCountInString(item.key) >= e.minimum {
-				e.add(unit{text: item.key, kind: "key", target: target})
+				e.add(unit{text: item.key, kind: "key", target: target}, false)
 			}
 			e.walk(item.value, target, item.key, key)
 		}
@@ -263,7 +275,7 @@ func extract(root *node, minimum int) *extraction {
 			"skipped_short": 0, "b64_roundtrip": 0, "sweep_unrewritable": 0},
 	}
 	e.walk(root, nil, "", "")
-	e.stats["units"] = len(e.units)
+	e.stats["units"] = len(e.units) + len(e.literal)
 	return e
 }
 

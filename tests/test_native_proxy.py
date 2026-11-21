@@ -632,6 +632,35 @@ class NativeProxyTests(unittest.TestCase):
                 self.assertFalse(self.direct("/stats"))
             self.assertNotIn(SECRET, (state / "audit").read_text())
 
+    def test_literal_base64_credentials_and_newline_prefixed_match_reach_upstream_redacted(
+        self,
+    ):
+        api_key = base64.b64encode(b"Synthetic fixture key").decode()
+        password = base64.b64encode(b"Review fixture only.").decode()
+        azure = "xYz3Q~Zk4dL8Wt9sRv1m4nGF5w7jY3V6T2BHx"
+        body = {
+            "api_key": api_key,
+            "password": {"value": password},
+            "input": "AZURE_TENANT_ID=c1c81999-1234-438c-b71f-1ee1af37ebbc\n"
+            "AZURE_CLIENT_ID=03af4e17-3b98-4470-89bb-a612c72ad3e1\n"
+            f"Azure secret:\n{azure}",
+        }
+        with self.proxy() as (port, _):
+            status, _, data = self.request(port, json.dumps(body).encode(), secure=True)
+            self.assertEqual(status, 200)
+            raw = self.decoded(data)
+            for value in (api_key, password, azure):
+                self.assertNotIn(value.encode(), raw)
+            received = json.loads(raw)
+            self.assertRegex(received["api_key"], r"^<WITHHELD_[a-f0-9]{16}>$")
+            self.assertRegex(
+                base64.b64decode(received["password"]["value"], validate=True),
+                rb"^<WITHHELD_[a-f0-9]{16}>$",
+            )
+            self.assertRegex(
+                received["input"], r"Azure secret:\n<WITHHELD_[a-f0-9]{16}>$"
+            )
+
     def test_clean_bytes_and_observe_payloads_are_preserved(self):
         clean = (
             b'{ "messages": [{"content":"explain recursion"}], "n":9007199254740993 }'

@@ -440,6 +440,7 @@ var safeReasons = map[string]bool{
 	"body is not utf-8 text": true, "body is not JSON": true, "JSON too deeply nested": true,
 	"top-level JSON is not an object": true, "body contains invalid Unicode": true,
 	"duplicate JSON object key": true, "scanner input exceeds limit": true, "detector failed": true,
+	"detector line work exceeds limit":            true,
 	"scanner finding lacks both Secret and Match": true, "key rename would collide": true,
 	"detector returned an incomplete finding": true, "finding cannot be mapped to a safe rewrite": true,
 	"redaction verification failed: secret bytes survived in body": true, "secret survives decoded inside base64/data text": true,

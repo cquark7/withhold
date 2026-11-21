@@ -93,13 +93,23 @@ func (s *sourceIndex) offset(line, column int) (int, error) {
 }
 
 // Betterleaks reports inclusive byte columns, with column zero at a line boundary.
-func offsets(index **sourceIndex, text string, loc report.Location) (start, end int, err error) {
+func offsets(index **sourceIndex, text string, loc report.Location, full string, encoded bool) (start, end int, err error) {
 	if *index == nil {
 		*index = indexSource(text)
 	}
 	start, err = (*index).offset(loc.StartLine, loc.StartColumn)
 	if err != nil {
 		return 0, 0, err
+	}
+	if !encoded && full != "" {
+		// RC9 trims leading newlines from Match.Full without advancing Start.
+		for start < len(text) && text[start] == '\n' {
+			start++
+		}
+		if !strings.HasPrefix(text[start:], full) {
+			return 0, 0, errors.New("invalid detector match")
+		}
+		return start, start + len(full), nil
 	}
 	end, err = (*index).offset(loc.EndLine, loc.EndColumn+1)
 	if err != nil || end <= start {
@@ -139,12 +149,12 @@ func (d *Detector) Inspect(ctx context.Context, text string) ([]TextFinding, err
 		return nil
 	}
 	if d.engine != nil {
-		_, err := d.engine.Scan(ctx, textSource(text), func(f report.Finding) error {
+		err := d.scanText(ctx, d.engine, text, func(f report.Finding) error {
 			if f.ComponentSetsTruncated {
 				return ErrFindingLimit
 			}
-			return visitFinding(f, func(rule string, _ report.Match, loc report.Location, encoded bool) error {
-				start, end, err := offsets(&index, text, loc)
+			return visitFinding(f, func(rule string, match report.Match, loc report.Location, encoded bool) error {
+				start, end, err := offsets(&index, text, loc, match.Full, encoded)
 				if err != nil {
 					return err
 				}

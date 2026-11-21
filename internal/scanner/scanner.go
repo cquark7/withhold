@@ -113,6 +113,9 @@ func writeKeys(n *node, r replacements) string {
 func writeBase64(target *node, text string, r replacements) {
 	redacted := r.once.Replace(text)
 	if redacted == text {
+		if !strings.HasPrefix(target.text, "data:") {
+			target.text = r.once.Replace(target.text)
+		}
 		return
 	}
 	encoded := target.text
@@ -208,6 +211,23 @@ func writeBack(units []unit, r replacements, stats map[string]int) string {
 	return ""
 }
 
+func joinUnits(units []unit) string {
+	var size int
+	for _, u := range units {
+		size += len(u.text) + len(separator)
+	}
+	var joined strings.Builder
+	joined.Grow(size - len(separator))
+	for i := range units {
+		if i > 0 {
+			joined.WriteString(separator)
+		}
+		units[i].start = joined.Len()
+		joined.WriteString(units[i].text)
+	}
+	return joined.String()
+}
+
 func (s *Scanner) Scan(body []byte, maxBytes int64) Report {
 	if int64(len(body)) > maxBytes {
 		return Report{"status": "over-cap", "size": len(body), "max_bytes": maxBytes}
@@ -235,47 +255,49 @@ func (s *Scanner) Scan(body []byte, maxBytes int64) Report {
 	cannotRedact := func(reason string) Report {
 		return Report{"status": "redaction-failed", "reason": reason}
 	}
+	units := e.stats["units"]
 	clean := func() Report {
-		return Report{"status": "clean", "units": len(e.units), "stats": e.stats}
+		return Report{"status": "clean", "units": units, "stats": e.stats}
 	}
 	if e.overCap {
 		return fail("scanner input exceeds limit")
 	}
-	if len(e.units) == 0 {
-		return clean()
-	}
-	var joined strings.Builder
-	joined.Grow(e.bytes - len(separator))
-	for i := range e.units {
-		if i > 0 {
-			joined.WriteString(separator)
-		}
-		e.units[i].start = joined.Len()
-		joined.WriteString(e.units[i].text)
-	}
-	text := joined.String()
-	findings, err := s.detector.Scan(text)
-	if errors.Is(err, detector.ErrIncompleteFinding) {
-		return cannotRedact("detector returned an incomplete finding")
-	}
-	if err != nil {
-		return fail("detector failed")
-	}
+	var findings []detector.Finding
 	var values []string
-	for _, f := range findings {
-		value := f.Secret
-		if value == "" {
-			value = f.Match
+	for _, input := range []struct {
+		units []unit
+		scan  func(string) ([]detector.Finding, error)
+	}{{e.units, s.detector.Scan}, {e.literal, s.detector.ScanLiteral}} {
+		if len(input.units) == 0 {
+			continue
 		}
-		if value == "" {
-			return Report{"status": "finding-without-secret", "reason": "scanner finding lacks both Secret and Match",
-				"rule_ids": []string{f.RuleID}}
+		text := joinUnits(input.units)
+		hits, err := input.scan(text)
+		if errors.Is(err, detector.ErrIncompleteFinding) {
+			return cannotRedact("detector returned an incomplete finding")
 		}
-		value, ok := attributableValue(e.units, text, f, value)
-		if !ok {
-			return cannotRedact("finding cannot be mapped to a safe rewrite")
+		if errors.Is(err, detector.ErrLineWorkLimit) {
+			return fail(detector.ErrLineWorkLimit.Error())
 		}
-		values = append(values, value)
+		if err != nil {
+			return fail("detector failed")
+		}
+		for _, f := range hits {
+			value := f.Secret
+			if value == "" {
+				value = f.Match
+			}
+			if value == "" {
+				return Report{"status": "finding-without-secret", "reason": "scanner finding lacks both Secret and Match",
+					"rule_ids": []string{f.RuleID}}
+			}
+			value, ok := attributableValue(input.units, text, f, value)
+			if !ok {
+				return cannotRedact("finding cannot be mapped to a safe rewrite")
+			}
+			values = append(values, value)
+		}
+		findings = append(findings, hits...)
 	}
 	if len(values) == 0 {
 		return clean()
@@ -319,7 +341,7 @@ func (s *Scanner) Scan(body []byte, maxBytes int64) Report {
 	sort.Strings(rules)
 	report := Report{"status": "redacted", "body_base64": base64.StdEncoding.EncodeToString(out),
 		"rule_ids": rules, "findings": len(findings), "placeholders": len(r.mapping),
-		"units": len(e.units), "stats": e.stats}
+		"units": units, "stats": e.stats}
 	if s.debug {
 		debugRows := make([]DebugFinding, 0, len(r.ordered))
 		for _, value := range r.ordered {

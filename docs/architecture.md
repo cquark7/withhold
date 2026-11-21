@@ -131,6 +131,9 @@ and one SDK worker per process. It sends the bounded projection as one fragment
 so rules can see long leaves and nearby multipart components. Match ranges and
 decoding metadata stay in the scanner process. An incomplete or unverifiable
 rewrite returns a fixed failure reason to shared policy.
+When a bare Base64 leaf is decoded, a second pass checks its literal spelling
+without decoding it again. Wide lines share a per-pass regex candidate budget
+to bound the SDK's repeated line lookups while retaining multipart context.
 
 Scanner acceptance tests exercise the shipped `withhold _scanner --body` entry
 point. Scanner statuses and runtime guarantees are covered by the

@@ -48,8 +48,9 @@ type Finding struct {
 
 // Detector is owned by a single serial worker; it is not shared between scans.
 type Detector struct {
-	engine *scan.Scanner
-	pii    *pii.Detector
+	engine, literal *scan.Scanner
+	pii             *pii.Detector
+	lines           lineBudget
 }
 
 func New(selection string) (*Detector, error) {
@@ -79,7 +80,7 @@ func newDetector(secrets bool, selection, minimum string) (*Detector, error) {
 	if err != nil {
 		return nil, err
 	}
-	scanner.engine, err = scan.New(cfg, engineOptions(minimum)...)
+	scanner.engine, err = scan.New(cfg, append(engineOptions(minimum), scan.WithRegexEngine(&scanner.lines))...)
 	if err != nil {
 		return nil, errors.New("cannot initialize stock rules")
 	}
@@ -187,11 +188,31 @@ func (d *Detector) MinimumUnit() int {
 func (d *Detector) PII() *pii.Metadata { return d.pii.Metadata() }
 
 func (d *Detector) Scan(text string) ([]Finding, error) {
+	return d.scan(text, d.engine)
+}
+
+// ScanLiteral checks the original spelling of whole-leaf Base64 that the caller
+// already decoded for a separate scan.
+func (d *Detector) ScanLiteral(text string) ([]Finding, error) {
+	if d.engine != nil && d.literal == nil {
+		cfg, err := detectorConfig()
+		if err != nil {
+			return nil, err
+		}
+		d.literal, err = scan.New(cfg, append(engineOptions(""), scan.WithMaxDecodeDepth(0), scan.WithRegexEngine(&d.lines))...)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return d.scan(text, d.literal)
+}
+
+func (d *Detector) scan(text string, engine *scan.Scanner) ([]Finding, error) {
 	findings := make([]Finding, 0)
 	seen := make(map[Finding]struct{})
 	var index *sourceIndex
 	add := func(rule string, match report.Match, location report.Location, encoded bool) error {
-		start, end, err := offsets(&index, text, location)
+		start, end, err := offsets(&index, text, location, match.Full, encoded)
 		if err != nil {
 			return ErrIncompleteFinding
 		}
@@ -202,8 +223,8 @@ func (d *Detector) Scan(text string) ([]Finding, error) {
 		}
 		return nil
 	}
-	if d.engine != nil {
-		_, err := d.engine.Scan(context.Background(), textSource(text), func(f report.Finding) error {
+	if engine != nil {
+		err := d.scanText(context.Background(), engine, text, func(f report.Finding) error {
 			if f.ComponentSetsTruncated {
 				return ErrIncompleteFinding
 			}

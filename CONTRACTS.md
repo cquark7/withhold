@@ -124,7 +124,8 @@ issuance; false positives are possible. There is no custom confidence cutoff.
   URL-safe alphabet, the padding convention, and data URL prefixes. It
   normalizes whitespace and uses the standard alphabet when the original
   alphabet is ambiguous. Whole-leaf extraction and residue checks use a
-  24-byte minimum and always check textual data URLs.
+  24-byte minimum and always check textual data URLs. Bare Base64 leaves are
+  also checked as literal credentials, with eligible field context.
 - Betterleaks also detects encoded content inside text. A finding that cannot
   be mapped to writable text or a supported whole-leaf rewrite blocks the
   request, even if a separate copy of the value can be redacted.
@@ -138,6 +139,10 @@ issuance; false positives are possible. There is no custom confidence cutoff.
   block mode rejects that residue and redact mode can forward with a warning.
 - Joined detector input above 128 MiB fails closed. Opaque bytes still count
   toward transport limits.
+- Secret scans with a line longer than 64 KiB have a separate work limit.
+  Each candidate is charged the longest line's size against a 4 GiB budget
+  per detector pass. Exhausting the budget returns an incomplete scan even when
+  the input fits the byte limit.
 
 Placeholders are `<WITHHELD_` + 16 lowercase HMAC-SHA256 hex digits + `>`.
 Key resolution uses `WITHHOLD_PLACEHOLDER_KEY`, then the private installation
