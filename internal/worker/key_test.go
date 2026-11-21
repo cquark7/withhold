@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
+
+	"github.com/cquark7/withhold/internal/localstate"
 )
 
 func TestPlaceholderKeyUsesCurrentOverrideAndPrivateFile(t *testing.T) {
@@ -18,7 +21,7 @@ func TestPlaceholderKeyUsesCurrentOverrideAndPrivateFile(t *testing.T) {
 		t.Fatal("did not generate a private key")
 	}
 	path := filepath.Join(home, ".config", "withhold", "placeholder-key")
-	data, err := os.ReadFile(path)
+	data, err := localstate.ReadPrivate(path)
 	if err != nil || !bytes.Equal(bytes.TrimSpace(data), key) || !bytes.Equal(placeholderKey(), key) {
 		t.Fatal("key was not persisted and reused")
 	}
@@ -29,5 +32,18 @@ func TestPlaceholderKeyUsesCurrentOverrideAndPrivateFile(t *testing.T) {
 	after, err := os.ReadFile(path)
 	if err != nil || !bytes.Equal(after, data) {
 		t.Fatal("environment override changed the persisted key")
+	}
+	if runtime.GOOS != "windows" {
+		t.Setenv("WITHHOLD_PLACEHOLDER_KEY", "")
+		if err := os.Chmod(path, 0644); err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Equal(placeholderKey(), key) {
+			t.Fatal("read an exposed placeholder key")
+		}
+		after, err = os.ReadFile(path)
+		if err != nil || !bytes.Equal(after, data) {
+			t.Fatal("recovery modified the exposed key")
+		}
 	}
 }

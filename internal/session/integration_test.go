@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -309,6 +312,55 @@ func TestOffRestoresOtherApplicationsWhenSettingsLockFails(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(o.Dir, StateName)); !os.IsNotExist(err) {
 		t.Fatal("completed recovery left a stale record")
+	}
+}
+
+func TestOffClearsExitedSessionWhenAnotherListenerUsesItsPort(t *testing.T) {
+	o, app := fixtureOptions(t)
+	listener := httptest.NewServer(http.NotFoundHandler())
+	defer listener.Close()
+	o.Port = listener.Listener.Addr().(*net.TCPAddr).Port
+	o.Configuration.Proxy.Port = o.Port
+	target, err := app.Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Apply(target, integration.SetupOptions{Port: o.Port}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(o.Dir, StateName)
+	record := Record{
+		Schema: 2, Identity: control.Identity{Instance: control.Random(), Token: control.Random()},
+		Port: o.Port, PID: os.Getpid(), Configuration: o.Configuration,
+		Applications: []ManagedApplication{{Agent: "fixture", Target: target}},
+	}
+	if err := saveRecord(path, record); err != nil {
+		t.Fatal(err)
+	}
+	o.Verb = "off"
+	if Run(o) != 1 {
+		t.Fatal("off accepted a live unverified session")
+	}
+	if _, err := LoadRecord(path); err != nil {
+		t.Fatal("live unverified process lost its recovery record:", err)
+	}
+	if data, err := os.ReadFile(target.Resource); err != nil ||
+		!strings.Contains(string(data), "endpoint=original\n") || !strings.Contains(string(data), "keep=original\n") {
+		t.Fatalf("foreign listener prevented settings restoration: %q, %v", data, err)
+	}
+	child := exec.Command(os.Args[0], "-test.run=^$")
+	if err := child.Run(); err != nil {
+		t.Fatal(err)
+	}
+	record.PID = child.Process.Pid
+	if err := saveRecord(path, record); err != nil {
+		t.Fatal(err)
+	}
+	if Run(o) != 0 || !listening(o.Port) {
+		t.Fatal("exited session could not be cleared with a foreign listener present")
+	}
+	if _, err := LoadRecord(path); !os.IsNotExist(err) {
+		t.Fatal("exited session left a recovery record:", err)
 	}
 }
 

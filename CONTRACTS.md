@@ -147,7 +147,8 @@ issuance; false positives are possible. There is no custom confidence cutoff.
 Placeholders are `<WITHHELD_` + 16 lowercase HMAC-SHA256 hex digits + `>`.
 Key resolution uses `WITHHOLD_PLACEHOLDER_KEY`, then the private installation
 file `~/.config/withhold/placeholder-key`, then a process-random key.
-Persisted keys are published atomically. Placeholders are stable with the same
+Persisted keys must pass private-file checks and are published atomically.
+Placeholders are stable with the same
 key and are never rehydrated in responses. Stable markers reveal repeated values;
 they are pseudonymous, not anonymous. Verification checks protected text
 and keys for discovered values and URL/Base64 variants. A known finding with an
@@ -255,6 +256,8 @@ an authenticated identity/PID/build can be stopped; foreign listeners are not
 signalled. Recorded resources remain recoverable with broken current config.
 Restore changes only managed keys, preserving unrelated/mid-session edits;
 invalid settings/backups are preserved. Failed restore retains recovery data.
+Once the recorded process has exited and all settings are restored, a foreign
+listener on the recorded port does not keep the ownership record in place.
 CA files are deleted only after verified trust removal. Uninstall does not
 delete logs, application settings, or the installed executable.
 Installation refuses to replace the executable while any session record remains,

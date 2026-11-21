@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+
+	"github.com/cquark7/withhold/internal/localstate"
 )
 
 // Resolve installation state at the worker boundary, not in the redactor.
@@ -14,9 +16,18 @@ func placeholderKey() []byte {
 	if env := os.Getenv("WITHHOLD_PLACEHOLDER_KEY"); env != "" {
 		return []byte(env)
 	}
-	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, ".config", "withhold", "placeholder-key")
-	read := func() []byte { data, _ := os.ReadFile(path); return bytes.Trim(data, " \t\n\r\v\f") }
+	home, err := os.UserHomeDir()
+	path := ""
+	if err == nil {
+		path = filepath.Join(home, ".config", "withhold", "placeholder-key")
+	}
+	read := func() []byte {
+		data, err := localstate.ReadPrivate(path)
+		if err != nil {
+			return nil
+		}
+		return bytes.Trim(data, " \t\n\r\v\f")
+	}
 	if data := read(); len(data) > 0 {
 		return data
 	}
@@ -25,16 +36,9 @@ func placeholderKey() []byte {
 		panic("cannot initialize placeholder key")
 	}
 	key := []byte(hex.EncodeToString(random))
-	if os.MkdirAll(filepath.Dir(path), 0700) == nil {
-		file, err := os.CreateTemp(filepath.Dir(path), ".placeholder-key-*")
-		if err == nil {
-			name := file.Name()
-			_, writeErr := file.Write(append(append([]byte(nil), key...), '\n'))
-			closeErr := file.Close()
-			if writeErr == nil && closeErr == nil {
-				_ = os.Link(name, path)
-			}
-			_ = os.Remove(name)
+	if path != "" {
+		if err := localstate.Write(path, append(key, '\n'), true); err == nil {
+			return key
 		}
 		if data := read(); len(data) > 0 {
 			key = data

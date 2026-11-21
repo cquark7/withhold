@@ -96,7 +96,8 @@ Managed keys are `http.proxy`, `http.proxySupport`, `http.proxyStrictSSL`,
 `http.noProxy`, `http.systemCertificates`, `http.fetchAdditionalSupport`, and
 `http.webSocketAdditionalSupport`, plus their `settingsSync.ignoredSettings`
 entries. Bypass lists are loopback-only; TLS verification stays enabled.
-`off` restores only managed keys, preserving unrelated/mid-session edits.
+`withhold` preserves comments on unrelated settings. `off` restores the
+managed keys and removes only the Settings Sync exclusions added by withhold.
 
 ### Custom traffic endpoints
 

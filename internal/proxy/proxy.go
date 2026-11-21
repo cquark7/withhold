@@ -77,9 +77,6 @@ func New(c Config) (*Proxy, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &Proxy{config: c, ctx: ctx, cancel: cancel, conns: map[net.Conn]bool{}, audit: audit{path: c.AuditPath, hint: c.HintPath, seen: map[string]bool{}}, debug: debugLog{path: c.DebugPath}}
-	if c.DebugPath != "" {
-		p.debug.session = control.Random()[:12]
-	}
 	p.debug.status.Healthy = true
 	if c.Control != nil {
 		c.Control.Debug = p.debug.snapshot
@@ -163,12 +160,11 @@ func (p *Proxy) handle(w http.ResponseWriter, r *http.Request, tunnel string) {
 		if isWebSocket(r) {
 			transport = "websocket"
 		}
-		parent, _ := r.Context().Value(debugConnectionKey{}).(string)
 		host := r.URL.Host
 		if host == "" {
 			host = r.Host
 		}
-		r = p.debug.begin(r, p.config.Scope.Classify(host, r.URL.RequestURI()), transport, parent, p.config.Observe)
+		r = p.debug.begin(r, p.config.Scope.Classify(host, r.URL.RequestURI()), transport, p.config.Observe)
 	}
 	if tunnel != "" {
 		a, err := requestAuthority(r.Host)
@@ -207,7 +203,7 @@ func (p *Proxy) block(w http.ResponseWriter, r *http.Request, route policy.Route
 		pending := t.record.PolicyAction == "pending"
 		t.mu.Unlock()
 		if pending {
-			debugDecision(r, "not-scanned", "block", reason, report, nil)
+			debugDecision(r, "not-scanned", "block", reason, report)
 		}
 	}
 	if p.config.Observe {
@@ -258,7 +254,7 @@ func (p *Proxy) request(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost && bodyless(r) {
-		debugDecision(r, "not-scanned", "passthrough", "method-outside-inspection", nil, nil)
+		debugDecision(r, "not-scanned", "passthrough", "method-outside-inspection", nil)
 		p.forward(w, r)
 		return
 	}
@@ -294,7 +290,7 @@ func (p *Proxy) request(w http.ResponseWriter, r *http.Request) {
 
 func (p *Proxy) rejectIntake(w http.ResponseWriter, r *http.Request, route policy.Route) {
 	p.audit.emit(r, route, "block", "blocked", scanner.Report{"rule_ids": []string{"over-cap"}}, false, false)
-	debugDecision(r, "over-cap", "reject", "transport-limit", nil, nil)
+	debugDecision(r, "over-cap", "reject", "transport-limit", nil)
 	debugEvent(r, "blocked", "transport-limit", 0)
 	http.Error(w, "request body could not be buffered within transport limits", http.StatusRequestEntityTooLarge)
 }
@@ -345,7 +341,7 @@ func (p *Proxy) inspect(w http.ResponseWriter, r *http.Request, route policy.Rou
 			panic("invalid redaction report")
 		}
 	}
-	debugDecision(r, status, decision.Action, decision.Reason, report, rewritten)
+	debugDecision(r, status, decision.Action, decision.Reason, report)
 	switch decision.Action {
 	case "forward":
 		return true
@@ -364,10 +360,7 @@ func (p *Proxy) inspect(w http.ResponseWriter, r *http.Request, route policy.Rou
 			r.TransferEncoding = nil
 			r.Trailer = nil
 			r.Header.Del("Content-Encoding")
-			r.Header.Del("Transfer-Encoding")
-			r.Header.Del("Trailer")
-			r.Header.Del("Content-MD5")
-			r.Header.Del("Digest")
+			clearBodyIntegrity(r.Header)
 			r.Header.Set("Content-Type", "application/json; charset=utf-8")
 			r.Header.Set("Content-Length", strconv.Itoa(len(body)))
 		}
@@ -418,7 +411,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 		pending := t.record.PolicyAction == "pending"
 		t.mu.Unlock()
 		if pending {
-			debugDecision(r, "not-scanned", "passthrough", "outside-inspection-scope", nil, nil)
+			debugDecision(r, "not-scanned", "passthrough", "outside-inspection-scope", nil)
 		}
 	}
 	out := r.Clone(r.Context())

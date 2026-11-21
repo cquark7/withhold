@@ -93,7 +93,7 @@ class NativeDesktopTests(unittest.TestCase):
         return self.run_guard("on", "--port", self.port, *args)
 
     def test_on_reuse_restore_and_new_session(self):
-        self.settings.write_text('{/* before */ "http.proxy":"http://old", "keep":1,}')
+        self.settings.write_text('{"http.proxy":"http://old", "keep":1}')
         started = self.on()
         self.assertIn("withhold is running", started.stdout)
         self.assertIn("startup does not prove traffic is inspected", started.stdout)

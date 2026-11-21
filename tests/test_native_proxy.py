@@ -780,13 +780,17 @@ class NativeProxyTests(unittest.TestCase):
                     SECRET.encode(), base64.b64decode(entry["body_base64"])
                 )
             encoded = BODY.decode().encode("utf-16")
+            digests = dict.fromkeys(
+                ("Content-Md5", "Digest", "Content-Digest", "Repr-Digest"), "original"
+            )
             status, _, data = self.request(
                 port,
                 encoded,
-                headers={"Content-Type": "application/json; charset=utf-16"},
+                headers={"Content-Type": "application/json; charset=utf-16", **digests},
             )
             self.assertEqual(status, 200, data)
             self.assertNotIn(SECRET.encode(), self.decoded(data))
+            self.assertFalse(digests.keys() & json.loads(data)["headers"].keys())
             before = len(self.direct("/stats"))
             self.assertEqual(
                 self.request(
