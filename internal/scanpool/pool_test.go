@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cquark7/withhold/internal/detector"
 	"github.com/cquark7/withhold/internal/scanner"
 	"github.com/cquark7/withhold/internal/worker"
 )
@@ -29,7 +30,7 @@ func TestPipePeer(t *testing.T) {
 		time.Sleep(time.Hour)
 		os.Exit(0)
 	}
-	send(map[string]any{"schema": 1, "engine": "withhold-scanner", "version": "1.10.1"})
+	send(map[string]any{"schema": 1, "engine": "withhold-scanner", "version": detector.Version})
 	for {
 		body, err := worker.ReadFrame(os.Stdin)
 		if err == io.EOF {

@@ -86,13 +86,14 @@ Duplicate object keys (including escape-equivalent names), invalid Unicode
 surrogates, nesting above 1,000 levels, and key-rename collisions fail closed.
 Rewriting preserves object order and scalar types, not original formatting.
 
-Secret detection uses bundled betterleaks 1.10.1 rules and Go regular
+Secret detection uses bundled Betterleaks v2 rules and Go regular
 expressions, without credential validation, repository configuration, or
 allow-comment suppression. AWS access-key IDs are detected without requiring a
 secret-key component; credential URIs also recognize `psql://`. Multipart
-components are all redacted, so nonsecret identifiers can be included. Findings
-with 100 or more component combinations fail as incomplete. Synthetic detector
-self-tests must pass before startup and whenever a worker starts.
+components are all redacted, so nonsecret identifiers can be included. A complete
+set of 100 component combinations can be redacted. If Betterleaks truncates the
+set, the request is blocked. Synthetic detector self-tests must pass before
+startup and whenever a worker starts.
 
 ### PII coverage
 
@@ -112,21 +113,29 @@ issuance; false positives are possible. There is no custom confidence cutoff.
 
 ### Extraction limits
 
-- Standalone text below eight characters is skipped; PII lowers that floor to
-  two. Long text uses 48 KiB windows with 4 KiB overlap.
-- Eligible keys and values of at most 4,096 characters are also scanned
-  together. Array elements retain their key context.
-- UTF-8 base64 text is decoded, scanned, rewritten, and re-encoded. Whitespace,
-  URL-safe alphabets, and unpadded variants are accepted. Extraction attempts
-  start at 64 characters for secrets or 24 with PII; round-trip checks use 24.
+- Standalone text below eight characters is skipped. PII lowers that floor to
+  two. Longer leaves remain intact during detection.
+- Eligible keys up to 4,096 bytes and values up to 4,096 characters are also
+  scanned together. Array elements retain their key context. Small `value`
+  strings also get their enclosing key and a sibling `name` as credential
+  context where applicable. Escaped JSON matches map back to the original text.
+- Whole-leaf UTF-8 Base64 text and textual Base64 data URLs can be decoded,
+  scanned, rewritten, and re-encoded. Re-encoding preserves a detectable
+  URL-safe alphabet, the padding convention, and data URL prefixes. It
+  normalizes whitespace and uses the standard alphabet when the original
+  alphabet is ambiguous. Whole-leaf extraction and residue checks use a
+  24-byte minimum and always check textual data URLs.
+- Betterleaks also detects encoded content inside text. A finding that cannot
+  be mapped to writable text or a supported whole-leaf rewrite blocks the
+  request, even if a separate copy of the value can be redacted.
 - Declared image/audio/video/font, octet-stream, PDF/ZIP/gzip/WASM payloads and
   recognized PNG/JPEG/GIF/PDF/ZIP/gzip/WASM/WebP/WAV base64 signatures are opaque.
   They skip detection and residue checks at any size. MIME metadata is only a
   client hint: mislabeled text can be excluded. There is no OCR or extraction
   from documents/archives; surrounding text is still inspected.
-- Other non-UTF-8 base64 blobs from 64 characters through 64 KiB can be skipped
-  as unrewritable. With findings present, block mode rejects that residue; redact
-  mode forwards with a warning. Unknown large blobs retain text scanning.
+- Unknown Base64 blobs that decode to non-UTF-8 bytes are scanned as literal
+  text. Their decoded bytes count as unscanned residue. With findings present,
+  block mode rejects that residue and redact mode can forward with a warning.
 - Joined detector input above 128 MiB fails closed. Opaque bytes still count
   toward transport limits.
 
@@ -136,7 +145,8 @@ file `~/.config/withhold/placeholder-key`, then a process-random key.
 Persisted keys are published atomically. Placeholders are stable with the same
 key and are never rehydrated in responses. Stable markers reveal repeated values;
 they are pseudonymous, not anonymous. Verification checks protected text
-and keys for discovered values and URL/base64 variants; failure blocks rewriting.
+and keys for discovered values and URL/Base64 variants. A known finding with an
+incomplete or unverifiable rewrite blocks enforced routes.
 
 ## Transport and failures
 
@@ -354,10 +364,10 @@ before application changes; unrelated or unsafe files are never overwritten.
 Snapshot write failure warns but does not prevent restoration.
 
 Scanner statuses are `clean`, `redacted`, `skipped-not-json`, `over-cap`,
-`over-cap-decoded`, `scanner-error`, and `finding-without-secret`. Successful
-reports contain `units`/`stats`; rewrites add `body_base64`, `rule_ids`,
-`findings`, and `placeholders`. Errors use fixed `reason` values; cap reports
-add `size`/`max_bytes`. Opt-in masked debug findings are never raw findings.
+`over-cap-decoded`, `scanner-error`, `redaction-failed`, and
+`finding-without-secret`. Successful reports contain `units` and `stats`.
+Rewrites add `body_base64`, `rule_ids`, `findings`, and `placeholders`. Errors
+use fixed `reason` values. Cap reports add `size` and `max_bytes`. Opt-in masked debug findings are never raw findings.
 
 Audit JSONL fields are `ts`, `host`, `api`, `surface`, `surface_provisional`,
 `mode`, `action`, `rule_ids`, `findings`, `placeholders`, `units`, `stats`,

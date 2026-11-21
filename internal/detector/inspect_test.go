@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -54,19 +55,31 @@ func TestInspectionReportsEncodedSourceAndDistinctMultipartComponents(t *testing
 	}
 	const token = "AKIA4X7Q2W3K7MNDZBXP"
 	const secret = "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"
-	encoded := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("padding ", 8) + token))
-	findings, err := d.Inspect(context.Background(), "encoded="+encoded)
-	if err != nil || len(findings) != 1 || !findings[0].Encoded || findings[0].Start < len("encoded=") || findings[0].End > len("encoded=")+len(encoded) {
-		t.Fatalf("encoded source location: %v, %v", findings, err)
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		encoded := enc.EncodeToString([]byte("AA? " + strings.Repeat("padding ", 8) + token))
+		const prefix = "用户 encoded=("
+		findings, err := d.Inspect(context.Background(), prefix+encoded+")")
+		if err != nil || len(findings) != 1 || !findings[0].Encoded || findings[0].Start < len(prefix) || findings[0].End > len(prefix)+len(encoded) {
+			t.Fatalf("encoded source location: %v, %v", findings, err)
+		}
 	}
 	text := "AWS_ACCESS_KEY_ID=" + token + "\nAWS_SECRET_ACCESS_KEY=" + secret
-	findings, err = d.Inspect(context.Background(), text)
+	findings, err := d.Inspect(context.Background(), text)
 	if err != nil || len(findings) != 2 {
 		t.Fatalf("multipart findings: %v, %v", findings, err)
 	}
 	if findings[0].RuleID != "aws-access-token" || findings[0].StartLine != 1 || findings[1].RuleID != "aws-secret-access-key" || findings[1].StartLine != 2 {
 		t.Fatal("multipart locations were not preserved")
 	}
+	var many strings.Builder
+	many.WriteString("AWS_ACCESS_KEY_ID=" + token + " ")
+	for i := range 101 {
+		fmt.Fprintf(&many, "AWS_SECRET_ACCESS_KEY=%s%03d ", secret[:37], i)
+	}
+	if findings, err := d.Inspect(context.Background(), many.String()); !errors.Is(err, ErrFindingLimit) || findings != nil {
+		t.Fatalf("expected incomplete finding report, got %d findings and %v", len(findings), err)
+	}
+
 }
 
 func TestInspectionRejectsTruncatedFindings(t *testing.T) {

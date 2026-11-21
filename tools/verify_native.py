@@ -16,12 +16,14 @@ import zipfile
 from pathlib import Path
 
 try:
+    from tools.native_notices import betterleaks_version
     from tools.package_native import (
         TARGETS,
         artifact_name,
         validate_version,
     )
 except ModuleNotFoundError:
+    from native_notices import betterleaks_version
     from package_native import (
         TARGETS,
         artifact_name,
@@ -161,6 +163,7 @@ def smoke(destination: Path, target: str, version: str):
     binary = (
         destination / ("withhold.exe" if target.startswith("windows-") else "withhold")
     ).resolve()
+    engine_version = betterleaks_version(binary).removeprefix("v")
     with tempfile.TemporaryDirectory(prefix="withhold-archive-test-") as temporary:
         root = Path(temporary)
         empty = root / "empty-path"
@@ -200,7 +203,7 @@ def smoke(destination: Path, target: str, version: str):
                 if (
                     args == ("version",)
                     and result.stdout.strip()
-                    != f"withhold {version} (betterleaks 1.10.1)"
+                    != f"withhold {version} (betterleaks {engine_version})"
                 ):
                     raise ValueError("extracted executable version mismatch")
                 if args[0] == "doctor":

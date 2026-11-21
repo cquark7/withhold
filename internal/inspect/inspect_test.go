@@ -78,6 +78,7 @@ func TestPathPrefilterPrunesBeforeReadingAndCanBeDisabled(t *testing.T) {
 	t.Chdir(root)
 	for name, data := range map[string]string{
 		".env": "application text", "node_modules/pkg/index.js": "dependency text", "package-lock.json": "generated text",
+		"scene.gltf": `{"asset":{"version":"2.0"}}`, "report.pdf": "%PDF-1.7\n% synthetic document",
 	} {
 		if err := os.MkdirAll(filepath.Dir(name), 0700); err != nil {
 			t.Fatal(err)
@@ -105,12 +106,12 @@ func TestPathPrefilterPrunesBeforeReadingAndCanBeDisabled(t *testing.T) {
 		return filter(path)
 	}
 	summary, err := Run(context.Background(), options, fake, func(Result) error { return nil })
-	if err != nil || !summary.Complete || summary.FilesScanned != 1 || !reflect.DeepEqual(summary.Skipped, map[string]int{"default-excluded": 2}) {
+	if err != nil || !summary.Complete || summary.FilesScanned != 2 || !reflect.DeepEqual(summary.Skipped, map[string]int{"default-excluded": 2, "binary": 1}) {
 		t.Fatalf("prefilter summary=%+v error=%v", summary, err)
 	}
 	options.SkipPath = nil
 	summary, err = Run(context.Background(), options, fake, func(Result) error { return nil })
-	if err != nil || !summary.Complete || summary.FilesScanned != 2 || len(summary.Skipped) != 0 {
+	if err != nil || !summary.Complete || summary.FilesScanned != 3 || !reflect.DeepEqual(summary.Skipped, map[string]int{"binary": 1}) {
 		t.Fatalf("unfiltered summary=%+v error=%v", summary, err)
 	}
 }

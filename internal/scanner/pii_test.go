@@ -77,17 +77,17 @@ func TestPIIRedactsAllCategoriesAndSecretsWithoutPublicValues(t *testing.T) {
 	}
 }
 
-func TestPIIRedactsShortKeysBase64AndChunkBoundaries(t *testing.T) {
+func TestPIIRedactsShortKeysBase64AndLongText(t *testing.T) {
 	const email, aadhaar = "a@b.c", "234123412346"
 	encoded := base64.StdEncoding.EncodeToString([]byte("aadhaar: " + aadhaar))
-	// Cross a window boundary and exceed the large-leaf threshold.
-	text := strings.Repeat("x", chunkSize-6) + " " + aadhaar + " " + strings.Repeat("tail ", chunkSize/5)
+	// Keep the surrounding long leaf intact.
+	text := strings.Repeat("x", (48*1024)-6) + " " + aadhaar + " " + strings.Repeat("tail ", (48*1024)/5)
 	report := scanPII(t, "aadhaar,email", map[string]any{
 		email: email, "blob": encoded, "nested": []any{map[string]string{"input": text}},
 	}, "redacted")
 	stats := report["stats"].(map[string]int)
-	if stats["chunked_large"] != 1 || stats["b64_roundtrip"] != 1 {
-		t.Fatal("chunked text and short base64 did not use their rewrite paths")
+	if stats["b64_roundtrip"] != 1 {
+		t.Fatal("short base64 did not use its rewrite path")
 	}
 	rewritten := rewrittenObject(t, report)
 	placeholder := regexp.MustCompile(`^<WITHHELD_[0-9a-f]{16}>$`)
@@ -112,7 +112,7 @@ func TestPIIRedactsShortKeysBase64AndChunkBoundaries(t *testing.T) {
 	}
 	nested := rewritten["nested"].([]any)[0].(map[string]any)["input"]
 	if nested != strings.ReplaceAll(text, aadhaar, aadhaarPlaceholder) {
-		t.Error("chunk-boundary rewrite lost text or left PII behind")
+		t.Error("long-text rewrite lost text or left PII behind")
 	}
 }
 

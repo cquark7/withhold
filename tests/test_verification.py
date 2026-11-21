@@ -22,7 +22,6 @@ class VerificationTests(unittest.TestCase):
         environment = go_test.kwargs["env"]
         suffix = ".exe" if os.name == "nt" else ""
         for variable, binary in (
-            ("WITHHOLD_TEST_SCANNER_WORKER", "withhold-scanner"),
             ("WITHHOLD_TEST_NATIVE", "withhold"),
             ("WITHHOLD_TEST_NATIVE_FIXTURE", "withhold-native-fixture"),
         ):

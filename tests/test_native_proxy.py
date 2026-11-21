@@ -507,18 +507,26 @@ class NativeProxyTests(unittest.TestCase):
                 self.assertNotIn(value, logs)
 
             self.direct("/reset")
-            many = (
-                "AWS_ACCESS_KEY_ID="
-                + aws_id
-                + " "
-                + " ".join(
-                    f"AWS_SECRET_ACCESS_KEY={aws_secret[:37]}{i:03d}"
-                    for i in range(100)
+            parts = [
+                f"AWS_SECRET_ACCESS_KEY={aws_secret[:37]}{i:03d}" for i in range(101)
+            ]
+            for count in (100, 101):
+                many = f"AWS_ACCESS_KEY_ID={aws_id} " + " ".join(parts[:count])
+                status, _, data = self.request(
+                    port, body=json.dumps({"input": many}).encode()
                 )
-            )
-            status, _, _ = self.request(port, body=json.dumps({"input": many}).encode())
-            self.assertEqual(status, 429)
-            self.assertFalse(self.direct("/stats"))
+                if count == 100:
+                    self.assertEqual(status, 200)
+                    received = self.decoded(data)
+                    self.assertNotIn(aws_id.encode(), received)
+                    self.assertNotIn(aws_secret[:37].encode(), received)
+                    self.assertEqual(received.count(b"<WITHHELD_"), 101)
+                    self.direct("/reset")
+                else:
+                    self.assertEqual(status, 429)
+                    self.assertIn(b"redaction-failed", data)
+                    self.assertFalse(self.direct("/stats"))
+            self.assertEqual(self.request(port, b'{"input":"ordinary text"}')[0], 200)
 
         self.direct("/reset")
         with self.proxy("--chat-mode", "block") as (port, _):
@@ -526,6 +534,103 @@ class NativeProxyTests(unittest.TestCase):
                 status, _, _ = self.request(port, body=json.dumps(body).encode())
                 self.assertEqual(status, 429)
             self.assertFalse(self.direct("/stats"))
+
+    def test_rc9_structured_encoded_and_oauth_redaction_reaches_upstream(self):
+        api_key = "Zf3D0LXCM3EIMbgJpUNnkRtOfOueHznB"
+        password = "H7m2Q9v4K6r1D8x5"
+        escaped_password = 'vN8jK0sP4hL7"\\xyz'
+        named_key = "Pr6L9vR5mW8eA2zJ4dT8qN5gHb1KwQ4"
+        with self.proxy() as (port, _):
+            body = {
+                "api_key": {"name": "service", "value": api_key},
+                "entries": [{"name": "api_key", "value": named_key, "enabled": True}],
+                "password": {"value": escaped_password, "name": "service"},
+                "short_base64": base64.b64encode(b"AKIA4X7Q2W3K7MNDZBXP").decode(),
+                "snippet": f"<password><![CDATA[{password}]]></password>",
+                "json_snippet": f'{{"api_key":{{"value":"{api_key}"}}}}',
+                "safe": {
+                    "api_key": {"value": "${API_KEY}"},
+                    "password": "${PASSWORD}",
+                },
+                "short": {"api_key": {"value": "short"}, "password": {"value": "demo"}},
+                "access": "sk-ant-oat01-" + "aB4d-E5f_" * 10,
+                "refresh": "sk-ant-ort01-" + "aB4d-E5f_" * 10,
+            }
+            status, _, data = self.request(port, json.dumps(body).encode(), secure=True)
+            self.assertEqual(status, 200)
+            raw = self.decoded(data)
+            received = json.loads(raw)
+            self.assertEqual(list(received), list(body))
+            for key in ("access", "refresh"):
+                self.assertNotIn(body[key].encode(), raw)
+                self.assertTrue(received[key].startswith("<WITHHELD_"))
+            self.assertEqual(received["safe"], body["safe"])
+            self.assertEqual(received["short"], body["short"])
+            self.assertEqual(received["api_key"]["name"], "service")
+            self.assertNotIn(api_key.encode(), raw)
+            self.assertNotIn(password.encode(), raw)
+            self.assertTrue(received["api_key"]["value"].startswith("<WITHHELD_"))
+            self.assertEqual(received["entries"][0]["name"], "api_key")
+            self.assertIs(received["entries"][0]["enabled"], True)
+            self.assertRegex(
+                received["entries"][0]["value"], r"^<WITHHELD_[a-f0-9]{16}>$"
+            )
+            self.assertEqual(received["password"]["name"], "service")
+            self.assertRegex(
+                received["password"]["value"], r"^<WITHHELD_[a-f0-9]{16}>$"
+            )
+            self.assertNotIn(named_key.encode(), raw)
+            self.assertNotIn(json.dumps(escaped_password).encode(), raw)
+            self.assertRegex(
+                base64.b64decode(received["short_base64"]),
+                rb"^<WITHHELD_[a-f0-9]{16}>$",
+            )
+
+            text = f"AA? token = {SECRET} trailing text".encode()
+            # Force an alphabet-specific character and visible original padding.
+            if len(text) % 3 == 0:
+                text += b" "
+            for encode, decode in (
+                (base64.b64encode, base64.b64decode),
+                (base64.urlsafe_b64encode, base64.urlsafe_b64decode),
+            ):
+                for padded in (True, False):
+                    payload = encode(text)
+                    self.assertTrue(payload.endswith(b"="))
+                    self.assertTrue(any(c in payload for c in (b"+", b"/", b"-", b"_")))
+                    if not padded:
+                        payload = payload.rstrip(b"=")
+                    prefix = "data:text/plain;base64," if padded else ""
+                    status, _, data = self.request(
+                        port,
+                        json.dumps({"blob": prefix + payload.decode()}).encode(),
+                        secure=True,
+                    )
+                    self.assertEqual(status, 200)
+                    received = json.loads(self.decoded(data))["blob"]
+                    self.assertTrue(received.startswith(prefix))
+                    payload = received.removeprefix(prefix).encode()
+                    if not padded:
+                        self.assertNotIn(b"=", payload)
+                        payload += b"=" * (-len(payload) % 4)
+                    decoded = decode(payload)
+                    head, tail = text.split(SECRET.encode())
+                    self.assertTrue(decoded.startswith(head + b"<WITHHELD_"))
+                    self.assertTrue(decoded.endswith(b">" + tail))
+                    self.assertNotIn(SECRET.encode(), decoded)
+
+    def test_inline_nested_encoding_blocks_even_with_plaintext_copy(self):
+        inner = base64.b64encode(f"sample {SECRET} trailing text".encode())
+        inline = "see (" + base64.b64encode(inner).decode() + ")"
+        with self.proxy() as (port, state):
+            for body in ({"blob": inline}, {"blob": inline, "input": SECRET}):
+                status, _, data = self.request(
+                    port, json.dumps(body).encode(), secure=True
+                )
+                self.assertEqual(status, 429)
+                self.assertIn(b"redaction-failed", data)
+                self.assertFalse(self.direct("/stats"))
+            self.assertNotIn(SECRET, (state / "audit").read_text())
 
     def test_clean_bytes_and_observe_payloads_are_preserved(self):
         clean = (

@@ -279,18 +279,25 @@ func (p *Pool) exchange(ctx context.Context, body, prefix []byte, consume func([
 func (p *Pool) validGreeting(data []byte) bool {
 	if p.inspection {
 		var hello worker.TextGreeting
-		version := ""
-		if p.secrets {
-			version = detector.Version
+		if decodeText(data, &hello) != nil {
+			return false
 		}
-		return decodeText(data, &hello) == nil && reflect.DeepEqual(hello, worker.TextGreeting{Schema: 1, Engine: "withhold-text-scanner", Secrets: p.secrets, SecretVersion: version, Confidence: p.confidence, PII: p.pii})
+		if (p.secrets && !validVersion(hello.SecretVersion)) || (!p.secrets && hello.SecretVersion != "") {
+			return false
+		}
+		return reflect.DeepEqual(hello, worker.TextGreeting{Schema: 1, Engine: "withhold-text-scanner", Secrets: p.secrets, SecretVersion: hello.SecretVersion, Confidence: p.confidence, PII: p.pii})
 	}
 	var hello struct {
 		Schema          int
 		Engine, Version string
 		PII             *pii.Metadata
 	}
-	return json.Unmarshal(data, &hello) == nil && hello.Schema == 1 && hello.Engine == "withhold-scanner" && hello.Version == detector.Version && reflect.DeepEqual(hello.PII, p.pii)
+	return json.Unmarshal(data, &hello) == nil && hello.Schema == 1 && hello.Engine == "withhold-scanner" && validVersion(hello.Version) && reflect.DeepEqual(hello.PII, p.pii)
+}
+
+// Go test binaries omit dependency metadata but can exercise the shipped worker.
+func validVersion(version string) bool {
+	return version != "" && (detector.Version == "unknown" || version == detector.Version)
 }
 
 // Never let an incompatible worker reply become permission to forward a body.
@@ -409,7 +416,7 @@ func validReportWithDebug(r scanner.Report, debug bool) bool {
 		if !count(r["size"]) || !count(r["max_bytes"]) {
 			return false
 		}
-	case "skipped-not-json", "scanner-error", "finding-without-secret":
+	case "skipped-not-json", "scanner-error", "redaction-failed", "finding-without-secret":
 		reason, ok := r["reason"].(string)
 		if !ok || !safeReasons[reason] {
 			return false
@@ -428,14 +435,12 @@ func validReportWithDebug(r scanner.Report, debug bool) bool {
 	return true
 }
 
-var statKeys = []string{"units", "sweep_unrewritable", "skipped_data_media", "skipped_base64_blobs", "skipped_tools", "skipped_short", "chunked_large", "carved_attachments", "path_collisions", "b64_roundtrip"}
+var statKeys = []string{"units", "sweep_unrewritable", "skipped_data_media", "skipped_base64_blobs", "skipped_short", "b64_roundtrip"}
 var safeReasons = map[string]bool{
 	"body is not utf-8 text": true, "body is not JSON": true, "JSON too deeply nested": true,
 	"top-level JSON is not an object": true, "body contains invalid Unicode": true,
-	"duplicate JSON object key":                                         true,
-	"duplicate JSON path across leaves - write-back would be ambiguous": true,
-	"scanner input exceeds limit":                                       true, "detector failed": true, "scanner finding lacks both Secret and Match": true,
-	"key rename would collide": true, "key write-back miss": true, "base64 write-back on malformed data URL": true,
-	"base64 write-back decode failed": true, "redaction verification failed: secret fragment survived": true,
-	"redaction verification failed: secret bytes survived in body": true, "secret survives decoded inside base64/data: leaf": true,
+	"duplicate JSON object key": true, "scanner input exceeds limit": true, "detector failed": true,
+	"scanner finding lacks both Secret and Match": true, "key rename would collide": true,
+	"detector returned an incomplete finding": true, "finding cannot be mapped to a safe rewrite": true,
+	"redaction verification failed: secret bytes survived in body": true, "secret survives decoded inside base64/data text": true,
 }

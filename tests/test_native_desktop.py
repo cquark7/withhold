@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from tests.test_native_proxy import BODY, FIXTURE, NATIVE, stop
+from tools.native_notices import betterleaks_version
 
 
 @unittest.skipUnless(NATIVE, "set WITHHOLD_TEST_NATIVE to the native executable")
@@ -521,8 +522,10 @@ class NativeDesktopTests(unittest.TestCase):
         destination = self.root / "installed"
         self.run_guard("install", "--bin-dir", destination)
         binary = destination / ("withhold.exe" if os.name == "nt" else "withhold")
+        module_version = betterleaks_version(binary).removeprefix("v")
         self.assertIn(
-            "betterleaks 1.10.1", self.run_guard("version", binary=binary).stdout
+            f"betterleaks {module_version}",
+            self.run_guard("version", binary=binary).stdout,
         )
         self.on()
         self.run_guard("install", "--bin-dir", destination, expected=1)

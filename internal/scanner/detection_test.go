@@ -78,6 +78,17 @@ func TestEncodedDatabaseCredentialURIIsRedacted(t *testing.T) {
 	}
 }
 
+func TestKnownSecretInEncodedKeyBlocksRewriting(t *testing.T) {
+	s := syntheticScanner(t)
+	// The leading bytes prevent the secret's independent Base64 encoding
+	// from occurring as a literal substring in the encoded key.
+	key := base64.RawStdEncoding.EncodeToString([]byte("x" + syntheticAWSID + "y"))
+	report := scanSynthetic(t, s, map[string]string{"input": syntheticAWSID, key: "ordinary text"}, "redaction-failed")
+	if _, ok := report["body_base64"]; ok {
+		t.Fatal("encoded key containing the detected value was returned")
+	}
+}
+
 func TestAWSAccessIDAndSecretAreRedacted(t *testing.T) {
 	s := syntheticScanner(t)
 	cases := []struct {
@@ -129,6 +140,17 @@ func TestMultipleMultipartValuesAreRedacted(t *testing.T) {
 	}
 }
 
+func TestLongLeafPreservesMultipartContextAcrossReaderBoundary(t *testing.T) {
+	s := syntheticScanner(t)
+	head := strings.Repeat(" ", 124990)
+	input := head + syntheticAWSID + "\nAWS_SECRET_ACCESS_KEY=" + syntheticAWSSecret
+	report := scanSynthetic(t, s, map[string]string{"input": input}, "redacted")
+	got := rewrittenObject(t, report)["input"].(string)
+	if !strings.HasPrefix(got, head+"<WITHHELD_") || strings.Contains(got, syntheticAWSSecret) {
+		t.Fatal("multipart redaction lost context or changed surrounding text")
+	}
+}
+
 func TestMultipartCombinationLimitFailsClosed(t *testing.T) {
 	s := syntheticScanner(t)
 	var input strings.Builder
@@ -136,7 +158,13 @@ func TestMultipartCombinationLimitFailsClosed(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		fmt.Fprintf(&input, "AWS_SECRET_ACCESS_KEY=%s%03d ", syntheticAWSSecret[:37], i)
 	}
-	report := scanSynthetic(t, s, map[string]string{"input": input.String()}, "scanner-error")
+	complete := scanSynthetic(t, s, map[string]string{"input": input.String()}, "redacted")
+	rewritten := rewrittenObject(t, complete)["input"].(string)
+	if strings.Contains(rewritten, syntheticAWSID) || strings.Contains(rewritten, syntheticAWSSecret[:37]) {
+		t.Fatal("complete set of 100 combinations was not redacted")
+	}
+	fmt.Fprintf(&input, "AWS_SECRET_ACCESS_KEY=%s100 ", syntheticAWSSecret[:37])
+	report := scanSynthetic(t, s, map[string]string{"input": input.String()}, "redaction-failed")
 	if _, ok := report["body_base64"]; ok {
 		t.Error("incomplete component results produced a forwarded body")
 	}

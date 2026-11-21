@@ -355,7 +355,7 @@ func (d *debugLog) count(row debugRecord) {
 				d.status.BlockReasons.Intake++
 			case "out-of-scope-host":
 				d.status.BlockReasons.Suspicious++
-			case "scanner-error", "unscanned-residue", "finding-without-secret", "invalid-rpc-rewrite":
+			case "scanner-error", "redaction-failed", "unscanned-residue", "finding-without-secret", "invalid-rpc-rewrite":
 				d.status.BlockReasons.Inspection++
 			default:
 				d.status.BlockReasons.Other++

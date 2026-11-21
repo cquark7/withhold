@@ -26,11 +26,6 @@ def main():
             environment = dict(os.environ)
             suffix = ".exe" if os.name == "nt" else ""
             for variable, name, source in (
-                (
-                    "WITHHOLD_TEST_SCANNER_WORKER",
-                    "withhold-scanner",
-                    "./cmd/withhold-scanner",
-                ),
                 ("WITHHOLD_TEST_NATIVE", "withhold", "./cmd/withhold"),
                 (
                     "WITHHOLD_TEST_NATIVE_FIXTURE",

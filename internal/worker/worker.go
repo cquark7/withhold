@@ -3,14 +3,11 @@ package worker
 
 import (
 	"bufio"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
-	"unicode/utf8"
 
 	"github.com/cquark7/withhold/internal/detector"
 	"github.com/cquark7/withhold/internal/pii"
@@ -23,12 +20,11 @@ const (
 )
 
 type response struct {
-	Schema   int                 `json:"schema"`
-	Engine   string              `json:"engine,omitempty"`
-	Version  string              `json:"version,omitempty"`
-	PII      *pii.Metadata       `json:"pii,omitempty"`
-	Findings *[]detector.Finding `json:"findings,omitempty"`
-	Report   scanner.Report      `json:"report,omitempty"`
+	Schema  int            `json:"schema"`
+	Engine  string         `json:"engine,omitempty"`
+	Version string         `json:"version,omitempty"`
+	PII     *pii.Metadata  `json:"pii,omitempty"`
+	Report  scanner.Report `json:"report,omitempty"`
 }
 
 func readFrame(r io.Reader) ([]byte, error) {
@@ -74,14 +70,7 @@ func serve(r io.Reader, w io.Writer, mode string) error {
 		return err
 	}
 	s := scanner.NewWithDebug(d, placeholderKey, os.Getenv("WITHHOLD_INTERNAL_DEBUG_FINDINGS") == "1")
-	if mode == "--jsonl" {
-		return serveJSONL(r, w, s)
-	}
-	engine := "betterleaks"
-	if mode == "--body" {
-		engine = "withhold-scanner"
-	}
-	if err := writeFrame(w, response{Schema: schema, Engine: engine, Version: detector.Version, PII: d.PII()}); err != nil {
+	if err := writeFrame(w, response{Schema: schema, Engine: "withhold-scanner", Version: detector.Version, PII: d.PII()}); err != nil {
 		return err
 	}
 	input := bufio.NewReader(r)
@@ -93,74 +82,13 @@ func serve(r io.Reader, w io.Writer, mode string) error {
 		if err != nil {
 			return errors.New("invalid scan frame")
 		}
-		if mode == "--body" {
-			if len(data) < 8 {
-				return errors.New("invalid body frame")
-			}
-			maxBytes := int64(binary.BigEndian.Uint64(data[:8]))
-			if err := writeFrame(w, response{Schema: schema, Report: s.Scan(data[8:], maxBytes)}); err != nil {
-				return err
-			}
-			continue
+		if len(data) < 8 {
+			return errors.New("invalid body frame")
 		}
-		if !utf8.Valid(data) {
-			return errors.New("scan input is not UTF-8")
-		}
-		findings, err := d.Scan(string(data))
-		if err != nil {
+		maxBytes := int64(binary.BigEndian.Uint64(data[:8]))
+		if err := writeFrame(w, response{Schema: schema, Report: s.Scan(data[8:], maxBytes)}); err != nil {
 			return err
 		}
-		if err := writeFrame(w, response{Schema: schema, Findings: &findings}); err != nil {
-			return err
-		}
-	}
-}
-
-func serveJSONL(r io.Reader, w io.Writer, s *scanner.Scanner) error {
-	input := bufio.NewScanner(r)
-	input.Buffer(make([]byte, 64*1024), maxFrame)
-	output := json.NewEncoder(w)
-	for input.Scan() {
-		var request struct {
-			Body     string `json:"body_base64"`
-			MaxBytes *int64 `json:"max_bytes"`
-		}
-		if json.Unmarshal(input.Bytes(), &request) != nil {
-			return errors.New("invalid scanner request")
-		}
-		body, err := base64.StdEncoding.DecodeString(request.Body)
-		if err != nil {
-			return errors.New("invalid scanner request")
-		}
-		maxBytes := int64(scanner.DefaultMaxBytes)
-		if request.MaxBytes != nil {
-			maxBytes = *request.MaxBytes
-		}
-		if err := output.Encode(s.Scan(body, maxBytes)); err != nil {
-			return err
-		}
-	}
-	return input.Err()
-}
-
-func Main() {
-	defer func() {
-		if recover() != nil {
-			fmt.Fprintln(os.Stderr, "withhold-scanner: detector failed")
-			os.Exit(1)
-		}
-	}()
-	mode := ""
-	if len(os.Args) == 2 {
-		mode = os.Args[1]
-	}
-	if len(os.Args) > 2 || (mode != "" && mode != "--body" && mode != "--jsonl" && mode != "--text") {
-		fmt.Fprintln(os.Stderr, "usage: withhold-scanner [--body|--jsonl|--text] (private stdin/stdout)")
-		os.Exit(2)
-	}
-	if err := serve(os.Stdin, os.Stdout, mode); err != nil {
-		fmt.Fprintln(os.Stderr, "withhold-scanner: scan failed")
-		os.Exit(1)
 	}
 }
 
