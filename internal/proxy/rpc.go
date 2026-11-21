@@ -252,7 +252,7 @@ func (p *Proxy) rpcMessage(r *http.Request, route policy.Route, data []byte, t *
 		report = scanner.Report{"status": "scanner-error"}
 	}
 	status, _ := report["status"].(string)
-	decision := policy.Evaluate(route, status, residue(report) > 0, false)
+	decision := policy.Evaluate(route, status, residue(report) > 0)
 	var rewritten []byte
 	if (decision.Action == "forward" || decision.Action == "redact") && !p.config.Observe {
 		projection := input

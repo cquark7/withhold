@@ -257,22 +257,14 @@ func (p *Proxy) request(w http.ResponseWriter, r *http.Request) {
 		p.rpc(w, r, route)
 		return
 	}
-	scanBody := r.Method == "POST" && (route.AllowNonJSON || strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "json"))
-	if r.Method != "POST" {
-		if !bodyless(r) {
-			if route.HTTPFailureAction != "" {
-				p.audit.emit(r, route, "redact", route.HTTPFailureAction, scanner.Report{"rule_ids": []string{route.NonPostRule}}, false, false)
-			} else if p.block(w, r, route, "unscannable-body", nil) {
-				return
-			}
-		}
-		if bodyless(r) || route.HTTPFailureAction != "" {
-			debugDecision(r, "not-scanned", "passthrough", "method-outside-inspection", nil, nil)
-		}
-	} else if !scanBody {
-		if p.block(w, r, route, "unscannable-body", nil) {
-			return
-		}
+	if r.Method != http.MethodPost && bodyless(r) {
+		debugDecision(r, "not-scanned", "passthrough", "method-outside-inspection", nil, nil)
+		p.forward(w, r)
+		return
+	}
+	scanBody := r.Method == http.MethodPost && strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "json")
+	if !scanBody && p.block(w, r, route, "unscannable-body", nil) {
+		return
 	}
 	if !scanBody && bodyless(r) {
 		p.forward(w, r)
@@ -285,7 +277,7 @@ func (p *Proxy) request(w http.ResponseWriter, r *http.Request) {
 	}
 	defer t.release()
 	// Every guarded body that can be forwarded must pass transport admission,
-	// including policy exceptions and unsupported formats in observe mode.
+	// including unsupported formats in observe mode.
 	raw, err := readBounded(r.Body, p.config.MaxBytes, t)
 	_ = r.Body.Close()
 	if err != nil {
@@ -343,7 +335,7 @@ func (p *Proxy) inspect(w http.ResponseWriter, r *http.Request, route policy.Rou
 		report["wants_stream"] = protocol.WantsStream(decoded)
 	}
 	status, _ := report["status"].(string)
-	decision := policy.Evaluate(route, status, residue(report) > 0, false)
+	decision := policy.Evaluate(route, status, residue(report) > 0)
 	var rewritten []byte
 	if decision.Action == "redact" && !p.config.Observe {
 		text, ok := report["body_base64"].(string)
@@ -357,8 +349,6 @@ func (p *Proxy) inspect(w http.ResponseWriter, r *http.Request, route policy.Rou
 	switch decision.Action {
 	case "forward":
 		return true
-	case "passthrough":
-		p.audit.emit(r, route, "redact", route.HTTPFailureAction, scanner.Report{"rule_ids": []string{decision.Reason}}, false, false)
 	case "block":
 		if status != "redacted" && !route.Unknown {
 			report = scanner.Report{"rule_ids": []string{decision.Reason}, "wants_stream": report["wants_stream"] == true}

@@ -302,8 +302,8 @@ not detected values. Both may still reveal local paths and usage.
 `scan_attempts` includes failures; `inspected` requires a successful scanner
 result on a supported route. `passthrough` includes uninspected policy passes
 and bodyless requests. Observe mode may inspect but forwards original sensitive
-content: `coverage.observe` makes this explicit. Review integration exceptions,
-especially embeddings and token exchange; do not infer full coverage from counts.
+content, as indicated by `coverage.observe`. Integration passthrough routes
+such as Copilot token exchange remain outside inspection.
 The default human view explains blocked decisions using fixed categories:
 findings, unsupported/unscannable traffic, intake/read/size limits, suspicious
 unscoped hosts, inspection failures, and other. A block does not necessarily mean

@@ -90,7 +90,7 @@ no general plugin framework is required.
   discovery, child startup failure, and ownership conflicts.
 - Optional launch with literal arguments/exit status, or its explicit absence.
 - HTTP/TLS/WebSocket protocols actually claimed; shared wire/capacity limits
-  remain unconditional, including any documented inspection-policy exceptions.
+  remain unconditional, including in observe mode.
 
 `internal/testintegration` demonstrates different routing, error framing, config
 format, and a launcher-free application. It is test-only and never selectable
@@ -106,7 +106,7 @@ Add `docs/integrations/<id>.md` using the existing guide's structure:
 1. Supported harness/platform/runtime and exclusions.
 2. Setup, verification, restart, recovery, and optional launch.
 3. Typed application config, defaults, path semantics, and environment aliases.
-4. Traffic contract: hosts, paths, surfaces, passthrough, exceptions, and blocks.
+4. Traffic contract: hosts, paths, surfaces, passthrough, and blocks.
 
 Link it from the integration index. Change `CONTRACTS.md` only for shared
 guarantees; keep harness/provider details in the adapter guide. Update support

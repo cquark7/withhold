@@ -34,12 +34,11 @@ func (c composed) Classify(authority, path string) Route {
 		}
 	}
 	// A different adapter's suspicion must not become a passthrough exception.
-	unsafePass := result.Passthrough || result.HTTPFailureAction != ""
 	ownSuspicion := 0
 	if result.Looking {
 		ownSuspicion = 1
 	}
-	if claims > 1 || claims == 1 && lookingCount > ownSuspicion && unsafePass {
+	if claims > 1 || claims == 1 && lookingCount > ownSuspicion && result.Passthrough {
 		return Route{Host: Host(authority), Surface: "ambiguous-route", API: "ambiguous", Mode: "block", Scoped: true, Unknown: true, Ambiguous: true}
 	}
 	if claims == 0 && lookingCount == 1 {

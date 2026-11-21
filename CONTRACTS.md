@@ -3,7 +3,7 @@
 These are the observable guarantees and limits of withhold. Changes require
 matching tests and documentation. For operation and settings, see
 [usage](docs/usage.md) and [configuration](docs/configuration.md).
-Harness-specific guarantees and inspection-policy exceptions live in the
+Harness-specific guarantees live in the
 [agent-specific guarantees](docs/integrations/README.md). Both layers apply; an
 agent cannot relax the shared transport, privacy, or recovery guarantees.
 
@@ -20,8 +20,8 @@ naming an executable or adding an extra host does not establish support for
 another agent. `withhold agents` lists only reviewed built-ins.
 
 One proxy composes the selected agent profiles. Overlapping guarded/passthrough
-claims fail closed independent of order. Passthrough and inspection-failure
-exceptions cannot override another profile's guarded or suspicious host.
+claims fail closed independent of order. Passthrough cannot override another
+profile's guarded or suspicious host.
 Unambiguous routes retain their adapter's error protocol.
 
 Unscoped hosts are audited; suspicious hosts are blocked for POST/PUT/PATCH or
@@ -34,10 +34,9 @@ guarded paths fail closed unless the integration explicitly supports them.
 | Inline | Block findings | Block. Choosing `redact` permits placeholders in code. |
 | Observe mode | Forward original content; audit would-be decisions | Policy failures are audit-only; transport failures remain enforced. |
 
-HTTP scanning normally requires a JSON POST. Non-POST requests pass only when provably
-bodyless: no transfer encoding and no positive, malformed, or unknown body
-length. Any format, method, or inspection-failure exception must be explicit in
-the integration contract. Observe mode does not enforce these format/method policies.
+Guarded JSON routes require a JSON POST for inspection. Non-POST requests on
+these routes pass only when provably bodyless, with no transfer encoding or
+positive, malformed, or unknown body length. Observe mode audits format, method, and inspection failures.
 
 ## Offline text inspection
 
@@ -149,13 +148,13 @@ upstream connections do not chain through environment-configured proxies.
 Responses, including SSE, stream without inspection.
 
 Every forwarded guarded HTTP body must pass wire-size and intake admission
-limits, including unsupported formats/methods allowed by policy exceptions.
+limits, including unsupported formats or methods forwarded in observe mode.
 The default cap is 32 MiB, configurable up to 128 MiB. Intake allows six jobs
 and 64 MiB of retained input; worker admission independently allows six jobs
 and 64 MiB of framed input. These are admission budgets, not process RSS limits.
 
 Wire overflow, failed reads, and exhausted intake capacity (including during
-decoding) return HTTP 413 without forwarding, including policy exceptions/observe.
+decoding) return HTTP 413 without forwarding, including in observe mode.
 Gzip, deflate, Brotli, Zstandard, stacked encodings, and declared charsets are
 decoded before inspection. Decoded size overflow and scanner failures follow
 the inspection policy above. Scanner capacity is never reported as clean.
@@ -331,7 +330,7 @@ before a supported body completes inspection, and `inspected` afterward.
 CONNECT alone and failed scans do not establish inspection. `scan_attempts`
 counts starts; `inspected` counts successful clean/redacted results on supported
 routes, including blocked findings and observe-mode scans. `passthrough` counts
-uninspected policy passes, including bodyless requests and integration exceptions.
+uninspected policy passes, including bodyless requests and integration passthrough routes.
 These are request/message decisions, not a percentage of all application traffic.
 `blocked` counts one decision per affected HTTP request or streaming message,
 not secrets or unique application actions. Fixed `block_reasons` distinguish

@@ -216,7 +216,7 @@ func (p *Proxy) inspectMessage(r *http.Request, route policy.Route, kind int, ra
 		}
 		return raw, true, false
 	}
-	decision := policy.Evaluate(route, status, residue(report) > 0, true)
+	decision := policy.Evaluate(route, status, residue(report) > 0)
 	if decision.Action == "block" {
 		debugDecision(r, status, decision.Action, decision.Reason, report, nil)
 		if status != "redacted" {

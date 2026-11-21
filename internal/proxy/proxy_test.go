@@ -106,27 +106,27 @@ func TestScannerFailuresDoNotDiscloseGuardedBodies(t *testing.T) {
 	}
 }
 
-func TestEmbeddingsPolicyFailuresPassAndTokenExchangeDoesNotScan(t *testing.T) {
+func TestEmbeddingsFailClosedAndTokenExchangeDoesNotScan(t *testing.T) {
 	var scans atomic.Int32
 	p, count := newTestProxy(t, fakeScanner{func(context.Context, []byte, int64) (scanner.Report, error) {
 		scans.Add(1)
 		return nil, errors.New("failed")
 	}})
-	for _, method := range []string{"POST", "PUT"} {
-		w := call(p, method, copilot.EmbeddingsHost, "/anything", []byte("unscannable"))
-		if w.Code != 200 || w.Body.String() != "unscannable" {
-			t.Fatal("embeddings blocked")
+	for _, method := range []string{http.MethodPost, http.MethodPut} {
+		w := call(p, method, copilot.EmbeddingsHost, "/anything", []byte(`{"input":"synthetic text"}`))
+		if w.Code != 429 || count.Load() != 0 {
+			t.Fatalf("embeddings %s forwarded on inspection failure: status %d, upstream %d", method, w.Code, count.Load())
 		}
 	}
 	w := call(p, "POST", copilot.TokenHost, "/copilot_internal/v2/token", []byte("raw token exchange"))
 	if w.Code != 200 {
 		t.Fatal("token exchange blocked")
 	}
-	if scans.Load() != 1 || count.Load() != 3 {
+	if scans.Load() != 1 || count.Load() != 1 {
 		t.Fatalf("scans %d upstream %d", scans.Load(), count.Load())
 	}
 	data, _ := os.ReadFile(p.config.AuditPath)
-	if strings.Count(string(data), "embeddings-unscanned") != 2 {
+	if !bytes.Contains(data, []byte("scanner-error")) || !bytes.Contains(data, []byte("unscannable-body")) {
 		t.Fatal("missing embeddings audit")
 	}
 }
