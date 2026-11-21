@@ -4,12 +4,65 @@ import json
 import os
 import socket
 import subprocess
+import sys
 import tempfile
+import textwrap
 import tomllib
 import unittest
 from pathlib import Path
 
+from tools.package_native import ROOT
+
 NATIVE = os.environ.get("WITHHOLD_TEST_NATIVE")
+
+
+class ReleaseNotesTests(unittest.TestCase):
+    def test_release_tag_requires_notes_but_manual_build_does_not(self):
+        workflow = (ROOT / ".github/workflows/native-artifacts.yml").read_text()
+        validate = (
+            workflow.split("- name: Validate release version\n", 1)[1]
+            .split("          python - <<'PY'\n", 1)[1]
+            .split("\n          PY", 1)[0]
+        )
+        version = "v9.8.7-rc.1"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            notes = root / "docs" / "releases" / f"{version}.md"
+            notes.parent.mkdir(parents=True)
+            output = root / "output"
+            for event, content, success in (
+                ("push", None, False),
+                ("push", " \n", False),
+                ("push", "## What's new\n\nFixed a fixture bug.\n", True),
+                ("workflow_dispatch", None, True),
+            ):
+                with self.subTest(event=event, notes=content):
+                    notes.unlink(missing_ok=True)
+                    output.unlink(missing_ok=True)
+                    if content is not None:
+                        notes.write_text(content, encoding="utf-8")
+                    result = subprocess.run(
+                        [sys.executable, "-c", textwrap.dedent(validate)],
+                        cwd=root,
+                        env=dict(
+                            os.environ,
+                            EVENT_NAME=event,
+                            GITHUB_REPOSITORY="cquark7/withhold",
+                            GITHUB_REF_NAME=version,
+                            INPUT_VERSION=version,
+                            GITHUB_OUTPUT=str(output),
+                            PYTHONPATH=str(ROOT),
+                        ),
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+                    self.assertEqual(result.returncode == 0, success, result.stderr)
+                    if success:
+                        self.assertEqual(output.read_text(), f"version={version}\n")
+                    else:
+                        self.assertIn(f"{version}.md before tagging", result.stderr)
+                        self.assertFalse(output.exists())
 
 
 @unittest.skipUnless(NATIVE, "native executable required")

@@ -39,11 +39,16 @@ jobs:
         run: |
           python - <<'PY'
           import os
+          from pathlib import Path
           from tools.package_native import validate_version
           tagged = os.environ['EVENT_NAME'] == 'push'
           version = validate_version(os.environ['GITHUB_REF_NAME'] if tagged else os.environ['INPUT_VERSION'])
           if version == 'dev' or tagged and not version.startswith('v'):
               raise SystemExit('releases require a v-prefixed SemVer tag; manual builds require SemVer')
+          if tagged and os.environ['GITHUB_REPOSITORY'] == 'cquark7/withhold':
+              notes = Path(f'docs/releases/{version}.md')
+              if not notes.is_file() or not notes.read_text(encoding='utf-8').strip():
+                  raise SystemExit(f'Add release notes to {notes} before tagging {version}.')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'version={version}\n')
           PY
@@ -240,44 +245,6 @@ jobs:
       - name: Publish complete release
         shell: bash
         run: |
-          cat > release-notes.md <<EOF
-          ## withhold $RELEASE_VERSION
-
-          Local secret detection and optional PII redaction for supported Cursor
-          and VS Code/Copilot traffic. Offline inspection, reversible setup, and
-          a bundled Go runtime.
-
-          ### Install
-
-          macOS and Linux:
-
-          \`\`\`sh
-          curl -fsSL --connect-timeout 10 --max-time 120 --proto '=https' \\
-            https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_VERSION/install.sh | sh -s -- --version $RELEASE_VERSION
-          export PATH="\$HOME/.local/bin:\$PATH"
-          withhold agents
-          \`\`\`
-
-          Windows: download the ZIP for [x64](https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_VERSION/withhold-$RELEASE_VERSION-windows-amd64.zip) or [ARM64](https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_VERSION/withhold-$RELEASE_VERSION-windows-arm64.zip), extract it, open PowerShell in the extracted folder, and run \`.\\withhold.exe install\`. See the [installation and verification steps](https://github.com/$GITHUB_REPOSITORY/blob/$RELEASE_VERSION/docs/usage.md#windows-and-manual-downloads).
-
-          ### Included
-
-          - Local secret detection and optional PII redaction.
-          - Chat redaction and inline-completion blocking.
-          - Reversible setup and session management for supported agents.
-          - Native binaries for macOS, Linux, and Windows on x64 and ARM64.
-
-          ### Verification
-
-          Source commit: \`$GITHUB_SHA\`
-          Build: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
-
-          The installer verifies SHA-256 checksums; checksums alone do not establish origin.
-          Optional signed provenance verification is available with GitHub CLI.
-          Each archive includes the executable, setup guide, behavior contract,
-          licenses, and build metadata.
-          See https://github.com/$GITHUB_REPOSITORY/blob/$RELEASE_VERSION/docs/usage.md for installation, privacy limits, and rollback.
-          EOF
           flags=()
           if [[ "${RELEASE_VERSION%%+*}" == *-* ]]; then
             flags+=(--prerelease --latest=false)
@@ -286,5 +253,6 @@ jobs:
           fi
           # Failed uploads leave an unpublished draft, never a partial public release.
           gh release create "$RELEASE_VERSION" artifacts/* --verify-tag --draft \
-            --title "withhold $RELEASE_VERSION" --notes-file release-notes.md "${flags[@]}"
+            --title "withhold $RELEASE_VERSION" \
+            --notes-file "docs/releases/$RELEASE_VERSION.md" "${flags[@]}"
           gh release edit "$RELEASE_VERSION" --draft=false
