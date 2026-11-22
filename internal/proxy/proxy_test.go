@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/cquark7/withhold/internal/certstore"
+	"github.com/cquark7/withhold/internal/detector"
 	"github.com/cquark7/withhold/internal/integrations/copilot"
 	"github.com/cquark7/withhold/internal/policy"
 	"github.com/cquark7/withhold/internal/scanner"
@@ -106,28 +107,54 @@ func TestScannerFailuresDoNotDiscloseGuardedBodies(t *testing.T) {
 	}
 }
 
-func TestEmbeddingsPolicyFailuresPassAndTokenExchangeDoesNotScan(t *testing.T) {
+func TestEmbeddingsFailClosedAndTokenExchangeDoesNotScan(t *testing.T) {
 	var scans atomic.Int32
 	p, count := newTestProxy(t, fakeScanner{func(context.Context, []byte, int64) (scanner.Report, error) {
 		scans.Add(1)
 		return nil, errors.New("failed")
 	}})
-	for _, method := range []string{"POST", "PUT"} {
-		w := call(p, method, copilot.EmbeddingsHost, "/anything", []byte("unscannable"))
-		if w.Code != 200 || w.Body.String() != "unscannable" {
-			t.Fatal("embeddings blocked")
+	for _, method := range []string{http.MethodPost, http.MethodPut} {
+		w := call(p, method, copilot.EmbeddingsHost, "/anything", []byte(`{"input":"synthetic text"}`))
+		if w.Code != 429 || count.Load() != 0 {
+			t.Fatalf("embeddings %s forwarded on inspection failure: status %d, upstream %d", method, w.Code, count.Load())
 		}
 	}
 	w := call(p, "POST", copilot.TokenHost, "/copilot_internal/v2/token", []byte("raw token exchange"))
 	if w.Code != 200 {
 		t.Fatal("token exchange blocked")
 	}
-	if scans.Load() != 1 || count.Load() != 3 {
+	if scans.Load() != 1 || count.Load() != 1 {
 		t.Fatalf("scans %d upstream %d", scans.Load(), count.Load())
 	}
 	data, _ := os.ReadFile(p.config.AuditPath)
-	if strings.Count(string(data), "embeddings-unscanned") != 2 {
+	if !bytes.Contains(data, []byte("scanner-error")) || !bytes.Contains(data, []byte("unscannable-body")) {
 		t.Fatal("missing embeddings audit")
+	}
+}
+
+func TestEmbeddingsBlocksKnownUnrewritableFindings(t *testing.T) {
+	d, err := detector.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := scanner.New(d, func() []byte { return []byte("embeddings-test") })
+	p, count := newTestProxy(t, fakeScanner{func(_ context.Context, body []byte, cap int64) (scanner.Report, error) {
+		return engine.Scan(body, cap), nil
+	}})
+	encoded := base64.StdEncoding.EncodeToString([]byte("sample AKIA4X7Q2W3K7MNDZBXP trailing"))
+	body := []byte(`{"input":"see (` + encoded + `)"}`)
+	w := call(p, "POST", copilot.EmbeddingsHost, "/anything", body)
+	if w.Code != 429 || !strings.Contains(w.Body.String(), "redaction-failed") || count.Load() != 0 {
+		t.Fatalf("embeddings forwarded despite an unrewritable finding: status %d, upstream %d", w.Code, count.Load())
+	}
+	p.config.Observe = true
+	w = call(p, "POST", copilot.EmbeddingsHost, "/anything", body)
+	if w.Code != 200 || !bytes.Equal(w.Body.Bytes(), body) || count.Load() != 1 {
+		t.Fatal("observe did not forward original body")
+	}
+	data, err := os.ReadFile(p.config.AuditPath)
+	if err != nil || !bytes.Contains(data, []byte("would-block")) {
+		t.Fatal("known finding did not follow block audit policy")
 	}
 }
 

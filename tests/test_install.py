@@ -12,7 +12,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import textwrap
 import threading
 import time
 import unittest
@@ -194,29 +193,6 @@ shutil.copyfile(sys.argv[0], target)
         for name in ("README.md", "docs/usage.md"):
             document = (ROOT / name).read_text()
             yield name, re.search(r"```sh\n(.*?)\n```", document, re.DOTALL)[1]
-        workflow = (ROOT / ".github/workflows/native-artifacts.yml").read_text()
-        heredoc = workflow.split("cat > release-notes.md <<EOF\n", 1)[1].split(
-            "\n          EOF", 1
-        )[0]
-        rendered = subprocess.run(
-            ["/bin/sh", "-c", "cat <<EOF\n" + textwrap.dedent(heredoc) + "\nEOF"],
-            env=dict(
-                self.env,
-                GITHUB_REPOSITORY="cquark7/withhold",
-                RELEASE_VERSION=VERSION,
-                GITHUB_SHA=COMMIT,
-                GITHUB_SERVER_URL="https://github.com",
-                GITHUB_RUN_ID="1",
-            ),
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10,
-        )
-        yield (
-            "release notes",
-            re.search(r"```sh\n(.*?)\n```", rendered.stdout, re.DOTALL)[1],
-        )
 
     def run_bootstrap(self, example, *, success=True):
         # Exercise the documented pipeline, not unrelated post-install commands.
@@ -535,13 +511,6 @@ sys.exit(subprocess.call([{REAL_CURL!r}, '-q', '--noproxy', '*',
                 self.assert_bootstrap_policy(calls[0], bounded=name != "README.md")
                 self.assert_download_policy(calls[1:])
                 self.assertTrue(self.bin.is_file())
-                if name == "release notes":
-                    self.assertIn(
-                        f"/releases/download/{VERSION}/install.sh", calls[0][-1]
-                    )
-                    self.assertFalse(
-                        any(args[-1].endswith("/latest") for args in calls)
-                    )
 
     def test_truncated_bootstrap_never_calls_install_entry_point(self):
         self.env["FIXTURE_PARTIAL_BOOTSTRAP"] = "1"

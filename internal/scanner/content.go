@@ -63,17 +63,42 @@ func opaqueField(parent *node, key string) bool {
 	return false
 }
 
+type byteCount int
+
+func (n *byteCount) Write(p []byte) (int, error) {
+	*n += byteCount(len(p))
+	return len(p), nil
+}
+
+func (n *byteCount) WriteString(s string) (int, error) {
+	*n += byteCount(len(s))
+	return len(s), nil
+}
+
 // Verify only inspected text. Opaque attachments remain byte-for-byte data,
 // including when another field in the request needs redaction.
 func survives(root *node, variants []string) (plain, decoded bool) {
 	stack := []*node{root}
-	contains := func(text string) bool {
-		for _, variant := range variants {
-			if strings.Contains(text, variant) {
-				return true
-			}
+	pairs := make([]string, 0, 2*len(variants))
+	seen := make(map[string]bool)
+	for _, variant := range variants {
+		if !seen[variant] {
+			pairs = append(pairs, variant, "")
+			seen[variant] = true
 		}
-		return false
+	}
+	remove := strings.NewReplacer(pairs...)
+	contains := func(text string) bool {
+		var bytes byteCount
+		_, _ = remove.WriteString(&bytes, text)
+		return int(bytes) != len(text)
+	}
+	containsDecoded := func(text string) bool {
+		if len(text) < minRoundtrip && !strings.HasPrefix(text, "data:") {
+			return false
+		}
+		data, ok := decodedBytes(text)
+		return ok && contains(string(data))
 	}
 	for len(stack) > 0 {
 		n := stack[len(stack)-1]
@@ -86,10 +111,8 @@ func survives(root *node, variants []string) (plain, decoded bool) {
 			if contains(n.text) {
 				return true, false
 			}
-			if len(n.text) >= minRoundtrip {
-				if data, ok := decodedBytes(n.text); ok && contains(string(data)) {
-					return false, true
-				}
+			if containsDecoded(n.text) {
+				return false, true
 			}
 		case '[':
 			stack = append(stack, n.array...)
@@ -97,6 +120,9 @@ func survives(root *node, variants []string) (plain, decoded bool) {
 			for _, item := range n.members {
 				if contains(item.key) {
 					return true, false
+				}
+				if containsDecoded(item.key) {
+					return false, true
 				}
 				stack = append(stack, item.value)
 			}

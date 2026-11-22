@@ -13,14 +13,11 @@ type ScopeOptions struct {
 	SuspicionPattern, ChatMode, InlineMode string
 }
 
-// Route describes capabilities, not provider names. HTTPFailureAction is an
-// explicit inspection-policy exception; it never disables transport admission limits.
+// Route describes capabilities, not provider names.
 type Route struct {
 	Host, Surface, API, Mode              string
 	Scoped, Passthrough, Looking, Unknown bool
 	Provisional                           bool
-	AllowNonJSON                          bool
-	HTTPFailureAction, NonPostRule        string
 	Codec                                 *RPCCodec
 	// Profile selects route-specific error framing in a composed profile.
 	Profile   Profile
@@ -52,7 +49,7 @@ type Decision struct{ Action, Reason string }
 
 // Evaluate decides findings/failures without handling HTTP or application state.
 // Observe is applied by the caller so transport failures remain unconditional.
-func Evaluate(route Route, status string, residue bool, websocket bool) Decision {
+func Evaluate(route Route, status string, residue bool) Decision {
 	if !ValidMode(route.Mode) {
 		panic("invalid integration mode")
 	}
@@ -70,9 +67,6 @@ func Evaluate(route Route, status string, residue bool, websocket bool) Decision
 			return Decision{"block", "secret-found"}
 		}
 		return Decision{"redact", ""}
-	}
-	if !websocket && route.HTTPFailureAction != "" {
-		return Decision{"passthrough", status}
 	}
 	if status == "" {
 		status = "scanner-error"

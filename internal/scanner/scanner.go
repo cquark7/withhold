@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -84,7 +86,7 @@ func (s *Scanner) replacements(values []string) replacements {
 		r.ordered = append(r.ordered, value)
 	}
 	sort.SliceStable(r.ordered, func(i, j int) bool {
-		return utf8.RuneCountInString(r.ordered[i]) > utf8.RuneCountInString(r.ordered[j])
+		return len(r.ordered[i]) > len(r.ordered[j])
 	})
 	pairs := make([]string, 0, len(r.ordered)*2)
 	for _, value := range r.ordered {
@@ -94,125 +96,136 @@ func (s *Scanner) replacements(values []string) replacements {
 	return r
 }
 
-func (r replacements) sequential(text string) string {
-	for _, value := range r.ordered {
-		text = strings.ReplaceAll(text, value, r.mapping[value])
-	}
-	return text
-}
-
-type writeGroup struct {
-	target *node
-	kinds  map[string]bool
-	texts  []string
-}
-
-func writeKeys(group *writeGroup, r replacements) string {
-	n := group.target
-	renames := make(map[string]string)
-	for _, text := range group.texts {
-		matched := false
-		for _, item := range n.members {
-			if r.sequential(item.key) != text {
-				continue
-			}
-			matched = true
-			if text != item.key {
-				if _, exists := n.index[text]; exists {
-					return "key rename would collide"
-				}
-				renames[item.key] = text
-			}
-			break
-		}
-		if !matched {
-			return "key write-back miss"
-		}
-	}
-	n.index = make(map[string]int, len(n.members))
+func writeKeys(n *node, r replacements) string {
+	index := make(map[string]int, len(n.members))
 	for i := range n.members {
-		if name, ok := renames[n.members[i].key]; ok {
-			n.members[i].key = name
-		}
-		if _, exists := n.index[n.members[i].key]; exists {
+		key := r.once.Replace(n.members[i].key)
+		if _, exists := index[key]; exists {
 			return "key rename would collide"
 		}
-		n.index[n.members[i].key] = i
+		n.members[i].key = key
+		index[key] = i
 	}
+	n.index = index
 	return ""
 }
 
-func writeBase64(target *node, r replacements) string {
-	original := target.text
-	prefix, encoded := "", original
-	if strings.HasPrefix(original, "data:") {
-		head, payload, ok := strings.Cut(original, ",")
-		if !ok {
-			return "base64 write-back on malformed data URL"
+func writeBase64(target *node, text string, r replacements) {
+	redacted := r.once.Replace(text)
+	if redacted == text {
+		if !strings.HasPrefix(target.text, "data:") {
+			target.text = r.once.Replace(target.text)
 		}
+		return
+	}
+	encoded := target.text
+	var prefix string
+	if strings.HasPrefix(encoded, "data:") {
+		head, payload, _ := strings.Cut(encoded, ",")
 		prefix, encoded = head+",", payload
 	}
-	data, err := decodeBase64(encoded)
-	if err != nil || !utf8.Valid(data) {
-		return "base64 write-back decode failed"
-	}
-	redacted := r.sequential(string(data))
-	if redacted == string(data) {
-		return ""
-	}
-	out := base64.StdEncoding.EncodeToString([]byte(redacted))
+	encoding := base64.RawStdEncoding
 	if strings.ContainsAny(encoded, "-_") {
-		out = strings.NewReplacer("+", "-", "/", "_").Replace(out)
+		encoding = base64.RawURLEncoding
 	}
-	if !strings.Contains(encoded, "=") {
-		out = strings.TrimRight(out, "=")
+	if strings.Contains(encoded, "=") {
+		encoding = encoding.WithPadding(base64.StdPadding)
 	}
-	target.text = prefix + out
-	return ""
+	target.text = prefix + encoding.EncodeToString([]byte(redacted))
+}
+
+// Only direct matches in a scan unit can be verified against the emitted
+// plaintext or the decoded bytes of a whole-leaf Base64 rewrite. A match inside
+// another encoding needs an encoder for that occurrence, even if the same
+// value also appeared elsewhere as plaintext.
+func attributableValue(units []unit, text string, f detector.Finding, value string) (string, bool) {
+	if f.Encoded || f.Start < 0 || f.End > len(text) || f.Start >= f.End {
+		return "", false
+	}
+	first := sort.Search(len(units), func(i int) bool {
+		return units[i].start+len(units[i].text) > f.Start
+	})
+	match := func(start, end int, quoted bool) (string, bool) {
+		from, to := max(start, f.Start), min(end, f.End)
+		if from >= to {
+			return "", false
+		}
+		if !quoted {
+			return value, strings.Contains(text[from:to], value)
+		}
+		// Check that the capture begins and ends on JSON escape boundaries.
+		offset := strings.Index(text[from:to], value)
+		if offset < 0 {
+			return "", false
+		}
+		from += offset
+		if !json.Valid([]byte(`"` + text[start:from] + `"`)) {
+			return "", false
+		}
+		var decoded string
+		quotedValue := `"` + value + `"`
+		err := json.Unmarshal([]byte(quotedValue), &decoded)
+		return decoded, err == nil && string(appendString(nil, decoded)) == quotedValue
+	}
+	for _, u := range units[first:] {
+		if u.start >= f.End {
+			break
+		}
+		quoted := u.kind == "json-projection"
+		if value, ok := match(u.start+u.prefix, u.start+len(u.text)-u.suffix, quoted); ok {
+			return value, true
+		}
+		if value, ok := match(u.start+u.keyStart, u.start+u.keyEnd, quoted); ok {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 func writeBack(units []unit, r replacements, stats map[string]int) string {
-	byPath := make(map[string]*writeGroup)
-	var groups []*writeGroup
+	objects := make(map[*node]bool)
 	for _, u := range units {
-		text := r.once.Replace(u.text)
-		for _, secret := range r.ordered {
-			if strings.Contains(text, secret) {
-				return "redaction verification failed: secret fragment survived"
-			}
-		}
-		group := byPath[u.path]
-		if group == nil {
-			group = &writeGroup{target: u.target, kinds: make(map[string]bool)}
-			groups = append(groups, group)
-			byPath[u.path] = group
-		}
-		group.kinds[u.kind] = true
-		group.texts = append(group.texts, text)
-	}
-	for _, keysLast := range []bool{false, true} {
-		for _, group := range groups {
-			if group.kinds["key"] != keysLast {
-				continue
-			}
-			switch {
-			case keysLast:
-				if reason := writeKeys(group, r); reason != "" {
+		switch u.kind {
+		case "projection", "json-projection":
+			continue
+		case "key":
+			if !objects[u.target] {
+				if reason := writeKeys(u.target, r); reason != "" {
 					return reason
 				}
-			case group.kinds["b64"] || group.kinds["b64data"]:
-				if reason := writeBase64(group.target, r); reason != "" {
-					return reason
-				}
-				stats["b64_roundtrip"]++
-			case group.kinds["kvdetect"] || group.kinds["derived"]:
-				group.target.text = r.sequential(group.target.text)
-			default:
-				group.target.text = strings.Join(group.texts, "")
+				objects[u.target] = true
 			}
+		case "b64", "b64data":
+			writeBase64(u.target, u.text, r)
+			stats["b64_roundtrip"]++
+		default:
+			redacted := r.once.Replace(u.target.text)
+			if u.kind == "binary-candidate" && redacted != u.target.text &&
+				(u.text == u.target.text || r.once.Replace(u.text) != u.text) {
+				// A placeholder in the payload makes it invalid Base64.
+				stats["sweep_unrewritable"]--
+			}
+			u.target.text = redacted
 		}
 	}
 	return ""
+}
+
+func joinUnits(units []unit) string {
+	var size int
+	for _, u := range units {
+		size += len(u.text) + len(separator)
+	}
+	var joined strings.Builder
+	joined.Grow(size - len(separator))
+	for i := range units {
+		if i > 0 {
+			joined.WriteString(separator)
+		}
+		units[i].start = joined.Len()
+		joined.WriteString(units[i].text)
+	}
+	return joined.String()
 }
 
 func (s *Scanner) Scan(body []byte, maxBytes int64) Report {
@@ -239,47 +252,52 @@ func (s *Scanner) Scan(body []byte, maxBytes int64) Report {
 		return fail("body contains invalid Unicode")
 	}
 	e := extract(root, s.detector.MinimumUnit())
-	if e.stats["path_collisions"] != 0 {
-		result := fail("duplicate JSON path across leaves - write-back would be ambiguous")
-		result["stats"] = e.stats
-		return result
+	cannotRedact := func(reason string) Report {
+		return Report{"status": "redaction-failed", "reason": reason}
 	}
+	units := e.stats["units"]
 	clean := func() Report {
-		return Report{"status": "clean", "units": len(e.units), "stats": e.stats}
+		return Report{"status": "clean", "units": units, "stats": e.stats}
 	}
-	if len(e.units) == 0 {
-		return clean()
+	if e.overCap {
+		return fail("scanner input exceeds limit")
 	}
-	length := 0
-	for _, u := range e.units {
-		length += len(u.text) + len(separator)
-		if length > maxScanBytes {
-			return fail("scanner input exceeds limit")
-		}
-	}
-	var joined strings.Builder
-	joined.Grow(length)
-	for i, u := range e.units {
-		if i > 0 {
-			joined.WriteString(separator)
-		}
-		joined.WriteString(u.text)
-	}
-	findings, err := s.detector.Scan(joined.String())
-	if err != nil {
-		return fail("detector failed")
-	}
+	var findings []detector.Finding
 	var values []string
-	for _, f := range findings {
-		value := f.Secret
-		if value == "" {
-			value = f.Match
+	for _, input := range []struct {
+		units []unit
+		scan  func(string) ([]detector.Finding, error)
+	}{{e.units, s.detector.Scan}, {e.literal, s.detector.ScanLiteral}} {
+		if len(input.units) == 0 {
+			continue
 		}
-		if value == "" {
-			return Report{"status": "finding-without-secret", "reason": "scanner finding lacks both Secret and Match",
-				"rule_ids": []string{f.RuleID}}
+		text := joinUnits(input.units)
+		hits, err := input.scan(text)
+		if errors.Is(err, detector.ErrIncompleteFinding) {
+			return cannotRedact("detector returned an incomplete finding")
 		}
-		values = append(values, value)
+		if errors.Is(err, detector.ErrLineWorkLimit) {
+			return fail(detector.ErrLineWorkLimit.Error())
+		}
+		if err != nil {
+			return fail("detector failed")
+		}
+		for _, f := range hits {
+			value := f.Secret
+			if value == "" {
+				value = f.Match
+			}
+			if value == "" {
+				return Report{"status": "finding-without-secret", "reason": "scanner finding lacks both Secret and Match",
+					"rule_ids": []string{f.RuleID}}
+			}
+			value, ok := attributableValue(input.units, text, f, value)
+			if !ok {
+				return cannotRedact("finding cannot be mapped to a safe rewrite")
+			}
+			values = append(values, value)
+		}
+		findings = append(findings, hits...)
 	}
 	if len(values) == 0 {
 		return clean()
@@ -287,12 +305,8 @@ func (s *Scanner) Scan(body []byte, maxBytes int64) Report {
 	r := s.replacements(values)
 	debugRuleIDs := make(map[string]map[string]bool)
 	if s.debug {
-		for _, finding := range findings {
-			value := finding.Secret
-			if value == "" {
-				value = finding.Match
-			}
-			placeholder := r.mapping[value]
+		for i, finding := range findings {
+			placeholder := r.mapping[values[i]]
 			if debugRuleIDs[placeholder] == nil {
 				debugRuleIDs[placeholder] = make(map[string]bool)
 			}
@@ -300,7 +314,7 @@ func (s *Scanner) Scan(body []byte, maxBytes int64) Report {
 		}
 	}
 	if reason := writeBack(e.units, r, e.stats); reason != "" {
-		return fail(reason)
+		return cannotRedact(reason)
 	}
 	var variants []string
 	for _, value := range r.ordered {
@@ -310,10 +324,10 @@ func (s *Scanner) Scan(body []byte, maxBytes int64) Report {
 	}
 	plain, decoded := survives(root, variants)
 	if plain {
-		return fail("redaction verification failed: secret bytes survived in body")
+		return cannotRedact("redaction verification failed: secret bytes survived in body")
 	}
 	if decoded {
-		return fail("secret survives decoded inside base64/data: leaf")
+		return cannotRedact("secret survives decoded inside base64/data text")
 	}
 	out := root.appendJSON(make([]byte, 0, len(body)))
 	ids := make(map[string]bool)
@@ -327,7 +341,7 @@ func (s *Scanner) Scan(body []byte, maxBytes int64) Report {
 	sort.Strings(rules)
 	report := Report{"status": "redacted", "body_base64": base64.StdEncoding.EncodeToString(out),
 		"rule_ids": rules, "findings": len(findings), "placeholders": len(r.mapping),
-		"units": len(e.units), "stats": e.stats}
+		"units": units, "stats": e.stats}
 	if s.debug {
 		debugRows := make([]DebugFinding, 0, len(r.ordered))
 		for _, value := range r.ordered {

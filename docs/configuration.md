@@ -159,8 +159,10 @@ frozen effective configuration. `proxy.log` holds background process diagnostics
 Application backups and ownership markers use `.withhold-*` suffixes.
 
 The fixed placeholder-key file is `~/.config/withhold/placeholder-key`;
-`WITHHOLD_DIR` does not relocate it. If key persistence fails, a process-random key
-is used. Preserve the key to keep placeholder identities stable.
+`WITHHOLD_DIR` does not relocate it. The file must be private (mode 0600 on POSIX
+or a protected current-user ACL on Windows). If the key cannot be read or
+persisted privately, a process-random key is used. Preserve the private key to
+keep placeholder identities stable.
 
 Configuration, state, and private protocol formats use strict schemas without
 automatic migration. When a replacement changes these formats, stop the current

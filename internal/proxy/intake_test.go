@@ -49,7 +49,7 @@ func TestIntakeCapacityRefusalNeverForwards(t *testing.T) {
 					t.Fatalf("status=%d upstream=%d scans=%d", response.Code, upstream.Load(), scans)
 				}
 				audit, err := os.ReadFile(p.config.AuditPath)
-				if err != nil || !bytes.Contains(audit, []byte(`"action":"blocked"`)) || bytes.Contains(audit, []byte("would-block")) || bytes.Contains(audit, []byte("embeddings-unscanned")) {
+				if err != nil || !bytes.Contains(audit, []byte(`"action":"blocked"`)) || bytes.Contains(audit, []byte("would-block")) {
 					t.Fatalf("transport refusal was not audited as enforced: %s (%v)", audit, err)
 				}
 				for _, ticket := range tickets {
@@ -71,7 +71,7 @@ func TestUnscannedGuardedBodiesStillHaveTransportLimits(t *testing.T) {
 	}{
 		{"observe non-JSON POST", "POST", "api.githubcopilot.com", "text/plain", true},
 		{"observe PUT", "PUT", "api.githubcopilot.com", "application/json", true},
-		{"embeddings PUT", "PUT", copilot.EmbeddingsHost, "application/json", false},
+		{"observe embeddings PUT", "PUT", copilot.EmbeddingsHost, "application/json", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			p, upstream := newTestProxy(t, fakeScanner{func(context.Context, []byte, int64) (scanner.Report, error) {

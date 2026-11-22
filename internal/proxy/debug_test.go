@@ -58,9 +58,9 @@ func TestCountersDoNotRequireOrRetainFindingLogs(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			d := debugLog{}
-			r := d.begin(httptest.NewRequest("POST", "https://example.test/chat", nil), policy.Route{Scoped: true, Unknown: test.unknown}, "http", "", false)
+			r := d.begin(httptest.NewRequest("POST", "https://example.test/chat", nil), policy.Route{Scoped: true, Unknown: test.unknown}, "http", false)
 			debugScan(r)
-			debugDecision(r, test.status, test.action, "", debugReport(), nil)
+			debugDecision(r, test.status, test.action, "", debugReport())
 			s := d.snapshot()
 			if s.Enabled || s.Received != 1 || s.Scanned != 1 || s.Inspected != test.inspected || s.Passthrough != test.passthrough || s.EventsWritten != 0 || len(trace(r).record.Findings) != 0 {
 				t.Fatalf("incorrect value-free telemetry: %+v", s)
@@ -72,8 +72,8 @@ func TestCountersDoNotRequireOrRetainFindingLogs(t *testing.T) {
 func TestCountersClassifyBlocksWithoutRetainingPrivateDetails(t *testing.T) {
 	d := debugLog{}
 	for _, reason := range []string{"secret-found", "unscannable-rpc-message", "transport-limit", "out-of-scope-host", "scanner-error", "unrecognized-private-detail"} {
-		r := d.begin(httptest.NewRequest("POST", "https://example.test/", nil), policy.Route{Scoped: true}, "http", "", false)
-		debugDecision(r, "scanner-error", "block", reason, nil, nil)
+		r := d.begin(httptest.NewRequest("POST", "https://example.test/", nil), policy.Route{Scoped: true}, "http", false)
+		debugDecision(r, "scanner-error", "block", reason, nil)
 	}
 	s := d.snapshot()
 	if s.Blocked != 6 || s.BlockReasons != (control.BlockReasons{Findings: 1, Unsupported: 1, Intake: 1, Suspicious: 1, Inspection: 1, Other: 1}) {
@@ -87,7 +87,7 @@ func TestCountersClassifyBlocksWithoutRetainingPrivateDetails(t *testing.T) {
 
 func TestUpstreamCountsFinalFailuresOnceAndClassifiesWithoutRawErrors(t *testing.T) {
 	d := debugLog{}
-	r := d.begin(httptest.NewRequest("POST", "https://example.test/", nil), policy.Route{}, "http", "", false)
+	r := d.begin(httptest.NewRequest("POST", "https://example.test/", nil), policy.Route{}, "http", false)
 	// An HTTP write attempt can fail before the final RoundTrip result.
 	debugEvent(r, "write_error", "upstream-write-failed", 0)
 	if d.snapshot().UpstreamErrors != 0 {
@@ -95,10 +95,10 @@ func TestUpstreamCountsFinalFailuresOnceAndClassifiesWithoutRawErrors(t *testing
 	}
 	debugUpstreamError(r, "upstream_error", "upstream-roundtrip-failed", context.DeadlineExceeded)
 	debugUpstreamError(r, "upstream_error", "upstream-roundtrip-failed", errors.New("private failure"))
-	ws := d.begin(httptest.NewRequest("GET", "https://example.test/", nil), policy.Route{}, "websocket-message", "", false)
+	ws := d.begin(httptest.NewRequest("GET", "https://example.test/", nil), policy.Route{}, "websocket-message", false)
 	debugUpstreamError(ws, "write_error", "upstream-write-failed", &net.DNSError{Err: "private failure", Name: "private.example"})
 	for _, err := range []error{context.Canceled, x509.UnknownAuthorityError{}, errors.New("private network error")} {
-		request := d.begin(httptest.NewRequest("POST", "https://example.test/", nil), policy.Route{}, "http", "", false)
+		request := d.begin(httptest.NewRequest("POST", "https://example.test/", nil), policy.Route{}, "http", false)
 		debugUpstreamError(request, "upstream_error", "upstream-roundtrip-failed", err)
 	}
 	s := d.snapshot()
@@ -174,13 +174,13 @@ func TestDebugFindingsAreHumanReadableConciseAndPrivate(t *testing.T) {
 	if err := prepareAudit(path); err != nil {
 		t.Fatal(err)
 	}
-	d := debugLog{path: path, session: "test", status: control.DebugStatus{Healthy: true}}
-	r := d.begin(httptest.NewRequest("POST", "https://copilot.example/private-path?credential=private-query", nil), policy.Route{Surface: "chat"}, "http", "", false)
+	d := debugLog{path: path, status: control.DebugStatus{Healthy: true}}
+	r := d.begin(httptest.NewRequest("POST", "https://copilot.example/private-path?credential=private-query", nil), policy.Route{Surface: "chat"}, "http", false)
 	debugDecision(r, "redacted", "redact", "", scanner.Report{"debug_findings": []scanner.DebugFinding{
 		{DetectedMasked: "ééé…", Placeholder: debugPlaceholder},
 		{DetectedMasked: "ééééé", Placeholder: debugPlaceholder},
 		{DetectedMasked: "***", Placeholder: "private-unvalidated-placeholder"},
-	}}, []byte(debugPlaceholder))
+	}})
 	debugEvent(r, "upstream_response", "", 200)
 	if text := readDebug(t, path); text != "" {
 		t.Fatalf("premature or noisy output: %s", text)
@@ -209,9 +209,9 @@ func TestCleanTrafficOnlyUpdatesStatusCounters(t *testing.T) {
 	}
 	d := debugLog{path: path, status: control.DebugStatus{Healthy: true}}
 	for range 100 {
-		r := d.begin(httptest.NewRequest("GET", "http://fixture.example/", nil), policy.Route{}, "http", "", false)
+		r := d.begin(httptest.NewRequest("GET", "http://fixture.example/", nil), policy.Route{}, "http", false)
 		debugScan(r)
-		debugDecision(r, "clean", "forward", "", nil, nil)
+		debugDecision(r, "clean", "forward", "", nil)
 		debugEvent(r, "upstream_written", "", 0)
 		debugEvent(r, "upstream_response", "", 200)
 	}
@@ -230,8 +230,8 @@ func TestRetrySummaryDoesNotReuseEarlierFailedWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := debugLog{path: path, status: control.DebugStatus{Healthy: true}}
-	r := d.begin(httptest.NewRequest("POST", "http://fixture.example/", nil), policy.Route{Surface: "chat"}, "http", "", false)
-	debugDecision(r, "redacted", "redact", "", debugReport(), []byte(debugPlaceholder))
+	r := d.begin(httptest.NewRequest("POST", "http://fixture.example/", nil), policy.Route{Surface: "chat"}, "http", false)
+	debugDecision(r, "redacted", "redact", "", debugReport())
 	debugEvent(r, "write_error", "upstream-write-failed", 0)
 	debugWriteAttempt(r)
 	debugEvent(r, "upstream_error", "upstream-roundtrip-failed", 0)
@@ -264,7 +264,7 @@ func TestDebugWriteFailureAndRecoveryAreVisibleWithoutPrivateErrors(t *testing.T
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
-	row := debugSummary{Findings: []debugFinding{{DebugFinding: scanner.DebugFinding{DetectedMasked: "AKI…", Placeholder: debugPlaceholder}}}}
+	row := debugSummary{Findings: []scanner.DebugFinding{{DetectedMasked: "AKI…", Placeholder: debugPlaceholder}}}
 	for range 2 {
 		d.count(debugRecord{Event: "received"})
 		d.write(row)
@@ -304,8 +304,8 @@ func TestDebugRotationAndConcurrentFindings(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 20 {
 		wg.Go(func() {
-			r := d.begin(httptest.NewRequest("POST", "http://fixture.example/", nil), policy.Route{Surface: "chat"}, "http", "", false)
-			debugDecision(r, "redacted", "redact", "", debugReport(), []byte(debugPlaceholder))
+			r := d.begin(httptest.NewRequest("POST", "http://fixture.example/", nil), policy.Route{Surface: "chat"}, "http", false)
+			debugDecision(r, "redacted", "redact", "", debugReport())
 			debugEvent(r, "upstream_written", "", 0)
 			debugEvent(r, "upstream_response", "", 200)
 		})
@@ -327,19 +327,16 @@ func TestDebugFindingsBoundedAndControlCharactersEscaped(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := debugLog{path: path, status: control.DebugStatus{Healthy: true}}
-	r := d.begin(httptest.NewRequest("POST", "http://fixture.example/", nil), policy.Route{}, "http", "", false)
+	r := d.begin(httptest.NewRequest("POST", "http://fixture.example/", nil), policy.Route{}, "http", false)
 	findings := make([]scanner.DebugFinding, 129)
 	for i := range findings {
 		findings[i] = scanner.DebugFinding{DetectedMasked: "\x1b\nx…", Placeholder: debugPlaceholder}
 	}
-	debugDecision(r, "redacted", "redact", "", scanner.Report{"debug_findings": findings}, []byte("encoded placeholder"))
+	debugDecision(r, "redacted", "redact", "", scanner.Report{"debug_findings": findings})
 	debugEvent(r, "upstream_written", "", 0)
 	debugEvent(r, "upstream_response", "", 200)
 	text := readDebug(t, path)
 	if strings.Count(text, "\n") != 129 || !strings.Contains(text, "(+1 additional findings omitted)") || strings.Contains(text, "\x1b") || !strings.Contains(text, `\x1b\nx…`) {
 		t.Fatalf("unbounded or unsafe human output: %s", text)
-	}
-	if trace(r).record.Findings[0].PlaceholderInOutboundBody {
-		t.Fatal("encoded placeholder claimed as literal")
 	}
 }

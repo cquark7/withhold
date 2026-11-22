@@ -7,8 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/betterleaks/betterleaks/report"
-	"github.com/betterleaks/betterleaks/sources"
+	"github.com/betterleaks/betterleaks/v2/report"
 )
 
 const MaxTextFindings = 10_000
@@ -93,6 +92,32 @@ func (s *sourceIndex) offset(line, column int) (int, error) {
 	return offset, nil
 }
 
+// Betterleaks reports inclusive byte columns, with column zero at a line boundary.
+func offsets(index **sourceIndex, text string, loc report.Location, full string, encoded bool) (start, end int, err error) {
+	if *index == nil {
+		*index = indexSource(text)
+	}
+	start, err = (*index).offset(loc.StartLine, loc.StartColumn)
+	if err != nil {
+		return 0, 0, err
+	}
+	if !encoded && full != "" {
+		// RC9 trims leading newlines from Match.Full without advancing Start.
+		for start < len(text) && text[start] == '\n' {
+			start++
+		}
+		if !strings.HasPrefix(text[start:], full) {
+			return 0, 0, errors.New("invalid detector match")
+		}
+		return start, start + len(full), nil
+	}
+	end, err = (*index).offset(loc.EndLine, loc.EndColumn+1)
+	if err != nil || end <= start {
+		return 0, 0, errors.New("invalid detector location")
+	}
+	return start, end, nil
+}
+
 // Inspect never rewrites input, resolves placeholder keys, or exposes values.
 func (d *Detector) Inspect(ctx context.Context, text string) ([]TextFinding, error) {
 	if err := ctx.Err(); err != nil {
@@ -123,55 +148,21 @@ func (d *Detector) Inspect(ctx context.Context, text string) ([]TextFinding, err
 		}
 		return nil
 	}
-	appendSecret := func(rule string, sl, sc, el, ec int, encoded bool) error {
-		if sl < 1 || el < sl || sc < 1 || ec < 0 {
-			return errors.New("invalid detector location")
-		}
-		start, err := locations().offset(sl, sc)
-		if err != nil {
-			return err
-		}
-		end, err := locations().offset(el, ec+1)
-		if err != nil {
-			return err
-		}
-		return appendSpan(rule, "secret", start, end, encoded)
-	}
-	appendSecrets := func(f report.Finding) error {
-		if len(f.ComponentSets) >= maxComponentSets {
-			return ErrFindingLimit
-		}
-		encoded := slices.ContainsFunc(f.Tags, func(tag string) bool { return strings.HasPrefix(tag, "decoded:") })
-		if err := appendSecret(f.RuleID, f.StartLine, f.StartColumn, f.EndLine, f.EndColumn, encoded); err != nil {
-			return err
-		}
-		components := make(map[*report.ComponentFinding]bool)
-		for _, set := range f.ComponentSets {
-			for _, component := range set.Components {
-				if component == nil {
-					return errors.New("invalid detector component")
-				}
-				if components[component] {
-					continue
-				}
-				components[component] = true
-				if err := appendSecret(component.RuleID, component.StartLine, component.StartColumn, component.EndLine, component.EndColumn, encoded); err != nil {
+	if d.engine != nil {
+		err := d.scanText(ctx, d.engine, text, func(f report.Finding) error {
+			if f.ComponentSetsTruncated {
+				return ErrFindingLimit
+			}
+			return visitFinding(f, func(rule string, match report.Match, loc report.Location, encoded bool) error {
+				start, end, err := offsets(&index, text, loc, match.Full, encoded)
+				if err != nil {
 					return err
 				}
-			}
-		}
-		return nil
-	}
-	if d.engine != nil {
-		// The fragment API preserves whole-input context without allocating Run's
-		// repository-sized result channel and goroutine for every file. Workers
-		// remain serial, isolated, and externally killable on deadline. This API
-		// is deprecated upstream but available in the pinned Betterleaks v1 SDK.
-		// Omit the filepath: literal inspection has no file-specific rules.
-		for _, finding := range d.engine.DetectContext(ctx, sources.Fragment{Raw: text, StartLine: 1}) {
-			if err := appendSecrets(finding); err != nil {
-				return nil, err
-			}
+				return appendSpan(rule, "secret", start, end, encoded)
+			})
+		})
+		if err != nil {
+			return nil, err
 		}
 	}
 	for _, f := range d.pii.Scan(text) {

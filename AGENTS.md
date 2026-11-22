@@ -81,7 +81,7 @@ an elegant CLI, reliable recovery, and a small operational footprint.
   ```
 
   This builds isolated acceptance binaries and sets
-  `WITHHOLD_TEST_SCANNER_WORKER`, `WITHHOLD_TEST_NATIVE`, and
+  `WITHHOLD_TEST_NATIVE` and
   `WITHHOLD_TEST_NATIVE_FIXTURE`. Do not report process-level verification when
   those tests were skipped. Add focused race checks when concurrency changes.
 

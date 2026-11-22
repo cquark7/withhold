@@ -43,8 +43,8 @@ the `toolchain` directive is a concrete suggestion, not an automatic patch updat
 .venv/bin/python tools/verify.py
 ```
 
-This builds all three acceptance binaries in a temporary directory, sets
-`WITHHOLD_TEST_SCANNER_WORKER`, `WITHHOLD_TEST_NATIVE`, and
+This builds both acceptance binaries in a temporary directory, sets
+`WITHHOLD_TEST_NATIVE` and
 `WITHHOLD_TEST_NATIVE_FIXTURE`, then runs Go tests/vet/format checks and Python
 tests/lint/format checks. Add `--race` to enable Go's race detector.
 Running Python tests without these paths skips process-level coverage.
@@ -92,7 +92,6 @@ activity; re-enable them in Actions when resuming development.
 | --- | --- |
 | `cmd/withhold/` | Product executable and CLI composition. |
 | `internal/` | Private Go runtime packages; unit tests live beside their code. |
-| `cmd/withhold-scanner/` | Development entry point for the scanner protocol. |
 | `tests/` | Python acceptance/tool tests and the Go upstream fixture. |
 | `tools/` | Verification, packaging, notices, benchmarks, and manual diagnostics. |
 
@@ -120,7 +119,7 @@ harness/provider branches to shared config, session, transport, or scanning.
   maintainer release procedures in [releasing](docs/releasing.md).
 
 The synthetic loopback benchmark is `tools/benchmark_proxy.py`; build fixtures
-and set the three test paths above before running it. Its RSS measurements sum
+and set the two test paths above before running it. Its RSS measurements sum
 processes and may double-count shared pages or miss short peaks.
 
 `tools/proof/` contains manual network diagnostics, not protection checks.

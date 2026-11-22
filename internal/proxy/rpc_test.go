@@ -771,12 +771,12 @@ func TestRPCIdleEnvelopeDoesNotHoldIntakeJob(t *testing.T) {
 }
 
 func TestCursorDuplexWithScannerWorker(t *testing.T) {
-	binary := os.Getenv("WITHHOLD_TEST_SCANNER_WORKER")
+	binary := os.Getenv("WITHHOLD_TEST_NATIVE")
 	if binary == "" {
-		t.Skip("set WITHHOLD_TEST_SCANNER_WORKER to run process scanning")
+		t.Skip("set WITHHOLD_TEST_NATIVE to run process scanning")
 	}
 	home := t.TempDir()
-	pool := scanpool.NewWithEnvironment(binary, []string{"HOME=" + home, "WITHHOLD_PLACEHOLDER_KEY=isolated-cursor-test"}, "--body")
+	pool := scanpool.NewWithEnvironment(binary, []string{"HOME=" + home, "WITHHOLD_PLACEHOLDER_KEY=isolated-cursor-test"}, "_scanner", "--body")
 	defer pool.Close()
 	scope, err := cursor.NewTraffic(policy.ScopeOptions{AllowHosts: []string{"127.0.0.1"}})
 	if err != nil {
@@ -874,13 +874,13 @@ func TestCursorDuplexWithScannerWorker(t *testing.T) {
 }
 
 func TestCursorContentCompatibilityWithScannerWorker(t *testing.T) {
-	binary := os.Getenv("WITHHOLD_TEST_SCANNER_WORKER")
+	binary := os.Getenv("WITHHOLD_TEST_NATIVE")
 	if binary == "" {
-		t.Skip("set WITHHOLD_TEST_SCANNER_WORKER to run process scanning")
+		t.Skip("set WITHHOLD_TEST_NATIVE to run process scanning")
 	}
 	pool := scanpool.NewWithEnvironment(binary, []string{
 		"HOME=" + t.TempDir(), "WITHHOLD_PLACEHOLDER_KEY=isolated-cursor-content-test",
-	}, "--body")
+	}, "_scanner", "--body")
 	defer pool.Close()
 	field := func(n protowire.Number, data []byte) []byte {
 		return protowire.AppendBytes(protowire.AppendTag(nil, n, protowire.BytesType), data)

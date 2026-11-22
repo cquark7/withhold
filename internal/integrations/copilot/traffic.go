@@ -132,9 +132,6 @@ func (s *Scope) Classify(authority, path string) policy.Route {
 		r.Surface = "embeddings"
 		r.API = "embeddings"
 		r.Mode = "redact"
-		r.AllowNonJSON = true
-		r.HTTPFailureAction = "embeddings-unscanned"
-		r.NonPostRule = "embeddings-bodied-nonpost"
 		return r
 	}
 	r.Surface = "chat"

@@ -119,17 +119,25 @@ worker. There is no external-detector fallback or worker listening socket.
 
 Frames have a four-byte big-endian length and a 128 MiB payload limit in each
 direction. Body requests contain an eight-byte signed big-endian cap followed
-by original bytes. Schema-1 greetings identify `withhold-scanner` and betterleaks
-`1.10.1`; enabled PII also identifies Alcatraz `0.23.0` and selected categories.
+by original bytes. Schema-1 greetings identify `withhold-scanner` and report
+the linked Betterleaks version. Enabled PII also identifies Alcatraz `0.23.0`
+and selected categories.
 Clients require matching metadata. Replies contain `schema: 1` and `report`;
 rewritten bytes use `body_base64`. Strict validation rejects unknown fields,
 invalid counters/statuses, and unsafe diagnostics before policy uses them.
 
-`cmd/withhold-scanner` exposes this protocol for development. `--jsonl` accepts
-`body_base64` and optional `max_bytes`; no-argument detector mode accepts framed
-UTF-8 text and returns private `RuleID`/`Secret`/`Match` findings. Raw findings
-must never enter ordinary diagnostics. Scanner statuses and runtime guarantees
-are covered by the [behavior contract](../CONTRACTS.md).
+The detector uses the Betterleaks v2 detection SDK with Go regular expressions
+and one SDK worker per process. It sends the bounded projection as one fragment
+so rules can see long leaves and nearby multipart components. Match ranges and
+decoding metadata stay in the scanner process. An incomplete or unverifiable
+rewrite returns a fixed failure reason to shared policy.
+When a bare Base64 leaf is decoded, a second pass checks its literal spelling
+without decoding it again. Wide lines share a per-pass regex candidate budget
+to bound the SDK's repeated line lookups while retaining multipart context.
+
+Scanner acceptance tests exercise the shipped `withhold _scanner --body` entry
+point. Scanner statuses and runtime guarantees are covered by the
+[behavior contract](../CONTRACTS.md).
 
 `scan` uses `_scanner --text` and the existing isolated worker pool, deadlines,
 and cleanup. It sends literal UTF-8 and returns value-free locations or fixed error

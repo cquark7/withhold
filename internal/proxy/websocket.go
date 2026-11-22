@@ -95,20 +95,16 @@ func (p *Proxy) websocket(w http.ResponseWriter, r *http.Request, route policy.R
 		}
 	}()
 	defer func() { _ = up.Close(); _ = client.Close(); <-done }()
-	parent := ""
-	if t := trace(r); t != nil {
-		parent = t.record.RequestID
-	}
 	for {
 		kind, reader, err := client.NextReader()
 		if err != nil {
 			debugEvent(r, "websocket_closed", "client-read-ended", 0)
 			return
 		}
-		message := p.debug.begin(r, route, "websocket-message", parent, p.config.Observe)
+		message := p.debug.begin(r, route, "websocket-message", p.config.Observe)
 		t, err := p.budget.acquire()
 		if err != nil {
-			debugDecision(message, "not-scanned", "reject", "capacity-limit", nil, nil)
+			debugDecision(message, "not-scanned", "reject", "capacity-limit", nil)
 			p.wsDeny(message, route, "scanner-error", nil)
 			if p.config.Observe {
 				debugEvent(message, "blocked", "capacity-limit", 0)
@@ -127,7 +123,7 @@ func (p *Proxy) websocket(w http.ResponseWriter, r *http.Request, route policy.R
 			raw, err := readBounded(reader, p.config.MaxBytes, t)
 			_ = client.SetReadDeadline(time.Time{})
 			if err != nil {
-				debugDecision(message, "over-cap", "reject", "transport-limit", nil, nil)
+				debugDecision(message, "over-cap", "reject", "transport-limit", nil)
 				p.wsDeny(message, route, "over-cap", nil)
 				if p.config.Observe {
 					debugEvent(message, "blocked", "transport-limit", 0)
@@ -163,7 +159,7 @@ func (p *Proxy) wsDeny(r *http.Request, route policy.Route, rule string, report 
 		pending := t.record.PolicyAction == "pending"
 		t.mu.Unlock()
 		if pending {
-			debugDecision(r, "not-scanned", "block", rule, report, nil)
+			debugDecision(r, "not-scanned", "block", rule, report)
 		}
 	}
 	if !p.config.Observe {
@@ -175,7 +171,7 @@ func (p *Proxy) wsDeny(r *http.Request, route policy.Route, rule string, report 
 // forward=false, stop=false drops a non-JSON message while retaining the session.
 func (p *Proxy) inspectMessage(r *http.Request, route policy.Route, kind int, raw []byte) (body []byte, forward, stop bool) {
 	if route.Passthrough {
-		debugDecision(r, "not-scanned", "passthrough", "token-or-unscoped", nil, nil)
+		debugDecision(r, "not-scanned", "passthrough", "token-or-unscoped", nil)
 		return raw, true, false
 	}
 	if !route.Scoped {
@@ -183,7 +179,7 @@ func (p *Proxy) inspectMessage(r *http.Request, route policy.Route, kind int, ra
 			return nil, false, true
 		}
 		if !route.Looking {
-			debugDecision(r, "not-scanned", "passthrough", "outside-inspection-scope", nil, nil)
+			debugDecision(r, "not-scanned", "passthrough", "outside-inspection-scope", nil)
 		}
 		return raw, true, false
 	}
@@ -206,19 +202,19 @@ func (p *Proxy) inspectMessage(r *http.Request, route policy.Route, kind int, ra
 	}
 	status, _ := report["status"].(string)
 	if status == "clean" {
-		debugDecision(r, status, "forward", "", report, nil)
+		debugDecision(r, status, "forward", "", report)
 		return raw, true, false
 	}
 	if status == "skipped-not-json" && report["reason"] == "body is not JSON" {
-		debugDecision(r, status, "drop", "ws-non-json-unscannable", report, nil)
+		debugDecision(r, status, "drop", "ws-non-json-unscannable", report)
 		if p.wsDeny(r, route, "ws-non-json-unscannable", nil) {
 			return nil, false, false
 		}
 		return raw, true, false
 	}
-	decision := policy.Evaluate(route, status, residue(report) > 0, true)
+	decision := policy.Evaluate(route, status, residue(report) > 0)
 	if decision.Action == "block" {
-		debugDecision(r, status, decision.Action, decision.Reason, report, nil)
+		debugDecision(r, status, decision.Action, decision.Reason, report)
 		if status != "redacted" {
 			report = nil
 		}
@@ -232,7 +228,7 @@ func (p *Proxy) inspectMessage(r *http.Request, route policy.Route, kind int, ra
 	}
 	p.audit.emit(r, route, "redact", "forwarded", report, p.config.Observe, true)
 	if p.config.Observe {
-		debugDecision(r, status, decision.Action, decision.Reason, report, nil)
+		debugDecision(r, status, decision.Action, decision.Reason, report)
 		return raw, true, false
 	}
 	text, ok := report["body_base64"].(string)
@@ -240,6 +236,6 @@ func (p *Proxy) inspectMessage(r *http.Request, route policy.Route, kind int, ra
 	if !ok || e != nil {
 		panic("invalid redaction report")
 	}
-	debugDecision(r, status, decision.Action, decision.Reason, report, out)
+	debugDecision(r, status, decision.Action, decision.Reason, report)
 	return out, true, false
 }

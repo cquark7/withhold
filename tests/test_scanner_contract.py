@@ -9,13 +9,15 @@ import hmac
 import json
 import os
 import random
+import re
+import struct
 import subprocess
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 
-WORKER = os.environ.get("WITHHOLD_TEST_SCANNER_WORKER")
+WORKER = os.environ.get("WITHHOLD_TEST_NATIVE")
 CANARY = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
 PLACEHOLDER_KEY = "scanner-contract-test-only"
 
@@ -42,7 +44,7 @@ class ScannerProcess:
         )
         if overrides:
             env.update(overrides)
-        command = [str(Path(worker).resolve()), "--jsonl"]
+        command = [str(Path(worker).resolve()), "_scanner", "--body"]
         self.process = subprocess.Popen(
             command,
             stdin=subprocess.PIPE,
@@ -51,24 +53,40 @@ class ScannerProcess:
             env=env,
         )
 
-    def scan(self, body, *, max_bytes=None):
-        raw = body if isinstance(body, bytes) else json.dumps(body).encode()
-        request = {"body_base64": base64.b64encode(raw).decode()}
-        if max_bytes is not None:
-            request["max_bytes"] = max_bytes
-        self.process.stdin.write((json.dumps(request) + "\n").encode())
-        self.process.stdin.flush()
+        greeting = self.read_frame()
+        if greeting.get("schema") != 1 or greeting.get("engine") != "withhold-scanner":
+            raise AssertionError("invalid scanner greeting")
+
+    def read_frame(self):
         timer = threading.Timer(30, self.process.kill)
         timer.daemon = True
         timer.start()
         try:
-            line = self.process.stdout.readline()
+            header = self.process.stdout.read(4)
+            if len(header) != 4:
+                raise AssertionError("scanner exited before reporting")
+            (length,) = struct.unpack(">I", header)
+            if length > 128 * 1024 * 1024:
+                raise AssertionError("scanner reply exceeds frame limit")
+            data = self.process.stdout.read(length)
+            if len(data) != length:
+                raise AssertionError("incomplete scanner reply")
+            return json.loads(data)
         finally:
             timer.cancel()
             timer.join()
-        if not line:
-            raise AssertionError("scanner driver exited before reporting")
-        report = json.loads(line)
+
+    def scan(self, body, *, max_bytes=None):
+        raw = body if isinstance(body, bytes) else json.dumps(body).encode()
+        if max_bytes is None:
+            max_bytes = 32 * 1024 * 1024
+        self.process.stdin.write(struct.pack(">IQ", len(raw) + 8, max_bytes))
+        self.process.stdin.write(raw)
+        self.process.stdin.flush()
+        reply = self.read_frame()
+        if reply.get("schema") != 1:
+            raise AssertionError("invalid scanner reply")
+        report = reply["report"]
         if "body_base64" in report:
             report["body"] = base64.b64decode(report.pop("body_base64"))
         return report
@@ -85,7 +103,7 @@ class ScannerProcess:
             self.process.stderr.close()
 
 
-@unittest.skipUnless(WORKER, "native withhold-scanner required")
+@unittest.skipUnless(WORKER, "native executable required")
 class ScannerContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -189,7 +207,9 @@ class ScannerContractTest(unittest.TestCase):
             PLACEHOLDER_KEY.encode(), CANARY.encode(), hashlib.sha256
         ).hexdigest()
         placeholder = f"<WITHHELD_{digest[:16]}>"
-        self.scan({CANARY: "first value", placeholder: "second value"}, "scanner-error")
+        self.scan(
+            {CANARY: "first value", placeholder: "second value"}, "redaction-failed"
+        )
 
     def test_attachment_and_tool_output_are_redacted(self):
         report = self.scan(
@@ -206,11 +226,13 @@ class ScannerContractTest(unittest.TestCase):
         self.assertNotIn(CANARY.encode(), report["body"])
         self.assertIn(b"<attachment", report["body"])
 
-    def test_large_leaf_secret_across_chunk_boundary_is_redacted(self):
+    def test_large_leaf_secret_is_redacted_without_changing_surrounding_text(self):
         text = "ordinary text " * 3510 + CANARY + " ordinary text" * 5000
         report = self.scan({"input": text}, "redacted")
-        self.assertNotIn(CANARY.encode(), report["body"])
-        self.assertGreater(report["stats"]["chunked_large"], 0)
+        rewritten = json.loads(report["body"])["input"]
+        self.assertNotIn(CANARY, rewritten)
+        placeholder = re.search(r"<WITHHELD_[0-9a-f]{16}>", rewritten).group()
+        self.assertEqual(rewritten, text.replace(CANARY, placeholder))
 
     def test_skipped_media_is_counted_alongside_findings(self):
         report = self.scan(
@@ -223,7 +245,6 @@ class ScannerContractTest(unittest.TestCase):
             {"tools": [{"description": CANARY, "parameters": {"default": CANARY}}]},
             "redacted",
         )
-        self.assertEqual(report["stats"]["skipped_tools"], 0)
         self.assertNotIn(CANARY.encode(), report["body"])
 
     def test_opaque_attachments_survive_redaction_without_residue_checks(self):
@@ -390,7 +411,7 @@ class ScannerContractTest(unittest.TestCase):
                 + suffix
             )
             report = self.scan({"input": CANARY, "blob": value})
-            self.assertIn(report["status"], ("redacted", "scanner-error"))
+            self.assertIn(report["status"], ("redacted", "redaction-failed"))
         encoded = base64.b64encode(("filler " * 8 + CANARY + " tail").encode()).decode()
         wrapped = "\u0085\u00a0".join(
             encoded[i : i + 8] for i in range(0, len(encoded), 8)
@@ -465,7 +486,7 @@ class ScannerContractTest(unittest.TestCase):
                 )
             with self.subTest(case=i):
                 report = self.scan({"input": nested, "stream": bool(i % 2)})
-                expected = ("redacted", "scanner-error") if secret else ("clean",)
+                expected = ("redacted", "redaction-failed") if secret else ("clean",)
                 self.assertIn(report["status"], expected)
                 if report["status"] == "redacted":
                     self.assertNotIn(CANARY.encode(), report["body"])

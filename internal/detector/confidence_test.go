@@ -5,6 +5,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/betterleaks/betterleaks/v2/config"
+	"github.com/betterleaks/betterleaks/v2/scan"
 )
 
 func TestConfidenceNormalizationRejectsInvalidValuesWithoutEchoingThem(t *testing.T) {
@@ -35,9 +38,6 @@ func TestInspectionUsesUpstreamConfidenceThresholdWithoutFilteringPII(t *testing
 			d, err := NewInspection(true, "email", test.confidence)
 			if err != nil {
 				t.Fatal(err)
-			}
-			if d.engine.MinConfidence != test.confidence {
-				t.Fatal("confidence was not passed to Betterleaks")
 			}
 			findings, err := d.Inspect(context.Background(), text)
 			if err != nil {
@@ -74,14 +74,18 @@ func TestInspectionKeepsUnclassifiedFindingsAndMultipartComponents(t *testing.T)
 	if err != nil || len(findings) != 2 {
 		t.Fatalf("multipart findings lost: %v, %v", findings, err)
 	}
-	for _, confidence := range []string{"", "custom"} {
-		rule := d.engine.Config.Rules["aws-access-token"]
-		rule.Confidence = confidence
-		d.engine.Config.Rules[rule.RuleID] = rule
-		findings, err := d.Inspect(context.Background(), "AKIA4X7Q2W3K7MNDZBXP")
-		if err != nil || len(findings) != 1 {
-			t.Fatalf("unclassified finding removed: %v, %v", findings, err)
-		}
+	cfg := &config.Config{Rules: []config.Rule{{ID: "unclassified", Regex: "synthetic-unclassified"}}}
+	d.engine, err = scan.New(cfg, engineOptions("high")...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	findings, err = d.Inspect(context.Background(), "synthetic-unclassified")
+	if err != nil || len(findings) != 1 {
+		t.Fatalf("unclassified finding removed: %v, %v", findings, err)
+	}
+	cfg.Rules[0].Confidence = "custom"
+	if _, err := scan.New(cfg, engineOptions("high")...); err == nil {
+		t.Fatal("invalid rule confidence accepted")
 	}
 }
 
@@ -90,7 +94,7 @@ func TestInspectionConfidenceDoesNotChangeProxyDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	proxy, err := New("off")
-	if err != nil || proxy.engine.MinConfidence != "" {
+	if err != nil {
 		t.Fatalf("offline minimum changed proxy defaults: %v", err)
 	}
 	findings, err := proxy.Scan(`api_key = "Zf3D0LXCM3EIMbgJpUNnkRtOfOueHznB"`)

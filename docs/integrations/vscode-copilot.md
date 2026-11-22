@@ -96,7 +96,8 @@ Managed keys are `http.proxy`, `http.proxySupport`, `http.proxyStrictSSL`,
 `http.noProxy`, `http.systemCertificates`, `http.fetchAdditionalSupport`, and
 `http.webSocketAdditionalSupport`, plus their `settingsSync.ignoredSettings`
 entries. Bypass lists are loopback-only; TLS verification stays enabled.
-`off` restores only managed keys, preserving unrelated/mid-session edits.
+`withhold` preserves comments on unrelated settings. `off` restores the
+managed keys and removes only the Settings Sync exclusions added by withhold.
 
 ### Custom traffic endpoints
 
@@ -129,7 +130,7 @@ host still uses inline policy. Unknown paths on these guarded hosts fail closed.
 the shared `proxy.extra_hosts` and `proxy.extra_host_regex` allow otherwise
 unknown paths under chat policy. The fixed `api.github.com` token exchange
 remains uninspected; it cannot be added as a traffic host. The fixed embeddings
-host retains its documented exceptions while guarded. These settings do not
+host remains guarded. These settings do not
 change TLS, body-size, or intake limits.
 
 **Review endpoint changes carefully:** removing a guarded host or replacing a
@@ -168,13 +169,11 @@ customized as described in [Custom traffic endpoints](#custom-traffic-endpoints)
 | --- | --- | --- |
 | Chat | Redact and forward (`redact`). | Block. |
 | Inline | Block findings. | Block; choosing `redact` permits placeholders in code. |
-| Embeddings host | Redact when possible. | Forward unscanned and audit `embeddings-unscanned`. |
+| Embeddings host | Redact and forward (`redact`). | Block. |
 
-HTTP scanning requires a JSON POST, except embeddings POSTs attempt JSON
-scanning regardless of content type. Non-POST requests pass only when provably
-bodyless. Embeddings permits bodied non-POST requests unscanned. Observe mode
-does not enforce these format/method policies. Shared wire-size and intake
-limits remain unconditional, including embeddings and observe mode.
+Guarded HTTP scanning requires a JSON POST. Non-POST requests pass only when
+provably bodyless. Observe mode audits format and method failures and forwards
+the original body within the shared wire-size and intake limits.
 
 Policy blocks return HTTP 429 with
 `{"error":{"code":"withhold_blocked","message":"Request blocked by withhold: ..."}}`.

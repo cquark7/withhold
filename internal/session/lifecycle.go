@@ -507,7 +507,7 @@ func off(o Options, apps []application, r Record, recordErr error) int {
 		}
 		unlock()
 	}
-	if listening(o.Port) {
+	if listening(o.Port) && (recordErr != nil || !processExited(r.PID)) {
 		fmt.Fprintln(os.Stderr, "withhold: port remains held; no foreign process was signalled")
 		rc = 1
 	}

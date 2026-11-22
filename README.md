@@ -149,7 +149,7 @@ sessions and CA cleanup. withhold does not restart automatically at login/reboot
 | ------------------ | ---------------------------------------------------------------------------- |
 | Chat               | Redact detected secrets, then forward.                                       |
 | Inline completions | Block requests containing findings.                                          |
-| Embeddings         | Attempt redaction; inspection-policy failures pass through unscanned.        |
+| Embeddings         | Redact detected secrets, then forward. Block inspection failures.            |
 | Optional PII       | Email, phone, payment card, US SSN, IP address, and Aadhaar; off by default. |
 
 The scanner walks eligible JSON strings and keys, tool text, and decoded base64

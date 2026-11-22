@@ -204,7 +204,7 @@ func failureReport(f *rpcFailure) scanner.Report {
 func (p *Proxy) rpcReject(w http.ResponseWriter, r *http.Request, route policy.Route, failure *rpcFailure) {
 	p.rpcAuditFailure(r, route, failure)
 	if failure.counted.CompareAndSwap(false, true) {
-		debugDecision(r, "scanner-error", "reject", failure.reason, failure.report, nil)
+		debugDecision(r, "scanner-error", "reject", failure.reason, failure.report)
 	}
 	debugEvent(r, "blocked", failure.reason, 0)
 	// Transport failures are unconditional, including audit-only operation.
@@ -252,7 +252,7 @@ func (p *Proxy) rpcMessage(r *http.Request, route policy.Route, data []byte, t *
 		report = scanner.Report{"status": "scanner-error"}
 	}
 	status, _ := report["status"].(string)
-	decision := policy.Evaluate(route, status, residue(report) > 0, false)
+	decision := policy.Evaluate(route, status, residue(report) > 0)
 	var rewritten []byte
 	if (decision.Action == "forward" || decision.Action == "redact") && !p.config.Observe {
 		projection := input
@@ -271,7 +271,7 @@ func (p *Proxy) rpcMessage(r *http.Request, route policy.Route, data []byte, t *
 			rewritten = nil
 		}
 	}
-	debugDecision(r, status, decision.Action, decision.Reason, report, rewritten)
+	debugDecision(r, status, decision.Action, decision.Reason, report)
 	switch decision.Action {
 	case "forward":
 		return rewritten, nil
@@ -325,7 +325,7 @@ func (b *rpcBody) fail(err error) {
 	failure := b.failed
 	b.mu.Unlock()
 	if failure.counted.CompareAndSwap(false, true) {
-		debugDecision(b.request, "scanner-error", "reject", failure.reason, failure.report, nil)
+		debugDecision(b.request, "scanner-error", "reject", failure.reason, failure.report)
 	}
 	b.proxy.rpcAuditFailure(b.request, b.route, failure)
 	b.cancel()
@@ -365,7 +365,7 @@ func (b *rpcBody) next() error {
 	if b.messages > rpcMaxMessages {
 		return &rpcFailure{reason: "rpc-message-limit", transport: true}
 	}
-	messageRequest := b.proxy.debug.begin(b.request, b.route, "rpc-message", "", b.proxy.config.Observe)
+	messageRequest := b.proxy.debug.begin(b.request, b.route, "rpc-message", b.proxy.config.Observe)
 	decoded := frame.Data
 	if frame.Flags == 1 {
 		if b.format.Compression == "" || b.format.Compression == "identity" {

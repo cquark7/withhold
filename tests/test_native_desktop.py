@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from tests.test_native_proxy import BODY, FIXTURE, NATIVE, stop
+from tools.native_notices import betterleaks_version
 
 
 @unittest.skipUnless(NATIVE, "set WITHHOLD_TEST_NATIVE to the native executable")
@@ -92,7 +93,7 @@ class NativeDesktopTests(unittest.TestCase):
         return self.run_guard("on", "--port", self.port, *args)
 
     def test_on_reuse_restore_and_new_session(self):
-        self.settings.write_text('{/* before */ "http.proxy":"http://old", "keep":1,}')
+        self.settings.write_text('{"http.proxy":"http://old", "keep":1}')
         started = self.on()
         self.assertIn("withhold is running", started.stdout)
         self.assertIn("startup does not prove traffic is inspected", started.stdout)
@@ -521,8 +522,10 @@ class NativeDesktopTests(unittest.TestCase):
         destination = self.root / "installed"
         self.run_guard("install", "--bin-dir", destination)
         binary = destination / ("withhold.exe" if os.name == "nt" else "withhold")
+        module_version = betterleaks_version(binary).removeprefix("v")
         self.assertIn(
-            "betterleaks 1.10.1", self.run_guard("version", binary=binary).stdout
+            f"betterleaks {module_version}",
+            self.run_guard("version", binary=binary).stdout,
         )
         self.on()
         self.run_guard("install", "--bin-dir", destination, expected=1)

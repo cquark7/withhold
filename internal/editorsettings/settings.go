@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/cquark7/withhold/internal/integration"
 	"github.com/cquark7/withhold/internal/localstate"
@@ -24,7 +23,7 @@ var networkSettings = []string{
 	"http.systemCertificates", "http.fetchAdditionalSupport", "http.webSocketAdditionalSupport",
 }
 
-var managed = append(append([]string{}, networkSettings...), "settingsSync.ignoredSettings")
+const syncExclusions = "settingsSync.ignoredSettings"
 
 type Application struct {
 	Options                             integration.ApplicationOptions
@@ -82,8 +81,8 @@ func (a Application) Restore(target integration.Target) error {
 }
 func backupPath(path string) string { return path + ".withhold-backup" }
 
-// Comments become whitespace so they cannot join tokens. Strings remain intact.
-func ParseSettings(data []byte) (map[string]json.RawMessage, error) {
+// Comments become whitespace so existing byte offsets remain valid.
+func maskComments(data []byte) ([]byte, error) {
 	out := bytes.Clone(data)
 	quoted, escape := false, false
 	for i := 0; i < len(out); i++ {
@@ -137,7 +136,11 @@ func ParseSettings(data []byte) (map[string]json.RawMessage, error) {
 			}
 		}
 	}
-	quoted, escape = false, false
+	return out, nil
+}
+
+func stripTrailingCommas(out []byte) {
+	quoted, escape := false, false
 	for i, c := range out {
 		if quoted {
 			if escape {
@@ -153,26 +156,37 @@ func ParseSettings(data []byte) (map[string]json.RawMessage, error) {
 			quoted = true
 		}
 		if c == ',' {
-			j := i + 1
-			for j < len(out) && strings.ContainsRune(" \t\r\n", rune(out[j])) {
-				j++
-			}
-			if j < len(out) && (out[j] == '}' || out[j] == ']') {
+			before, after := bytes.TrimRight(out[:i], " \t\r\n"), bytes.TrimLeft(out[i+1:], " \t\r\n")
+			if len(before) > 0 && before[len(before)-1] != '{' && before[len(before)-1] != '[' &&
+				len(after) > 0 && (after[0] == '}' || after[0] == ']') {
 				out[i] = ' '
 			}
 		}
 	}
+}
+
+func ParseSettings(data []byte) (map[string]json.RawMessage, error) {
+	out, err := maskComments(data)
+	if err != nil {
+		return nil, err
+	}
+	stripTrailingCommas(out)
 	var result map[string]json.RawMessage
 	if json.Unmarshal(out, &result) != nil || result == nil {
 		return nil, errors.New("settings must be a valid JSONC object")
 	}
 	return result, nil
 }
-func readSettings(path string) (map[string]json.RawMessage, error) {
+
+func readSettingsFile(path string) ([]byte, error) {
 	if err := localstate.Regular(path); err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	return os.ReadFile(path)
+}
+
+func readSettings(path string) (map[string]json.RawMessage, error) {
+	data, err := readSettingsFile(path)
 	if os.IsNotExist(err) {
 		return map[string]json.RawMessage{}, nil
 	}
@@ -181,31 +195,7 @@ func readSettings(path string) (map[string]json.RawMessage, error) {
 	}
 	return ParseSettings(data)
 }
-func saveSettings(path string, data map[string]json.RawMessage) error {
-	out, err := json.MarshalIndent(data, "", "    ")
-	if err != nil {
-		return err
-	}
-	return localstate.Write(path, append(out, '\n'), false)
-}
-func set(data map[string]json.RawMessage, key string, value any) { data[key], _ = json.Marshal(value) }
-func addStrings(raw json.RawMessage, extra ...string) []any {
-	var list []any
-	_ = json.Unmarshal(raw, &list)
-	for _, s := range extra {
-		found := false
-		for _, v := range list {
-			if v == s {
-				found = true
-				break
-			}
-		}
-		if !found {
-			list = append(list, s)
-		}
-	}
-	return list
-}
+
 func ApplySettings(path string, port int) error {
 	return applySettings(path, port, nil)
 }
@@ -214,46 +204,71 @@ func applySettings(path string, port int, additional map[string]any) error {
 	if port < 1 || port > 65535 {
 		return errors.New("invalid proxy port")
 	}
-	current, err := readSettings(path)
+	data, err := readSettingsFile(path)
+	if os.IsNotExist(err) {
+		data = []byte("{}\n")
+	} else if err != nil {
+		return err
+	}
+	current, err := parseContainer(data, '{')
 	if err != nil {
 		return err
 	}
 	backup := backupPath(path)
 	if _, err = os.Lstat(backup); os.IsNotExist(err) {
-		data, e := os.ReadFile(path)
-		if os.IsNotExist(e) {
-			data = []byte("{}\n")
-		} else if e != nil {
-			return e
-		}
 		if err = localstate.Write(backup, data, true); err != nil {
 			return err
 		}
 	} else if err != nil {
 		return err
-	}
-	if _, err = readSettings(backup); err != nil {
+	} else if _, err = readSettings(backup); err != nil {
 		return fmt.Errorf("cannot use settings backup: %w", err)
 	}
-	set(current, "http.proxy", "http://127.0.0.1:"+strconv.Itoa(port))
-	set(current, "http.proxySupport", "override")
-	set(current, "http.proxyStrictSSL", true)
-	// Existing wildcards or provider exclusions must not bypass the guard. The
-	// original list is restored by off along with the other managed settings.
-	set(current, "http.noProxy", []string{"localhost", "127.0.0.1", "::1"})
-	set(current, "http.systemCertificates", true)
-	set(current, "http.fetchAdditionalSupport", true)
-	set(current, "http.webSocketAdditionalSupport", true)
-	keys := append([]string{}, networkSettings...)
-	var extra []string
-	for key, value := range additional {
-		set(current, key, value)
-		extra = append(extra, key)
+	settings := map[string]any{
+		"http.proxy":        "http://127.0.0.1:" + strconv.Itoa(port),
+		"http.proxySupport": "override", "http.proxyStrictSSL": true,
+		// Override existing wildcards and provider exclusions while guarding traffic.
+		"http.noProxy":            []string{"localhost", "127.0.0.1", "::1"},
+		"http.systemCertificates": true, "http.fetchAdditionalSupport": true,
+		"http.webSocketAdditionalSupport": true,
 	}
-	slices.Sort(extra)
-	keys = append(keys, extra...)
-	set(current, "settingsSync.ignoredSettings", addStrings(current["settingsSync.ignoredSettings"], keys...))
-	return saveSettings(path, current)
+	for key, value := range additional {
+		settings[key] = value
+	}
+	changes := make(map[string][]byte, len(settings)+1)
+	for key, value := range settings {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		changes[key] = encoded
+	}
+	list := syncList(current.value(syncExclusions))
+	present := list.strings()
+	var added [][]byte
+	for _, key := range managedKeys(additional) {
+		if !present[key] {
+			added = append(added, strconv.AppendQuote(nil, key))
+		}
+	}
+	changes[syncExclusions] = list.edit(nil, added, "        ")
+	return writeSettings(path, current.update(changes))
+}
+
+func writeSettings(path string, data []byte) error {
+	if _, err := ParseSettings(data); err != nil {
+		return err
+	}
+	return localstate.Write(path, data, false)
+}
+
+func managedKeys(additional map[string]any) []string {
+	keys := slices.Clone(networkSettings)
+	for key := range additional {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys[len(networkSettings):])
+	return keys
 }
 
 // A successfully restored backup is consumed so the next session captures fresh values.
@@ -263,42 +278,57 @@ func RestoreSettings(path string) error {
 
 func restoreSettings(path string, additional map[string]any) error {
 	backup := backupPath(path)
-	if _, err := os.Lstat(backup); os.IsNotExist(err) {
+	original, err := readSettingsFile(backup)
+	if os.IsNotExist(err) {
 		return nil
-	} else if err != nil {
-		return err
 	}
-	previous, err := readSettings(backup)
 	if err != nil {
 		return err
 	}
-	current, err := readSettings(path)
+	previous, err := parseContainer(original, '{')
 	if err != nil {
 		return err
 	}
-	if _, e := os.Stat(path); os.IsNotExist(e) {
-		current = previous
-	} else {
-		for _, key := range managed {
-			if value, ok := previous[key]; ok {
-				current[key] = value
-			} else {
-				delete(current, key)
+	data, err := readSettingsFile(path)
+	output := original
+	if err == nil {
+		current, err := parseContainer(data, '{')
+		if err != nil {
+			return err
+		}
+		keys := managedKeys(additional)
+		changes := make(map[string][]byte, len(keys)+1)
+		for _, key := range keys {
+			changes[key] = previous.value(key)
+		}
+		oldSync := previous.value(syncExclusions)
+		if list, err := parseContainer(current.value(syncExclusions), '['); err == nil {
+			prior := syncList(oldSync)
+			present := prior.strings()
+			remove := make(map[int][]byte)
+			for i, entry := range list.entries {
+				value := list.string(entry)
+				if slices.Contains(keys, value) && !present[value] {
+					remove[i] = nil
+				}
+			}
+			if len(remove) > 0 {
+				if len(remove) == len(list.entries) && len(prior.entries) == 0 && bytes.Equal(list.data, list.masked) {
+					changes[syncExclusions] = oldSync
+				} else {
+					changes[syncExclusions] = list.edit(remove, nil, "")
+				}
 			}
 		}
-		for key := range additional {
-			if value, ok := previous[key]; ok {
-				current[key] = value
-			} else {
-				delete(current, key)
-			}
-		}
+		output = current.update(changes)
+	} else if !os.IsNotExist(err) {
+		return err
 	}
-	if len(current) == 0 {
+	if len(bytes.TrimSpace(bytes.Trim(bytes.TrimSpace(output), "{}"))) == 0 {
 		if err = os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err
 		}
-	} else if err = saveSettings(path, current); err != nil {
+	} else if err = writeSettings(path, output); err != nil {
 		return err
 	}
 	return os.Remove(backup)

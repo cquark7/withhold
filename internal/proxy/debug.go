@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -22,41 +21,18 @@ import (
 )
 
 type debugLog struct {
-	mu            sync.Mutex
-	path, session string
-	next          uint64
-	status        control.DebugStatus
+	mu     sync.Mutex
+	path   string
+	status control.DebugStatus
 }
 
-type debugFinding struct {
-	scanner.DebugFinding
-	PlaceholderInOutboundBody bool `json:"placeholder_in_outbound_body"`
-}
-
-// Records contain no body, header, raw URL path, query, or error text.
 type debugRecord struct {
-	Schema            int            `json:"schema"`
-	TS                string         `json:"ts"`
-	RequestID         string         `json:"request_id"`
-	ConnectionID      string         `json:"connection_id,omitempty"`
-	Event             string         `json:"event"`
-	Transport         string         `json:"transport"`
-	Method            string         `json:"method"`
-	Endpoint          string         `json:"endpoint"`
-	API               string         `json:"api"`
-	Surface           string         `json:"surface"`
-	Scoped            bool           `json:"scoped"`
-	Supported         bool           `json:"supported"`
-	Observe           bool           `json:"observe"`
-	ScanStatus        string         `json:"scan_status"`
-	ScanAttempted     bool           `json:"scan_attempted"`
-	PolicyAction      string         `json:"policy_action"`
-	Reason            string         `json:"reason,omitempty"`
-	OutboundBody      string         `json:"outbound_body"`
-	RedactionVerified bool           `json:"redaction_verified"`
-	Findings          []debugFinding `json:"findings,omitempty"`
-	FindingsOmitted   int            `json:"findings_omitted,omitempty"`
-	UpstreamStatus    int            `json:"upstream_status,omitempty"`
+	Event, Transport, Endpoint, Surface string
+	Supported, Observe, ScanAttempted   bool
+	ScanStatus, PolicyAction, Reason    string
+	OutboundBody                        string
+	Findings                            []scanner.DebugFinding
+	FindingsOmitted, UpstreamStatus     int
 }
 
 // One completed finding summary replaces the internal stream of traffic events.
@@ -67,7 +43,7 @@ type debugSummary struct {
 	UpstreamStatus               int
 	Observe                      bool
 	Reason                       string
-	Findings                     []debugFinding
+	Findings                     []scanner.DebugFinding
 	FindingsOmitted              int
 }
 
@@ -81,7 +57,6 @@ type debugTrace struct {
 	errorCounted  bool
 }
 type debugContextKey struct{}
-type debugConnectionKey struct{}
 
 func debugEndpoint(r *http.Request) string {
 	host := r.URL.Host
@@ -108,15 +83,13 @@ func debugEndpoint(r *http.Request) string {
 	return scheme + "://" + host
 }
 
-func (d *debugLog) begin(r *http.Request, route policy.Route, transport, parent string, observe bool) *http.Request {
-	d.mu.Lock()
-	d.next++
-	id := fmt.Sprintf("%s-%d", d.session, d.next)
-	d.mu.Unlock()
-	t := &debugTrace{log: d, record: debugRecord{Schema: 2, RequestID: id, ConnectionID: parent,
-		Transport: transport, Method: truncate(strings.ToUpper(r.Method), 16), Endpoint: debugEndpoint(r),
-		API: route.API, Surface: route.Surface, Scoped: route.Scoped, Supported: route.Scoped && !route.Unknown, Observe: observe,
-		ScanStatus: "not-scanned", PolicyAction: "pending", OutboundBody: "none"}}
+func (d *debugLog) begin(r *http.Request, route policy.Route, transport string, observe bool) *http.Request {
+	t := &debugTrace{log: d, record: debugRecord{
+		Transport: transport, Surface: route.Surface, Supported: route.Scoped && !route.Unknown,
+		Observe: observe, ScanStatus: "not-scanned", PolicyAction: "pending", OutboundBody: "none"}}
+	if d.path != "" {
+		t.record.Endpoint = debugEndpoint(r)
+	}
 	r = r.WithContext(context.WithValue(r.Context(), debugContextKey{}, t))
 	debugEvent(r, "received", "", 0)
 	return r
@@ -241,7 +214,7 @@ func debugWriteAttempt(r *http.Request) {
 	}
 }
 
-func debugDecision(r *http.Request, status, action, reason string, report scanner.Report, body []byte) {
+func debugDecision(r *http.Request, status, action, reason string, report scanner.Report) {
 	if t := trace(r); t != nil {
 		t.mu.Lock()
 		defer t.mu.Unlock()
@@ -259,7 +232,6 @@ func debugDecision(r *http.Request, status, action, reason string, report scanne
 		if action == "reject" {
 			t.record.OutboundBody = "blocked"
 		}
-		t.record.RedactionVerified = status == "redacted"
 		row := t.record
 		row.Event, row.Reason = "inspection", reason
 		t.log.count(row)
@@ -292,8 +264,7 @@ func debugDecision(r *http.Request, status, action, reason string, report scanne
 			if !scanner.ValidDebugMask(f.DetectedMasked) || !validDebugPlaceholder(f.Placeholder) {
 				continue
 			}
-			t.record.Findings = append(t.record.Findings, debugFinding{f,
-				t.record.OutboundBody == "redacted" && bytes.Contains(body, []byte(f.Placeholder))})
+			t.record.Findings = append(t.record.Findings, f)
 		}
 	}
 }
@@ -355,7 +326,7 @@ func (d *debugLog) count(row debugRecord) {
 				d.status.BlockReasons.Intake++
 			case "out-of-scope-host":
 				d.status.BlockReasons.Suspicious++
-			case "scanner-error", "unscanned-residue", "finding-without-secret", "invalid-rpc-rewrite":
+			case "scanner-error", "redaction-failed", "unscanned-residue", "finding-without-secret", "invalid-rpc-rewrite":
 				d.status.BlockReasons.Inspection++
 			default:
 				d.status.BlockReasons.Other++

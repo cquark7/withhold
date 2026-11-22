@@ -20,6 +20,34 @@ with signed provenance. Record the checks for each target and integration.
 - Record commit, date, toolchain, OS/CPU, commands, and skips. Keep local evidence
   distinct from hosted CI and live-provider validation.
 
+## Release notes
+
+Review and commit `docs/releases/<tag>.md` before tagging. The workflow publishes
+that file as the release body.
+
+- Add **Before upgrading** at the top when the release changes CLI syntax,
+  configuration, trust, or recovery. Give the steps users need to take.
+- Use **What's new** for one to five user-facing changes. A one-fix release can
+  use one sentence. Name the tested workflow, version, and platform for new
+  agent support.
+- Link relevant PRs beside the changes they explain. Close with a full GitHub
+  comparison against the previous release users are upgrading from and links to
+  the tagged installation, verification, and rollback instructions. Use absolute
+  GitHub links so they resolve in the release body.
+
+```markdown
+## Before upgrading
+
+Run `withhold off` with the installed binary before replacing it. After
+upgrading, use `withhold setup AGENT...` to save your choice of agents.
+
+## What's new
+
+- Fixed a Windows access-denied error when saving agent selection. [#10](PULL_REQUEST_URL)
+
+[Full changelog](COMPARE_URL) · [Install and verify](TAGGED_INSTALL_URL) · [Upgrade and rollback](TAGGED_UPGRADE_URL)
+```
+
 ## Local builds
 
 Use the latest Go 1.26 patch and fresh output directories when checking
@@ -74,8 +102,9 @@ Manual dispatch uploads a verified `native-release` workflow artifact, not a
 GitHub Release. Individual `native-TARGET` artifacts are unsigned intermediates;
 do not distribute them. Attestation failure must stop distribution.
 
-Tag runs in `cquark7/withhold` independently re-verify repository, workflow, tag,
-and source commit before creating a draft with six archives, checksum manifest, `install.sh`, and
+Tag runs in `cquark7/withhold` require nonempty notes before building. They
+independently re-verify repository, workflow, tag, and source commit before
+creating a draft with six archives, checksum manifest, `install.sh`, and
 `native-release.sigstore.json`, then publishing it. Upload failure
 leaves a draft; inspect before retrying. Existing releases are not overwritten.
 Prereleases are not marked latest; installers must select RC tags explicitly.

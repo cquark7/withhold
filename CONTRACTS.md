@@ -3,7 +3,7 @@
 These are the observable guarantees and limits of withhold. Changes require
 matching tests and documentation. For operation and settings, see
 [usage](docs/usage.md) and [configuration](docs/configuration.md).
-Harness-specific guarantees and inspection-policy exceptions live in the
+Harness-specific guarantees live in the
 [agent-specific guarantees](docs/integrations/README.md). Both layers apply; an
 agent cannot relax the shared transport, privacy, or recovery guarantees.
 
@@ -20,8 +20,8 @@ naming an executable or adding an extra host does not establish support for
 another agent. `withhold agents` lists only reviewed built-ins.
 
 One proxy composes the selected agent profiles. Overlapping guarded/passthrough
-claims fail closed independent of order. Passthrough and inspection-failure
-exceptions cannot override another profile's guarded or suspicious host.
+claims fail closed independent of order. Passthrough cannot override another
+profile's guarded or suspicious host.
 Unambiguous routes retain their adapter's error protocol.
 
 Unscoped hosts are audited; suspicious hosts are blocked for POST/PUT/PATCH or
@@ -34,10 +34,9 @@ guarded paths fail closed unless the integration explicitly supports them.
 | Inline | Block findings | Block. Choosing `redact` permits placeholders in code. |
 | Observe mode | Forward original content; audit would-be decisions | Policy failures are audit-only; transport failures remain enforced. |
 
-HTTP scanning normally requires a JSON POST. Non-POST requests pass only when provably
-bodyless: no transfer encoding and no positive, malformed, or unknown body
-length. Any format, method, or inspection-failure exception must be explicit in
-the integration contract. Observe mode does not enforce these format/method policies.
+Guarded JSON routes require a JSON POST for inspection. Non-POST requests on
+these routes pass only when provably bodyless, with no transfer encoding or
+positive, malformed, or unknown body length. Observe mode audits format, method, and inspection failures.
 
 ## Offline text inspection
 
@@ -87,13 +86,14 @@ Duplicate object keys (including escape-equivalent names), invalid Unicode
 surrogates, nesting above 1,000 levels, and key-rename collisions fail closed.
 Rewriting preserves object order and scalar types, not original formatting.
 
-Secret detection uses bundled betterleaks 1.10.1 rules and Go regular
+Secret detection uses bundled Betterleaks v2 rules and Go regular
 expressions, without credential validation, repository configuration, or
 allow-comment suppression. AWS access-key IDs are detected without requiring a
 secret-key component; credential URIs also recognize `psql://`. Multipart
-components are all redacted, so nonsecret identifiers can be included. Findings
-with 100 or more component combinations fail as incomplete. Synthetic detector
-self-tests must pass before startup and whenever a worker starts.
+components are all redacted, so nonsecret identifiers can be included. A complete
+set of 100 component combinations can be redacted. If Betterleaks truncates the
+set, the request is blocked. Synthetic detector self-tests must pass before
+startup and whenever a worker starts.
 
 ### PII coverage
 
@@ -113,31 +113,46 @@ issuance; false positives are possible. There is no custom confidence cutoff.
 
 ### Extraction limits
 
-- Standalone text below eight characters is skipped; PII lowers that floor to
-  two. Long text uses 48 KiB windows with 4 KiB overlap.
-- Eligible keys and values of at most 4,096 characters are also scanned
-  together. Array elements retain their key context.
-- UTF-8 base64 text is decoded, scanned, rewritten, and re-encoded. Whitespace,
-  URL-safe alphabets, and unpadded variants are accepted. Extraction attempts
-  start at 64 characters for secrets or 24 with PII; round-trip checks use 24.
+- Standalone text below eight characters is skipped. PII lowers that floor to
+  two. Longer leaves remain intact during detection.
+- Eligible keys up to 4,096 bytes and values up to 4,096 characters are also
+  scanned together. Array elements retain their key context. Small `value`
+  strings also get their enclosing key and a sibling `name` as credential
+  context where applicable. Escaped JSON matches map back to the original text.
+- Whole-leaf UTF-8 Base64 text and textual Base64 data URLs can be decoded,
+  scanned, rewritten, and re-encoded. Re-encoding preserves a detectable
+  URL-safe alphabet, the padding convention, and data URL prefixes. It
+  normalizes whitespace and uses the standard alphabet when the original
+  alphabet is ambiguous. Whole-leaf extraction and residue checks use a
+  24-byte minimum and always check textual data URLs. Bare Base64 leaves are
+  also checked as literal credentials, with eligible field context.
+- Betterleaks also detects encoded content inside text. A finding that cannot
+  be mapped to writable text or a supported whole-leaf rewrite blocks the
+  request, even if a separate copy of the value can be redacted.
 - Declared image/audio/video/font, octet-stream, PDF/ZIP/gzip/WASM payloads and
   recognized PNG/JPEG/GIF/PDF/ZIP/gzip/WASM/WebP/WAV base64 signatures are opaque.
   They skip detection and residue checks at any size. MIME metadata is only a
   client hint: mislabeled text can be excluded. There is no OCR or extraction
   from documents/archives; surrounding text is still inspected.
-- Other non-UTF-8 base64 blobs from 64 characters through 64 KiB can be skipped
-  as unrewritable. With findings present, block mode rejects that residue; redact
-  mode forwards with a warning. Unknown large blobs retain text scanning.
+- Unknown Base64 blobs that decode to non-UTF-8 bytes are scanned as literal
+  text. Their decoded bytes count as unscanned residue. With findings present,
+  block mode rejects that residue and redact mode can forward with a warning.
 - Joined detector input above 128 MiB fails closed. Opaque bytes still count
   toward transport limits.
+- Secret scans with a line longer than 64 KiB have a separate work limit.
+  Each candidate is charged the longest line's size against a 4 GiB budget
+  per detector pass. Exhausting the budget returns an incomplete scan even when
+  the input fits the byte limit.
 
 Placeholders are `<WITHHELD_` + 16 lowercase HMAC-SHA256 hex digits + `>`.
 Key resolution uses `WITHHOLD_PLACEHOLDER_KEY`, then the private installation
 file `~/.config/withhold/placeholder-key`, then a process-random key.
-Persisted keys are published atomically. Placeholders are stable with the same
+Persisted keys must pass private-file checks and are published atomically.
+Placeholders are stable with the same
 key and are never rehydrated in responses. Stable markers reveal repeated values;
 they are pseudonymous, not anonymous. Verification checks protected text
-and keys for discovered values and URL/base64 variants; failure blocks rewriting.
+and keys for discovered values and URL/Base64 variants. A known finding with an
+incomplete or unverifiable rewrite blocks enforced routes.
 
 ## Transport and failures
 
@@ -149,13 +164,13 @@ upstream connections do not chain through environment-configured proxies.
 Responses, including SSE, stream without inspection.
 
 Every forwarded guarded HTTP body must pass wire-size and intake admission
-limits, including unsupported formats/methods allowed by policy exceptions.
+limits, including unsupported formats or methods forwarded in observe mode.
 The default cap is 32 MiB, configurable up to 128 MiB. Intake allows six jobs
 and 64 MiB of retained input; worker admission independently allows six jobs
 and 64 MiB of framed input. These are admission budgets, not process RSS limits.
 
 Wire overflow, failed reads, and exhausted intake capacity (including during
-decoding) return HTTP 413 without forwarding, including policy exceptions/observe.
+decoding) return HTTP 413 without forwarding, including in observe mode.
 Gzip, deflate, Brotli, Zstandard, stacked encodings, and declared charsets are
 decoded before inspection. Decoded size overflow and scanner failures follow
 the inspection policy above. Scanner capacity is never reported as clean.
@@ -241,6 +256,8 @@ an authenticated identity/PID/build can be stopped; foreign listeners are not
 signalled. Recorded resources remain recoverable with broken current config.
 Restore changes only managed keys, preserving unrelated/mid-session edits;
 invalid settings/backups are preserved. Failed restore retains recovery data.
+Once the recorded process has exited and all settings are restored, a foreign
+listener on the recorded port does not keep the ownership record in place.
 CA files are deleted only after verified trust removal. Uninstall does not
 delete logs, application settings, or the installed executable.
 Installation refuses to replace the executable while any session record remains,
@@ -331,7 +348,7 @@ before a supported body completes inspection, and `inspected` afterward.
 CONNECT alone and failed scans do not establish inspection. `scan_attempts`
 counts starts; `inspected` counts successful clean/redacted results on supported
 routes, including blocked findings and observe-mode scans. `passthrough` counts
-uninspected policy passes, including bodyless requests and integration exceptions.
+uninspected policy passes, including bodyless requests and integration passthrough routes.
 These are request/message decisions, not a percentage of all application traffic.
 `blocked` counts one decision per affected HTTP request or streaming message,
 not secrets or unique application actions. Fixed `block_reasons` distinguish
@@ -355,10 +372,10 @@ before application changes; unrelated or unsafe files are never overwritten.
 Snapshot write failure warns but does not prevent restoration.
 
 Scanner statuses are `clean`, `redacted`, `skipped-not-json`, `over-cap`,
-`over-cap-decoded`, `scanner-error`, and `finding-without-secret`. Successful
-reports contain `units`/`stats`; rewrites add `body_base64`, `rule_ids`,
-`findings`, and `placeholders`. Errors use fixed `reason` values; cap reports
-add `size`/`max_bytes`. Opt-in masked debug findings are never raw findings.
+`over-cap-decoded`, `scanner-error`, `redaction-failed`, and
+`finding-without-secret`. Successful reports contain `units` and `stats`.
+Rewrites add `body_base64`, `rule_ids`, `findings`, and `placeholders`. Errors
+use fixed `reason` values. Cap reports add `size` and `max_bytes`. Opt-in masked debug findings are never raw findings.
 
 Audit JSONL fields are `ts`, `host`, `api`, `surface`, `surface_provisional`,
 `mode`, `action`, `rule_ids`, `findings`, `placeholders`, `units`, `stats`,

@@ -6,12 +6,76 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/cquark7/withhold/internal/integration"
 )
 
 func exists(path string) bool { _, err := os.Stat(path); return err == nil }
+
+func saveSettings(path string, data map[string]json.RawMessage) error {
+	out, err := json.MarshalIndent(data, "", "    ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0600)
+}
+
+func TestApplyAndRestorePreserveJSONCAndSyncEdits(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	before := `{
+    // Keep this note.
+    "http.noProxy": [/* original value note */ "old"],
+    "settingsSync.ignoredSettings": [
+        /* existing sync note */ "http.proxyStrictSSL",
+    ],
+    "unrelated": { /* nested note */ "value": true, },
+}`
+	if err := os.WriteFile(path, []byte(before), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplySettings(path, 12345); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := string(data)
+	for _, fragment := range []string{"// Keep this note.", "/* existing sync note */", `"unrelated": { /* nested note */ "value": true, },`} {
+		if !strings.Contains(active, fragment) {
+			t.Fatalf("apply lost %q in %s", fragment, active)
+		}
+	}
+	changed := strings.Replace(active, `"http.proxyStrictSSL",`, `"http.proxyStrictSSL", /* new sync note */ "editor.fontSize",`, 1)
+	if err := os.WriteFile(path, []byte(changed), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RestoreSettings(path); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := ParseSettings(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ignored []string
+	if err := json.Unmarshal(restored[syncExclusions], &ignored); err != nil || !reflect.DeepEqual(ignored, []string{"http.proxyStrictSSL", "editor.fontSize"}) {
+		t.Fatalf("sync exclusions were not restored: %s (%v)", restored[syncExclusions], err)
+	}
+	for _, fragment := range []string{"// Keep this note.", "/* original value note */", "/* existing sync note */", "/* new sync note */", "/* nested note */"} {
+		if !bytes.Contains(data, []byte(fragment)) {
+			t.Fatalf("restore lost %q in %s", fragment, data)
+		}
+	}
+}
 
 func TestMergeRestoreAndFreshBackup(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
@@ -116,6 +180,11 @@ func TestApplicationNetworkSettingsEnableOrdinaryLaunchesAndRestore(t *testing.T
 				t.Fatal(err)
 			}
 			before["mid-session"] = json.RawMessage(`true`)
+			if err := json.Unmarshal(current[syncExclusions], &ignored); err != nil || !reflect.DeepEqual(ignored, []string{"custom"}) {
+				t.Fatalf("sync exclusions were not restored: %v (%v)", ignored, err)
+			}
+			delete(current, syncExclusions)
+			delete(before, syncExclusions)
 			if !reflect.DeepEqual(current, before) {
 				t.Fatalf("settings were not restored: %v", current)
 			}

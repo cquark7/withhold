@@ -15,6 +15,8 @@ func TestDefaultPathFilterUsesBundledDependencyAndGeneratedPathExclusions(t *tes
 		"project/venv/lib":                         true,
 		"project/assets/font.woff2":                true,
 		"project/.env":                             false,
+		"project/models/scene.gltf":                false,
+		"project/reports/report.pdf":               false,
 		"project/.gitignore":                       false,
 		"project/src/node_modules_helper.js":       false,
 		"project/vendor/custom/config.env":         false,

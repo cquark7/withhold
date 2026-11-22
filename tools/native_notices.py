@@ -5,6 +5,8 @@ import re
 import subprocess
 from pathlib import Path
 
+BETTERLEAKS_MODULE = "github.com/betterleaks/betterleaks/v2"
+
 _DOCUMENT = re.compile(
     r"^(?:licen[sc]e|copying|notice|copyright|patents)(?:$|[._-])", re.I
 )
@@ -103,13 +105,35 @@ def render_notices(build: dict, modules: dict, goroot: Path) -> bytes:
     return result
 
 
+def executable_build_info(binary: Path, *, cwd=None, env=None) -> dict:
+    return json.loads(
+        subprocess.check_output(
+            ["go", "version", "-m", "-json", str(binary)],
+            cwd=cwd,
+            env=env,
+            encoding="utf-8",
+        )
+    )
+
+
+def betterleaks_version(binary: Path) -> str:
+    for dep in executable_build_info(binary).get("Deps", []):
+        if (
+            dep["Path"] == BETTERLEAKS_MODULE
+            and dep.get("Version")
+            and not dep.get("Replace")
+        ):
+            return dep["Version"]
+    raise ValueError("cannot establish linked Betterleaks version")
+
+
 def build_notices(binary: Path, *, cwd: Path, env: dict) -> bytes:
     def go(*args):
         return subprocess.check_output(
             ["go", *args], cwd=cwd, env=env, encoding="utf-8"
         )
 
-    build = json.loads(go("version", "-m", "-json", str(binary)))
+    build = executable_build_info(binary, cwd=cwd, env=env)
     modules = {}
     for package in json_objects(go("list", "-deps", "-json", "./cmd/withhold")):
         module = package.get("Module")

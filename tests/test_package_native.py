@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import tools.package_native as packaging
 from tools.check_docs import check_links
-from tools.native_notices import build_notices
+from tools.native_notices import BETTERLEAKS_MODULE, betterleaks_version, build_notices
 from tools.package_native import (
     ROOT,
     archive,
@@ -357,7 +357,9 @@ class NativeArchiveTests(unittest.TestCase):
             notices = build_notices(
                 binary, cwd=ROOT, env=dict(os.environ, GOWORK="off", GOFLAGS="")
             )
-            self.assertIn(b"github.com/betterleaks/betterleaks v1.10.1", notices)
+            self.assertIn(
+                f"{BETTERLEAKS_MODULE} {betterleaks_version(binary)}".encode(), notices
+            )
             self.assertIn(b"Mozilla Public License", notices)
             self.assertNotIn(str(ROOT).encode(), notices)
             path = archive(

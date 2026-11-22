@@ -128,12 +128,7 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 	}
 	debugEvent(r, "tls_established", "", 0)
 	_ = raw.SetDeadline(time.Time{})
-	parent := ""
-	if t := trace(r); t != nil {
-		parent = t.record.RequestID
-	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r = r.WithContext(context.WithValue(r.Context(), debugConnectionKey{}, parent))
 		p.handle(w, r, target)
 	})
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20, ErrorLog: log.New(io.Discard, "", 0), BaseContext: func(net.Listener) context.Context { return p.ctx }}

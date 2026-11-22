@@ -56,11 +56,9 @@ jobs:
       matrix:
         include:
           - os: macos-26
-            executable: withhold-scanner
             native: withhold
             fixture: withhold-native-fixture
           - os: windows-latest
-            executable: withhold-scanner.exe
             native: withhold.exe
             fixture: withhold-native-fixture.exe
     runs-on: ${{ matrix.os }}
@@ -78,14 +76,12 @@ jobs:
       - name: Build native runtime and acceptance fixture
         shell: bash
         run: |
-          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/${{ matrix.executable }}" ./cmd/withhold-scanner
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/${{ matrix.native }}" ./cmd/withhold
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/${{ matrix.fixture }}" ./tests/nativefixture
       - name: Check native Go behavior
         run: go test ./... && go vet ./...
       - name: Check detector behavior and pipe lifecycle
         env:
-          WITHHOLD_TEST_SCANNER_WORKER: ${{ runner.temp }}/${{ matrix.executable }}
           WITHHOLD_TEST_NATIVE: ${{ runner.temp }}/${{ matrix.native }}
           WITHHOLD_TEST_NATIVE_FIXTURE: ${{ runner.temp }}/${{ matrix.fixture }}
         run: python -m unittest tests.test_scanner_contract tests.test_native_proxy tests.test_native_desktop tests.test_documentation tests.test_release_polish -q
